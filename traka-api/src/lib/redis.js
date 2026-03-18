@@ -4,18 +4,30 @@ let client = null;
 
 async function initRedis() {
   const url = process.env.REDIS_URL || 'redis://localhost:6379';
-  client = redis.createClient({
-    url,
-    socket: {
-      reconnectStrategy: (retries) => {
-        if (retries > 10) return false;
-        return Math.min(retries * 100, 3000);
+  if (!url || url === 'redis://localhost:6379') {
+    console.warn('[Redis] REDIS_URL not set - driver_status & rate limit will use memory (tidak persist)');
+    return null;
+  }
+  try {
+    client = redis.createClient({
+      url,
+      socket: {
+        reconnectStrategy: (retries) => {
+          if (retries > 10) return false;
+          return Math.min(retries * 100, 3000);
+        },
       },
-    },
-  });
-  client.on('error', (err) => console.error('Redis error:', err));
-  await client.connect();
-  return client;
+    });
+    client.on('error', (err) => console.error('[Redis]', err.message));
+    await client.connect();
+    console.log('[Redis] Connected');
+    return client;
+  } catch (err) {
+    console.error('[Redis] Connection failed:', err.message);
+    console.error('[Redis] Cek REDIS_URL (Upstash: rediss://default:TOKEN@xxx.upstash.io:6379)');
+    client = null;
+    return null;
+  }
 }
 
 function getRedis() {
