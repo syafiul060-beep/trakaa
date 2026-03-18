@@ -56,3 +56,9 @@ app.*.map.json
 /ios/Flutter/App.framework
 /ios/Flutter/flutter_export_environment.sh
 /ios/ServiceDefinitions.json
+
+# Firebase config untuk track.html (copy dari firebase-config.example.js)
+hosting/firebase-config.js
+
+# Build output untuk hosting (build dari traka-admin)
+hosting/admin/

@@ -46,8 +46,10 @@ class DefaultFirebaseOptions {
     }
   }
 
+  // JALANKAN: flutterfire configure (file ini di-overwrite dengan config asli)
+  // API keys di sini adalah placeholder - JANGAN commit config asli!
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyA-DAHNjx9iJF54sxd0GaYb3b0gbVkbETQ',
+    apiKey: 'REPLACE_WITH_FLUTTERFIRE_CONFIGURE',
     appId: '1:652861002574:web:4bdc74993fc9859650041f',
     messagingSenderId: '652861002574',
     projectId: 'syafiul-traka',
@@ -57,7 +59,7 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDp42LNETICub57MCtws_VJwZVti49DzoM',
+    apiKey: 'REPLACE_WITH_FLUTTERFIRE_CONFIGURE',
     appId: '1:652861002574:android:01af2236f206639950041f',
     messagingSenderId: '652861002574',
     projectId: 'syafiul-traka',
@@ -65,7 +67,7 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAm-2sIG3qA__0OUhAyTnySB1tJwJNqf-A',
+    apiKey: 'REPLACE_WITH_FLUTTERFIRE_CONFIGURE',
     appId: '1:652861002574:ios:5885fe62b07b329850041f',
     messagingSenderId: '652861002574',
     projectId: 'syafiul-traka',

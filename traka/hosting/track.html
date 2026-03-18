@@ -43,13 +43,13 @@
   <div id="error" style="display:none;"></div>
   <div id="map" style="display:none;"></div>
 
+  <!-- Load Firebase config dari firebase-config.js (copy dari firebase-config.example.js, JANGAN commit!) -->
+  <script src="firebase-config.js"></script>
   <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyA-DAHNjx9iJF54sxd0GaYb3b0gbVkbETQ",
-      projectId: "syafiul-traka",
-      authDomain: "syafiul-traka.firebaseapp.com",
-      storageBucket: "syafiul-traka.firebasestorage.app"
-    };
+    if (!window.FIREBASE_CONFIG || !window.FIREBASE_CONFIG.apiKey) {
+      document.getElementById('loading').innerHTML = '<p style="color:#c62828;">Firebase config belum di-set. Copy firebase-config.example.js ke firebase-config.js.</p>';
+    } else {
+    const firebaseConfig = window.FIREBASE_CONFIG;
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
@@ -146,6 +146,7 @@
           document.getElementById('error').style.display = 'block';
           document.getElementById('error').textContent = 'Gagal memuat: ' + (err.message || 'Koneksi error');
         });
+    }
     }
   </script>
 </body>

@@ -65,5 +65,9 @@ node_modules/
 # dotenv environment variables file
 .env
 
+# Firebase config (berisi API key - JANGAN commit!)
+public/firebase-config.js
+dist/
+
 # dataconnect generated files
 .dataconnect

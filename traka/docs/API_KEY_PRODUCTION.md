@@ -254,7 +254,7 @@ flutter build appbundle --dart-define=MAPS_API_KEY=AIzaSy_xxx_key_anda
 **Langkah 2:** Cari baris:
 
 ```swift
-GMSServices.provideAPIKey("AIzaSyCsF6MXsNwo1qVjUHtTyjlTmW7IC8XPwWg")
+GMSServices.provideAPIKey("AIzaSy_xxx_ganti_dengan_key_anda")
 ```
 
 **Langkah 3:** Ganti string di dalam tanda kutip dengan API key baru:

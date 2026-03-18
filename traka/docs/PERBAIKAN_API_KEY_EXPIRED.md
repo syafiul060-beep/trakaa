@@ -127,7 +127,7 @@ Jika Anda melihat API key **"Android_traka"** dengan green checkmark, gunakan ya
    ```xml
    <meta-data
        android:name="com.google.android.geo.API_KEY"
-       android:value="AIzaSyA8eb49Svf-FpbWN3qbfglMB885VoSi2IE" />
+       android:value="AIzaSy_xxx_ganti_dengan_key_anda" />
    ```
 3. **Ganti** nilai `android:value` dengan API key baru yang Anda buat
 4. **Simpan** file
