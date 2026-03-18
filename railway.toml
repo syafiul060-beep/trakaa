@@ -1,0 +1,9 @@
+# Railway config - traka-api (monorepo)
+# Root Directory harus di-set di UI: Settings > Source > Root Directory = traka-api
+
+[build]
+watchPatterns = ["traka-api/**"]
+
+[deploy]
+startCommand = "node src/index.js"
+healthcheckPath = "/health"
