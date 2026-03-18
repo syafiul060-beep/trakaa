@@ -1,0 +1,10 @@
+# Salin file ini ke key.properties dan isi dengan nilai sebenarnya
+# JANGAN commit key.properties dan upload-keystore.jks ke Git!
+
+storePassword=password_keystore_anda
+keyPassword=password_key_anda
+keyAlias=upload
+storeFile=upload-keystore.jks
+
+# Opsional: API key Google Maps (untuk production, lihat docs/API_KEY_PRODUCTION.md)
+# MAPS_API_KEY=AIzaSy_xxx

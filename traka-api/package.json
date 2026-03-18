@@ -1,0 +1,29 @@
+{
+  "name": "traka-api",
+  "version": "1.0.0",
+  "description": "Traka Backend API - Redis (driver_status) + PostgreSQL (orders, users)",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "migrate": "node scripts/migrate-firestore-to-pg.js",
+    "load-test": "node scripts/load-test.js",
+    "start:cluster": "pm2 start ecosystem.config.cjs",
+    "stop:cluster": "pm2 stop traka-api",
+    "restart:cluster": "pm2 restart traka-api --update-env"
+  },
+  "devDependencies": {
+    "pm2": "^5.3.0"
+  },
+  "dependencies": {
+    "@sentry/node": "^10.43.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.21.0",
+    "express-rate-limit": "^8.2.1",
+    "firebase-admin": "^12.0.0",
+    "pg": "^8.11.0",
+    "rate-limit-redis": "^4.3.1",
+    "redis": "^4.6.0"
+  }
+}

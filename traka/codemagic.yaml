@@ -1,0 +1,124 @@
+# Codemagic CI/CD - Traka Flutter (Tahap 6: + test, Android)
+# Dokumentasi: https://docs.codemagic.io/flutter-configuration/flutter-projects
+#
+# ALUR: Tes Ad-hoc dulu → Jika OK → Upload ke App Store
+#
+# SETUP CODE SIGNING (Codemagic Team settings):
+# 1. Apple Developer Account ($99/tahun)
+# 2. Upload Distribution certificate (.p12)
+# 3. Upload Provisioning Profile:
+#    - Ad-hoc profile (untuk tes) → daftar UDID iPhone di developer.apple.com
+#    - App Store profile (untuk publish) → buat di developer.apple.com
+
+workflows:
+  # 0. Test only - jalankan unit test (tanpa build)
+  traka-test:
+    name: Traka - Run Tests
+    max_build_duration: 15
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Run tests
+        script: flutter test
+
+  # 1. Verifikasi build (tanpa code signing) - cek kompilasi
+  traka-ios-verify:
+    name: Traka iOS Verify
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Run tests
+        script: flutter test
+      - name: Install CocoaPods
+        script: find . -name "Podfile" -execdir pod install \;
+      - name: Build iOS (no codesign)
+        script: flutter build ios --release --no-codesign
+    artifacts:
+      - build/ios/iphoneos/Runner.app/
+
+  # 2. TES DI IPHONE - Build IPA Ad-hoc (install langsung tanpa App Store)
+  #    Daftar UDID iPhone di developer.apple.com dulu!
+  traka-ios-adhoc:
+    name: Traka iOS - Tes iPhone (Ad-hoc)
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: ad_hoc
+        bundle_identifier: id.traka.app
+    scripts:
+      - name: Set up code signing
+        script: xcode-project use-profiles
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Install CocoaPods
+        script: find . -name "Podfile" -execdir pod install \;
+      - name: Build iOS IPA (Ad-hoc)
+        script: |
+          flutter build ipa --release \
+            --build-name=1.0.6 \
+            --build-number=$PROJECT_BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+  # 3. UPLOAD KE APP STORE - Setelah tes Ad-hoc berhasil
+  traka-ios:
+    name: Traka iOS - App Store
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: id.traka.app
+    scripts:
+      - name: Set up code signing
+        script: xcode-project use-profiles
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Run tests
+        script: flutter test
+      - name: Install CocoaPods
+        script: find . -name "Podfile" -execdir pod install \;
+      - name: Build iOS IPA (App Store)
+        script: |
+          flutter build ipa --release \
+            --build-name=1.0.6 \
+            --build-number=$PROJECT_BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+  # 4. Android - Verifikasi build (tanpa signing)
+  traka-android-verify:
+    name: Traka Android Verify
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Run tests
+        script: flutter test
+      - name: Build Android APK (debug)
+        script: flutter build apk --debug
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
