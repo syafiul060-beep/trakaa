@@ -4,17 +4,15 @@ Dokumen ini memetakan **semua lokasi** API key di proyek Traka. Gunakan untuk ve
 
 ---
 
-## Daftar Key Saat Ini (19 Mar 2026)
+## Daftar Key (JANGAN tulis nilai asli di sini!)
 
-| Key | Nilai | Dipakai untuk |
-|-----|-------|----------------|
-| **Browser** | `AIzaSyAL9LaqOBn6vjC_D9xK02Afnl68s6BkXJU` | Firebase Web (umum) |
-| **Android** | `AIzaSyD7Jz7Cs4UKlOWT2Ztr7LulhlNuHV0hOlA` | Firebase + Maps Android |
-| **iOS** | `AIzaSyBlirfTyEZ2nQYNRyNFPH4w4N7DHP3eip8` | Firebase iOS |
-| **Maps** | `AIzaSyBhWS2y8VVrsNEikCIv13y829WYXZGBPvw` | Directions API, Maps SDK |
-| **traka id.traka.app** | `AIzaSyB7Qh7jTbAb_SfVNNbEuO0XutQ0dJIZr8U` | Firebase auto (id.traka.app) |
-| **traka com.example.traka** | `AIzaSyAhqTBcefGufxNRa8MFfbcpKUmNlky-m20` | Firebase auto (com.example.traka) |
-| **traka (web)** | `AIzaSyCyD08AJ_j7LSciMMwmCVVz6rq-2k_C59k` | Firebase Web app |
+| Key | Lokasi nilai | Dipakai untuk |
+|-----|--------------|---------------|
+| **Browser** | firebase-config.js, .env | Firebase Web (umum) |
+| **Android** | google-services.json | Firebase + Maps Android |
+| **iOS** | GoogleService-Info.plist | Firebase iOS |
+| **Maps** | key.properties, Keys.plist (iOS) | Directions API, Maps SDK |
+| **traka (web)** | firebase-config.js | track.html |
 
 ---
 
@@ -25,17 +23,17 @@ Dokumen ini memetakan **semua lokasi** API key di proyek Traka. Gunakan untuk ve
 | File | Key | Nilai yang dipakai |
 |------|-----|--------------------|
 | `lib/firebase_options.dart` | Browser, Android, iOS | Browser, Android, iOS (sudah benar) |
-| `android/app/google-services.json` | Android | `AIzaSyD7Jz7Cs4UKlOWT2Ztr7LulhlNuHV0hOlA` ✓ |
-| `android/key.properties` | Maps | `MAPS_API_KEY=AIzaSyBhWS2y8VVrsNEikCIv13y829WYXZGBPvw` ✓ |
-| `ios/Runner/GoogleService-Info.plist` | iOS | `AIzaSyBlirfTyEZ2nQYNRyNFPH4w4N7DHP3eip8` ✓ |
-| `ios/Runner/AppDelegate.swift` | Maps (GMSServices) | `AIzaSyBhWS2y8VVrsNEikCIv13y829WYXZGBPvw` ✓ |
+| `android/app/google-services.json` | Android | Dari Firebase Console / flutterfire configure |
+| `android/key.properties` | Maps | `MAPS_API_KEY=xxx` (file di .gitignore) |
+| `ios/Runner/GoogleService-Info.plist` | iOS | Dari Firebase Console / flutterfire configure |
+| `ios/Runner/Keys.plist` | Maps (GMSServices) | `MAPS_API_KEY` (file di .gitignore) |
 | `lib/config/maps_config.dart` | Maps | Dari `--dart-define=MAPS_API_KEY` (via run_hybrid.ps1) ✓ |
 
 ### 2. Web (traka/web/)
 
 | File | Key | Nilai yang dipakai |
 |------|-----|--------------------|
-| `web/track.html` | traka (web) | `AIzaSyCyD08AJ_j7LSciMMwmCVVz6rq-2k_C59k` ✓ |
+| `web/track.html` | traka (web) | Load dari `firebase-config.js` (gitignored) |
 
 ### 3. Hosting (traka/hosting/)
 
@@ -49,7 +47,7 @@ Dokumen ini memetakan **semua lokasi** API key di proyek Traka. Gunakan untuk ve
 
 | File | Key | Catatan |
 |------|-----|---------|
-| `.env` | traka (web) | `VITE_FIREBASE_API_KEY=AIzaSyCyD08AJ_j7LSciMMwmCVVz6rq-2k_C59k` |
+| `.env` | traka (web) | `VITE_FIREBASE_API_KEY=xxx` (JANGAN commit .env!) |
 | `public/firebase-config.js` | traka (web) | Copy dari example, isi apiKey |
 
 **Langkah:** Set `VITE_FIREBASE_API_KEY` di `.env`, lalu `npm run build`. Deploy hasil build ke hosting.

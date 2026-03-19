@@ -142,6 +142,13 @@ copy traka\android\key.properties.example traka\android\key.properties
 
 Lalu edit, tambah `MAPS_API_KEY=KEY_MAPS_BARU_ANDA`.
 
+**Untuk iOS Maps** — edit `traka/ios/Runner/Keys.plist` (atau copy dari `Keys.plist.example`):
+
+```xml
+<key>MAPS_API_KEY</key>
+<string>KEY_MAPS_BARU_ANDA</string>
+```
+
 **Build APK:**
 
 ```bash

@@ -59,6 +59,11 @@ app.*.map.json
 
 # Firebase config untuk track.html (copy dari firebase-config.example.js)
 hosting/firebase-config.js
+web/firebase-config.js
+
+# iOS - file sensitif (JANGAN commit!)
+ios/Runner/GoogleService-Info.plist
+ios/Runner/Keys.plist
 
 # Firebase config Flutter (berisi API keys - JANGAN commit!)
 lib/firebase_options.dart

@@ -21,19 +21,17 @@
 ## 1. API Key – Sudah Benar
 
 ### Firebase (traka/lib/firebase_options.dart)
-- **Web:** `AIzaSyAL9LaqOBn6vjC_D9xK02Afnl68s6BkXJU` (browser)
-- **Android:** `AIzaSyD7Jz7Cs4UKlOWT2Ztr7LulhlNuHV0hOlA`
-- **iOS:** `AIzaSyBlirfTyEZ2nQYNRyNFPH4w4N7DHP3eip8`
+- Generate via `flutterfire configure` — JANGAN commit nilai asli di dokumen
 
 ### Android (google-services.json)
-- `current_key`: `AIzaSyD7Jz7Cs4UKlOWT2Ztr7LulhlNuHV0hOlA` ✓
+- Dari Firebase Console / flutterfire configure
 
 ### Maps (key.properties)
-- `MAPS_API_KEY`: `AIzaSyBhWS2y8VVrsNEikCIv13y829WYXZGBPvw` ✓
+- `MAPS_API_KEY=xxx` — file di .gitignore
 
 ### Verifikasi run_hybrid.ps1
 ```
-MAPS_API_KEY: AIzaSyBhWS...
+MAPS_API_KEY: AIzaSy... (3 karakter pertama saja untuk verifikasi)
 ```
 Key terbaca dan diteruskan ke Flutter ✓
 
