@@ -60,7 +60,6 @@ export default function Settings() {
   const [minVersion, setMinVersion] = useState('')
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false)
   const [maintenanceMessage, setMaintenanceMessage] = useState('')
-  const [appCheckEnabled, setAppCheckEnabled] = useState(false)
   const [exemptDriverUids, setExemptDriverUids] = useState([])
   const [newExemptInput, setNewExemptInput] = useState('')
   const [lacakExemptUserUids, setLacakExemptUserUids] = useState([])
@@ -107,8 +106,6 @@ export default function Settings() {
         if (d.tarifBarangDokumenDalamProvinsiPerKm != null) setTarifBarangDokumenDalamProvinsiPerKm(d.tarifBarangDokumenDalamProvinsiPerKm)
         if (d.tarifBarangDokumenBedaProvinsiPerKm != null) setTarifBarangDokumenBedaProvinsiPerKm(d.tarifBarangDokumenBedaProvinsiPerKm)
         if (d.tarifBarangDokumenLebihDari1ProvinsiPerKm != null) setTarifBarangDokumenLebihDari1ProvinsiPerKm(d.tarifBarangDokumenLebihDari1ProvinsiPerKm)
-        // Default true (aktif) jika field belum ada, agar sesuai dengan app
-        setAppCheckEnabled(d.appCheckEnabled !== false)
       }
 
       if (contactSnap.exists() && contactSnap.data()) {
@@ -211,7 +208,6 @@ export default function Settings() {
           tarifBarangDokumenDalamProvinsiPerKm: td1,
           tarifBarangDokumenBedaProvinsiPerKm: td2,
           tarifBarangDokumenLebihDari1ProvinsiPerKm: td3,
-          appCheckEnabled,
         },
         { merge: true }
       )
@@ -453,24 +449,6 @@ export default function Settings() {
           placeholder="Aplikasi sedang dalam perbaikan. Coba lagi nanti."
           hint="Ditampilkan di layar maintenance"
         />
-      </SettingsCard>
-
-      <SettingsCard title="App Check" icon="🛡️">
-        <p className="text-sm text-gray-600 mb-4">
-          App Check memastikan request ke Firebase hanya dari app resmi (Play Integrity / App Attest). Nonaktifkan untuk uji coba atau jika device tertentu gagal. Pastikan enforcement di Firebase Console juga OFF saat nonaktif.
-        </p>
-        <div className="flex items-center gap-3">
-          <input
-            type="checkbox"
-            id="appCheckEnabled"
-            checked={appCheckEnabled}
-            onChange={(e) => setAppCheckEnabled(e.target.checked)}
-            className="rounded border-gray-300 text-orange-500 focus:ring-orange-500 h-5 w-5"
-          />
-          <label htmlFor="appCheckEnabled" className="text-sm font-medium text-gray-700">
-            Aktifkan App Check di aplikasi mobile
-          </label>
-        </div>
       </SettingsCard>
 
       <SettingsCard title="Versi Minimum Aplikasi" icon="📱">

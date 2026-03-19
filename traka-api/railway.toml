@@ -1,0 +1,10 @@
+# Railway config untuk traka-api
+# Pastikan Root Directory = traka-api di Settings > Source
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npm start"
+healthcheckPath = "/health"
+healthcheckTimeout = 30

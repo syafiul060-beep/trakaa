@@ -203,12 +203,12 @@ class DriverRouteInfoPanel extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(Icons.person_pin_circle, size: 20, color: const Color(0xFF2E7D32)),
+            Icon(Icons.person_pin_circle, size: 20, color: const Color(0xFF00B14F)),
             const SizedBox(width: 8),
             Text(
               TrakaL10n.of(context).headingToPassenger,
               style: const TextStyle(
-                color: Color(0xFF2E7D32),
+                color: Color(0xFF00B14F),
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),

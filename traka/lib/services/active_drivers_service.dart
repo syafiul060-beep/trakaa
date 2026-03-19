@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../config/app_constants.dart';
 import '../config/traka_api_config.dart';
+import '../utils/retry_utils.dart';
 import 'directions_service.dart';
 import 'traka_api_service.dart';
 import 'rating_service.dart';
@@ -126,26 +127,90 @@ class ActiveDriversService {
   /// Driver lebih jauh dari ini tidak ditampilkan.
   static const double maxDriverDistanceFromPickupMeters = 40000; // 40 km
 
+  static Future<List<Map<String, dynamic>>> _fetchDriverStatusFromFirestore() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection(_collectionDriverStatus)
+        .where('status', isEqualTo: _statusSiapKerja)
+        .get();
+    return snapshot.docs.map((doc) {
+      final data = doc.data();
+      data['uid'] = doc.id;
+      return data;
+    }).toList();
+  }
+
   /// Daftar driver dengan rute aktif (status siap_kerja + ada data rute).
   /// Hanya driver yang lastUpdated dalam 6 jam terakhir (untuk filter HP mati/tidak aktif).
   /// maxPassengers dari vehicle_data; currentPassengerCount dari driver_status.
-  static Future<List<ActiveDriverRoute>> getActiveDriverRoutes() async {
-    List<Map<String, dynamic>> driverStatusList;
+  ///
+  /// [pickupLat], [pickupLng]: jika ada, coba GET /api/match/drivers dulu (Tahap 2).
+  /// [city]: slug kota untuk matching (opsional).
+  /// [radiusKm], [limit]: dinamis berdasarkan jarak asal–tujuan (opsional).
+  /// Fallback: jika match kosong/error, pakai getDriverStatusList atau Firestore.
+  static Future<List<ActiveDriverRoute>> getActiveDriverRoutes({
+    double? pickupLat,
+    double? pickupLng,
+    String? city,
+    double? radiusKm,
+    int? limit,
+  }) async =>
+      RetryUtils.withRetry(
+        () => _getActiveDriverRoutesImpl(
+          pickupLat: pickupLat,
+          pickupLng: pickupLng,
+          city: city,
+          radiusKm: radiusKm,
+          limit: limit,
+        ),
+        maxAttempts: 2,
+        baseDelayMs: 1500,
+      );
+
+  static Future<List<ActiveDriverRoute>> _getActiveDriverRoutesImpl({
+    double? pickupLat,
+    double? pickupLng,
+    String? city,
+    double? radiusKm,
+    int? limit,
+  }) async {
+    List<Map<String, dynamic>> driverStatusList = [];
+
     if (TrakaApiConfig.isApiEnabled) {
-      driverStatusList = await TrakaApiService.getDriverStatusList();
-      driverStatusList = driverStatusList
-          .where((d) => (d['status'] as String?) == _statusSiapKerja)
-          .toList();
+      if (pickupLat != null && pickupLng != null) {
+        try {
+          final matchList = await TrakaApiService.getMatchDrivers(
+            lat: pickupLat,
+            lng: pickupLng,
+            city: city,
+            radiusKm: radiusKm ?? 30,
+            limit: limit ?? 50,
+            minCapacity: 1,
+          );
+          if (matchList.isNotEmpty) {
+            driverStatusList = matchList;
+            if (kDebugMode) debugPrint('ActiveDriversService: match API mengembalikan ${driverStatusList.length} driver');
+          }
+        } catch (e) {
+          if (kDebugMode) debugPrint('ActiveDriversService: match API error, fallback: $e');
+        }
+      }
+      if (driverStatusList.isEmpty) {
+        try {
+          driverStatusList = await TrakaApiService.getDriverStatusList();
+          driverStatusList = driverStatusList
+              .where((d) => (d['status'] as String?) == _statusSiapKerja)
+              .toList();
+        } catch (e) {
+          if (kDebugMode) debugPrint('ActiveDriversService: API error, fallback Firestore: $e');
+        }
+      }
+      if (driverStatusList.isEmpty) {
+        if (kDebugMode) debugPrint('ActiveDriversService: API kosong, fallback ke Firestore');
+        driverStatusList = await _fetchDriverStatusFromFirestore();
+        if (kDebugMode) debugPrint('ActiveDriversService: Firestore mengembalikan ${driverStatusList.length} driver');
+      }
     } else {
-      final snapshot = await FirebaseFirestore.instance
-          .collection(_collectionDriverStatus)
-          .where('status', isEqualTo: _statusSiapKerja)
-          .get();
-      driverStatusList = snapshot.docs.map((doc) {
-        final data = doc.data();
-        data['uid'] = doc.id;
-        return data;
-      }).toList();
+      driverStatusList = await _fetchDriverStatusFromFirestore();
     }
 
     final list = <ActiveDriverRoute>[];
@@ -314,14 +379,48 @@ class ActiveDriversService {
   /// [passengerOriginLat/Lng]: lokasi awal penumpang (titik penjemputan).
   /// [passengerDestLat/Lng]: tujuan penumpang.
   /// [onlyDriversBeforePassenger]: true = hanya driver yang belum melewati penumpang (default true).
+  /// Radius & limit dinamis berdasarkan jarak asal–tujuan (travel jarak jauh).
+  static ({double radiusKm, int limit}) _radiusLimitFromDistance(double distanceMeters) {
+    if (distanceMeters < 30000) {
+      return (radiusKm: 30, limit: 50);
+    }
+    if (distanceMeters < 80000) {
+      return (radiusKm: 60, limit: 65);
+    }
+    return (radiusKm: 100, limit: 80);
+  }
+
   static Future<List<ActiveDriverRoute>> getActiveDriversForMap({
     double? passengerOriginLat,
     double? passengerOriginLng,
     double? passengerDestLat,
     double? passengerDestLng,
+    String? city,
     bool onlyDriversBeforePassenger = true,
   }) async {
-    final all = await getActiveDriverRoutes();
+    double? radiusKm;
+    int? limit;
+    if (passengerOriginLat != null &&
+        passengerOriginLng != null &&
+        passengerDestLat != null &&
+        passengerDestLng != null) {
+      final distM = Geolocator.distanceBetween(
+        passengerOriginLat,
+        passengerOriginLng,
+        passengerDestLat,
+        passengerDestLng,
+      );
+      final rl = _radiusLimitFromDistance(distM);
+      radiusKm = rl.radiusKm;
+      limit = rl.limit;
+    }
+    final all = await getActiveDriverRoutes(
+      pickupLat: passengerOriginLat,
+      pickupLng: passengerOriginLng,
+      city: city,
+      radiusKm: radiusKm,
+      limit: limit,
+    );
     if (all.isEmpty) return [];
 
     // Jika tidak ada lokasi awal atau tujuan penumpang, kembalikan semua driver

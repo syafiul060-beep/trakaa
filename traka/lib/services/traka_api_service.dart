@@ -47,6 +47,13 @@ class TrakaApiService {
     return await http.delete(uri, headers: headers);
   }
 
+  static Future<http.Response> _httpPatch(Uri uri, {Map<String, String>? headers, Object? body}) async {
+    if (TrakaApiConfig.isCertificatePinningEnabled) {
+      return await _secureClient.patch(uri, headers: headers, body: body);
+    }
+    return await http.patch(uri, headers: headers, body: body);
+  }
+
   static Future<String?> _getIdToken() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
@@ -89,6 +96,27 @@ class TrakaApiService {
     }
   }
 
+  /// PATCH /api/driver/status - Partial update (Tahap 4.1: currentPassengerCount).
+  static Future<bool> patchDriverStatus({
+    required int currentPassengerCount,
+  }) async {
+    if (!_enabled) return false;
+    try {
+      final res = await _httpPatch(
+        Uri.parse('$_base/api/driver/status'),
+        headers: await _authHeaders(),
+        body: _jsonEncode({'currentPassengerCount': currentPassengerCount}),
+      );
+      if (res.statusCode >= 500 || res.statusCode == 429) {
+        throw Exception('HTTP ${res.statusCode}');
+      }
+      return res.statusCode == 200;
+    } catch (e) {
+      if (kDebugMode) debugPrint('TrakaApiService.patchDriverStatus: $e');
+      return false;
+    }
+  }
+
   /// DELETE /api/driver/status - Hapus status driver.
   static Future<bool> deleteDriverStatus() async {
     if (!_enabled) return false;
@@ -127,6 +155,42 @@ class TrakaApiService {
     } catch (e) {
       if (kDebugMode) debugPrint('TrakaApiService.getDriverStatus: $e');
       return null;
+    }
+  }
+
+  /// GET /api/match/drivers – driver terdekat dari titik pickup (#9, Tahap 2).
+  /// Tidak perlu auth. Returns [{ uid, distance, ...driverStatus }].
+  static Future<List<Map<String, dynamic>>> getMatchDrivers({
+    required double lat,
+    required double lng,
+    String? city,
+    double radiusKm = 5,
+    int limit = 30,
+    int? minCapacity,
+  }) async {
+    if (!_enabled) return [];
+    try {
+      final query = <String, String>{
+        'lat': lat.toString(),
+        'lng': lng.toString(),
+        if (city != null && city.isNotEmpty) 'city': city,
+        'radius': radiusKm.toString(),
+        'limit': limit.toString(),
+        if (minCapacity != null && minCapacity > 0) 'minCapacity': minCapacity.toString(),
+      };
+      final uri = Uri.parse('$_base/api/match/drivers').replace(queryParameters: query);
+      final res = await _httpGet(uri);
+      if (res.statusCode != 200) return [];
+      final data = _jsonDecode(res.body) as Map<String, dynamic>?;
+      final list = data?['drivers'] as List<dynamic>?;
+      if (list == null) return [];
+      return list
+          .whereType<Map<String, dynamic>>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (e) {
+      if (kDebugMode) debugPrint('TrakaApiService.getMatchDrivers: $e');
+      return [];
     }
   }
 

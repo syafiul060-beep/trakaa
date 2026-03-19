@@ -6,7 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/order_model.dart';
 
 /// Warna hijau untuk penjemputan (beda dengan oranye pengantaran).
-const Color _penjemputanColor = Color(0xFF2E7D32); // Green 800
+const Color _penjemputanColor = Color(0xFF00B14F); // Grab green
 
 /// Daftar penumpang/barang yang sudah kesepakatan dan menunggu dijemput.
 /// Tampil di bawah zoom in/out (kanan atas). Tombol "Arahkan ke penumpang" → navigasi ke lokasi jemput.

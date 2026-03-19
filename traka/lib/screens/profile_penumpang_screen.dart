@@ -37,6 +37,8 @@ import '../widgets/profile_face_validation_dialog.dart';
 import '../widgets/delayed_loading_builder.dart';
 import '../widgets/shimmer_loading.dart';
 import '../widgets/theme_toggle_widget.dart';
+import '../widgets/biometric_login_credential_tile.dart';
+import '../widgets/biometric_toggle_widget.dart';
 import '../services/driver_status_service.dart';
 import '../services/passenger_proximity_notification_service.dart';
 import '../services/receiver_proximity_notification_service.dart';
@@ -1074,6 +1076,44 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
     );
   }
 
+  void _showBiometricSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                TrakaL10n.of(context).locale == AppLocale.id
+                    ? 'Kunci dengan sidik jari/wajah'
+                    : 'Lock with fingerprint/face',
+                style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                TrakaL10n.of(context).locale == AppLocale.id
+                    ? 'Minta verifikasi saat buka app dari background'
+                    : 'Require verification when opening app from background',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 24),
+              const BiometricToggleWidget(),
+              const SizedBox(height: 16),
+              const BiometricLoginCredentialTile(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showSnackBar(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1451,6 +1491,13 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                       SizedBox(height: context.responsive.spacing(16)),
                       _buildSectionHeader(TrakaL10n.of(context).other),
                       const SizedBox(height: 8),
+                      _buildMenuCard(
+                        title: TrakaL10n.of(context).locale == AppLocale.id
+                            ? 'Kunci dengan sidik jari/wajah'
+                            : 'Lock with fingerprint/face',
+                        icon: Icons.fingerprint,
+                        onTap: _showBiometricSheet,
+                      ),
                       _buildLiteModeTile(),
                       _buildMenuCard(
                         title: TrakaL10n.of(context).showLowRamWarning,

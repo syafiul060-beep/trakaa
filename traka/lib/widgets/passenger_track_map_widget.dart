@@ -156,8 +156,9 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
     try {
       final result = await CarIconService.loadCarIcons(
         context: context,
-        baseSize: 28,
+        baseSize: 14,
         padding: 4,
+        forPassenger: true,
       );
       if (mounted) {
         _carIconRed = result.red;
@@ -762,7 +763,11 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
         StyledGoogleMapBuilder(
           builder: (style, _) => GoogleMap(
             buildingsEnabled: true,
-            initialCameraPosition: CameraPosition(target: pos, zoom: MapStyleService.defaultZoom),
+            initialCameraPosition: CameraPosition(
+              target: pos,
+              zoom: MapStyleService.defaultZoom,
+              tilt: MapStyleService.defaultTilt,
+            ),
             onMapCreated: (c) => _mapController = c,
             onCameraMoveStarted: () {
               if (_suppressNextCameraMoveStarted) {

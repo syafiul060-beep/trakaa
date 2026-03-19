@@ -53,6 +53,7 @@ import 'pesan_screen.dart';
 import 'chat_penumpang_screen.dart';
 import 'chat_room_penumpang_screen.dart';
 import 'profile_penumpang_screen.dart';
+import 'login_screen.dart';
 
 class PenumpangScreen extends StatefulWidget {
   final String? prefillOrigin;
@@ -92,6 +93,11 @@ class _PenumpangScreenState extends State<PenumpangScreen>
   String? _currentPulau; // pulau (diturunkan dari provinsi)
   Timer? _locationRefreshTimer;
   Timer? _authTokenRefreshTimer;
+
+  /// Tunggu sebelum tampilkan "Sesi tidak valid" — hindari logout palsu saat token refresh (mis. setelah telpon WA).
+  Timer? _sessionInvalidCheckTimer;
+  bool _sessionInvalidConfirmed = false;
+  StreamSubscription<User?>? _authStateSub;
 
   // State untuk driver aktif yang ditemukan
   List<ActiveDriverRoute> _foundDrivers = [];
@@ -210,6 +216,13 @@ class _PenumpangScreenState extends State<PenumpangScreen>
       });
     }
 
+    _authStateSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null && mounted) {
+        _sessionInvalidCheckTimer?.cancel();
+        _sessionInvalidConfirmed = false;
+        setState(() {});
+      }
+    });
     // Stream pesanan penumpang + receiver untuk badge unread chat
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
@@ -440,6 +453,8 @@ class _PenumpangScreenState extends State<PenumpangScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _authTokenRefreshTimer?.cancel();
+    _sessionInvalidCheckTimer?.cancel();
+    _authStateSub?.cancel();
     PassengerProximityNotificationService.stop();
     ReceiverProximityNotificationService.stop();
     _disposeDriverTracking();
@@ -1320,8 +1335,9 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     try {
       final result = await CarIconService.loadCarIcons(
         context: context,
-        baseSize: 38,
-        padding: 8,
+        baseSize: 14,
+        padding: 4,
+        forPassenger: true,
       );
       if (mounted) {
         _carIconRed = result.red;
@@ -1915,6 +1931,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
                           114.5907,
                         ), // Default: Kalimantan Selatan
                   zoom: MapStyleService.defaultZoom,
+                  tilt: MapStyleService.defaultTilt,
                 ),
                 mapType: effectiveMapType,
                 style: style,
@@ -2091,10 +2108,59 @@ class _PenumpangScreenState extends State<PenumpangScreen>
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      // Tunggu 3 detik sebelum tampilkan "Sesi tidak valid" — hindari logout palsu saat
+      // token refresh (mis. setelah telpon WA, app resume dari background).
+      if (!_sessionInvalidConfirmed) {
+        _sessionInvalidCheckTimer?.cancel();
+        _sessionInvalidCheckTimer = Timer(const Duration(milliseconds: 3000), () {
+          if (!mounted) return;
+          final now = FirebaseAuth.instance.currentUser;
+          if (now == null) {
+            setState(() => _sessionInvalidConfirmed = true);
+          } else {
+            setState(() => _sessionInvalidConfirmed = false);
+          }
+        });
+        return const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        );
+      }
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.warning_amber_rounded, size: 64, color: Colors.orange.shade700),
+                const SizedBox(height: 16),
+                Text(
+                  'Sesi tidak valid. Silakan login ulang.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: () {
+                    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                      MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  },
+                  icon: const Icon(Icons.login),
+                  label: const Text('Ke Login'),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
+    _sessionInvalidConfirmed = false;
 
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance

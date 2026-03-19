@@ -1956,6 +1956,7 @@ class _JadwalRoutePreviewScreenState extends State<_JadwalRoutePreviewScreen> {
               initialCameraPosition: CameraPosition(
                 target: origin,
                 zoom: MapStyleService.defaultZoom,
+                tilt: MapStyleService.defaultTilt,
               ),
               onMapCreated: _onMapCreated,
               mapType: MapType.normal,

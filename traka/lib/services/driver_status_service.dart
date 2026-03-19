@@ -75,6 +75,8 @@ class DriverStatusService {
   /// [routeSelectedIndex]: index rute alternatif yang dipilih (0, 1, 2, ...)
   /// [scheduleId]: ID jadwal yang dijalankan (untuk pesanan terjadwal); dipakai saat routeFromJadwal true.
   /// [routeCategory]: kategori rute (dalam_kota, antar_kabupaten, antar_provinsi, nasional).
+  /// [city]: slug kota/kabupaten untuk GEO matching (#9). Dari subAdministrativeArea.
+  /// [maxPassengers]: kapasitas mobil untuk filter matching (Tahap 4.2). Dari users.vehicleJumlahPenumpang.
   static Future<void> updateDriverStatus({
     required String status,
     required Position position,
@@ -90,6 +92,8 @@ class DriverStatusService {
     int routeSelectedIndex = 0,
     String? scheduleId,
     String? routeCategory,
+    String? city,
+    int? maxPassengers,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -154,6 +158,8 @@ class DriverStatusService {
         'longitude': position.longitude,
         'status': status,
         if (currentPassengerCount != null) 'currentPassengerCount': currentPassengerCount,
+        if (city != null && city.isNotEmpty) 'city': city,
+        if (maxPassengers != null && maxPassengers > 0) 'maxPassengers': maxPassengers,
       };
       if (status == statusSiapKerja &&
           routeOrigin != null &&
@@ -173,6 +179,11 @@ class DriverStatusService {
         if (routeCategory != null && routeCategory.isNotEmpty) apiBody['routeCategory'] = routeCategory;
       }
       await TrakaApiService.postDriverLocation(apiBody);
+      // Dual-write ke Firestore: penumpang non-hybrid bisa tetap menemukan driver
+      await FirebaseFirestore.instance
+          .collection(_collectionDriverStatus)
+          .doc(user.uid)
+          .set(data, SetOptions(merge: true));
     } else {
       await FirebaseFirestore.instance
           .collection(_collectionDriverStatus)
@@ -182,15 +193,12 @@ class DriverStatusService {
   }
 
   /// Update hanya currentPassengerCount (dipanggil saat daftar pesanan berubah).
+  /// Tahap 4.1: API support PATCH partial update.
   static Future<void> updateCurrentPassengerCount(int count) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     if (TrakaApiConfig.isApiEnabled) {
-      // API membutuhkan full update - perlu posisi terakhir. Lewati jika driver
-      // belum pernah update lokasi via API. Atau bisa fetch dulu lalu merge.
-      // Untuk sementara, driver_status API tidak support partial update.
-      // Count akan ter-update saat driver update lokasi berikutnya.
-      return;
+      await TrakaApiService.patchDriverStatus(currentPassengerCount: count);
     }
     await FirebaseFirestore.instance
         .collection(_collectionDriverStatus)
@@ -263,12 +271,12 @@ class DriverStatusService {
 
     if (TrakaApiConfig.isApiEnabled) {
       await TrakaApiService.deleteDriverStatus();
-    } else {
-      await FirebaseFirestore.instance
-          .collection(_collectionDriverStatus)
-          .doc(user.uid)
-          .delete();
     }
+    // Hapus dari Firestore (dual-write: hybrid juga tulis Firestore)
+    await FirebaseFirestore.instance
+        .collection(_collectionDriverStatus)
+        .doc(user.uid)
+        .delete();
   }
 
   /// Ambil rute kerja aktif driver dari Firestore/API (jika status siap_kerja + ada data rute).

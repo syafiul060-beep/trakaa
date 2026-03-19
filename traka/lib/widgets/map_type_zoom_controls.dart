@@ -5,8 +5,9 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/theme_service.dart';
 import '../theme/app_theme.dart';
 
-/// Kontrol map: toggle satelit/normal + zoom in/out.
+/// Kontrol map: toggle satelit/normal + zoom in/out + lalu lintas.
 /// [onThemeToggle]: opsional, jika ada tampilkan tombol tema (mode malam/terang) untuk driver.
+/// [trafficEnabled] + [onToggleTraffic]: layer kemacetan (seperti Grab).
 class MapTypeZoomControls extends StatelessWidget {
   const MapTypeZoomControls({
     super.key,
@@ -16,6 +17,8 @@ class MapTypeZoomControls extends StatelessWidget {
     required this.onZoomOut,
     this.topOffset = 60,
     this.onThemeToggle,
+    this.trafficEnabled = false,
+    this.onToggleTraffic,
   });
 
   final MapType mapType;
@@ -24,6 +27,8 @@ class MapTypeZoomControls extends StatelessWidget {
   final VoidCallback onZoomOut;
   final double topOffset;
   final VoidCallback? onThemeToggle;
+  final bool trafficEnabled;
+  final VoidCallback? onToggleTraffic;
 
   @override
   Widget build(BuildContext context) {
@@ -49,25 +54,11 @@ class MapTypeZoomControls extends StatelessWidget {
                   },
                   borderRadius: BorderRadius.circular(4),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isDark ? Icons.dark_mode : Icons.light_mode,
-                          size: 20,
-                          color: AppTheme.primary,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          isDark ? 'Malam' : 'Terang',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.onSurface,
-                          ),
-                        ),
-                      ],
+                    padding: const EdgeInsets.all(8),
+                    child: Icon(
+                      isDark ? Icons.dark_mode : Icons.light_mode,
+                      size: 20,
+                      color: AppTheme.primary,
                     ),
                   ),
                 ),
@@ -95,6 +86,29 @@ class MapTypeZoomControls extends StatelessWidget {
               ),
             ),
           ),
+          if (onToggleTraffic != null) ...[
+            const SizedBox(height: 8),
+            Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(4),
+              color: colorScheme.surface,
+              child: InkWell(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  onToggleTraffic!();
+                },
+                borderRadius: BorderRadius.circular(4),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(
+                    Icons.traffic,
+                    size: 20,
+                    color: trafficEnabled ? Colors.orange : colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           Column(
             children: [

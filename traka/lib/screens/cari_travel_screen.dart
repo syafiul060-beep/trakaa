@@ -103,8 +103,9 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
     try {
       final result = await CarIconService.loadCarIcons(
         context: context,
-        baseSize: 38,
-        padding: 8,
+        baseSize: 14,
+        padding: 4,
+        forPassenger: true,
       );
       if (mounted) {
         setState(() {
@@ -809,6 +810,7 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
                             (_filteredDrivers.isNotEmpty ? _filteredDrivers.first : _drivers.first).driverLng,
                           ),
                           zoom: MapStyleService.searchZoom,
+                          tilt: MapStyleService.defaultTilt,
                         ),
                         style: style,
                         markers: _clusterMarkers,

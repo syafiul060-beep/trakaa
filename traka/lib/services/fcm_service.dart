@@ -15,10 +15,30 @@ import 'route_notification_service.dart';
 
 /// Handler untuk pesan FCM saat app di background/terminated (harus top-level).
 /// Untuk data-only message, tampilkan notifikasi lokal.
+bool _isDuplicateAppError(Object e) {
+  final msg = e.toString().toLowerCase();
+  if (msg.contains('duplicate-app') ||
+      msg.contains('core/duplicate-app') ||
+      msg.contains('already exists')) return true;
+  try {
+    final code = (e as dynamic).code as String?;
+    return code?.toLowerCase() == 'duplicate-app' ||
+        code?.toLowerCase() == 'core/duplicate-app';
+  } catch (_) {
+    return false;
+  }
+}
+
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    }
+  } catch (e) {
+    if (!_isDuplicateAppError(e)) rethrow;
+  }
+  try {
     // Jika pesan punya notification payload, sistem Android menampilkan otomatis.
     if (message.notification != null) return;
     final data = message.data;

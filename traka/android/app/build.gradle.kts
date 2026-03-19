@@ -6,6 +6,7 @@ plugins {
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
     id("com.google.gms.google-services")
+    id("com.google.firebase.firebase-perf")
     id("com.google.firebase.crashlytics")
 }
 
@@ -43,10 +44,10 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        // Maps API key: dari key.properties (MAPS_API_KEY) atau env MAPS_API_KEY. Fallback: key aplikasi Traka.
+        // Maps API key: dari key.properties (MAPS_API_KEY) atau env MAPS_API_KEY. WAJIB di-set.
         val mapsKey = (keystoreProperties["MAPS_API_KEY"]?.toString()
             ?: System.getenv("MAPS_API_KEY")
-            ?: "AIzaSyAZ8nJZwU7lrxsDN1MZTbUCJaApUwY6b4M")
+            ?: "")
         manifestPlaceholders["mapsApiKey"] = mapsKey
     }
 

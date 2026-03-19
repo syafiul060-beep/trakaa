@@ -76,4 +76,53 @@ async function scanKeysPaginated(pattern, startCursor = 0, limit = 50) {
   return { keys, nextCursor: cursor };
 }
 
-module.exports = { initRedis, getRedis, scanKeys, scanKeysPaginated };
+/**
+ * GEO helpers (#9) – driver matching by proximity.
+ * Key: drivers:geo:{city}
+ */
+async function geoAddDriver(city, uid, lng, lat) {
+  if (!client) return;
+  const key = `drivers:geo:${city}`;
+  await client.sendCommand(['GEOADD', key, String(lng), String(lat), `driver_${uid}`]);
+}
+
+async function geoRemoveDriver(city, uid) {
+  if (!client) return;
+  const key = `drivers:geo:${city}`;
+  await client.sendCommand(['ZREM', key, `driver_${uid}`]);
+}
+
+/**
+ * Cari driver terdekat dari titik (lat, lng).
+ * @returns {Promise<Array<{uid: string, distance: number}>>}
+ */
+async function geoSearchDrivers(city, lng, lat, radiusKm = 5, limit = 20) {
+  if (!client) return [];
+  const key = `drivers:geo:${city}`;
+  const raw = await client.sendCommand([
+    'GEORADIUS', key, String(lng), String(lat), String(radiusKm), 'km',
+    'WITHDIST', 'ASC', 'COUNT', String(limit),
+  ]);
+  if (!Array.isArray(raw)) return [];
+  const results = [];
+  for (let i = 0; i < raw.length; i++) {
+    const item = raw[i];
+    if (Array.isArray(item) && item.length >= 2) {
+      results.push({
+        uid: String(item[0]).replace(/^driver_/, ''),
+        distance: parseFloat(item[1]) || 0,
+      });
+    }
+  }
+  return results;
+}
+
+module.exports = {
+  initRedis,
+  getRedis,
+  scanKeys,
+  scanKeysPaginated,
+  geoAddDriver,
+  geoRemoveDriver,
+  geoSearchDrivers,
+};

@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../services/directions_service.dart';
 
-/// Overlay arah belok HUD (arrow besar + jarak + nama jalan) di atas peta.
+/// Overlay arah belok HUD (arrow besar + jarak + nama jalan) di atas peta. Gaya Grab.
 class DriverTurnDirectionOverlay extends StatelessWidget {
   const DriverTurnDirectionOverlay({
     super.key,
     required this.step,
     required this.currentStreetName,
+    this.remainingDistanceText,
   });
 
   final RouteStep step;
   final String currentStreetName;
+  /// Sisa jarak ke tujuan (mis. "2,3 km").
+  final String? remainingDistanceText;
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +56,7 @@ class DriverTurnDirectionOverlay extends StatelessWidget {
         child: Material(
           elevation: 8,
           borderRadius: BorderRadius.circular(16),
-          color: const Color(0xFF2E7D32).withValues(alpha: 0.95),
+          color: const Color(0xFF00B14F).withValues(alpha: 0.95),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             child: Column(
@@ -62,7 +65,7 @@ class DriverTurnDirectionOverlay extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(turnIcon, color: Colors.white, size: 40),
+                    Icon(turnIcon, color: Colors.white, size: 44),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
@@ -72,11 +75,11 @@ class DriverTurnDirectionOverlay extends StatelessWidget {
                             step.distanceText,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 18,
+                              fontSize: 24,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 4),
                           Text(
                             step.instruction,
                             style: const TextStyle(
@@ -87,6 +90,20 @@ class DriverTurnDirectionOverlay extends StatelessWidget {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
+                          if (remainingDistanceText != null &&
+                              remainingDistanceText!.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Sisa $remainingDistanceText ke tujuan',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.9),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ],
                       ),
                     ),

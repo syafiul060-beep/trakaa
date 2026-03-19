@@ -6,6 +6,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:face_verification/face_verification.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../l10n/app_localizations.dart';
@@ -26,6 +27,7 @@ import '../services/face_photo_pool_service.dart';
 import '../services/face_validation_service.dart';
 import '../services/verification_log_service.dart';
 import '../services/auth_redirect_state.dart';
+import '../services/biometric_login_service.dart';
 import 'active_liveness_screen.dart';
 import 'forgot_password_screen.dart';
 import 'register_screen.dart';
@@ -55,12 +57,18 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _loginWithPhone = false;
   String? _phoneVerificationId;
   bool _phoneOtpSent = false;
+  bool _showBiometricLogin = false;
+  bool _biometricLoginLoading = false;
+  bool _saveBiometricForNextLogin = false;
+  bool _canSaveBiometric = false;
+  bool _isFacePreferred = false;
 
   @override
   void initState() {
     super.initState();
     AuthRedirectState.setOnLoginScreen(true);
     _requestDeviceId();
+    _checkBiometricLogin();
     if (widget.deviceAlreadyUsedMessage != null &&
         widget.deviceAlreadyUsedMessage!.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -88,6 +96,49 @@ class _LoginScreenState extends State<LoginScreen> {
   /// Mendapatkan Device ID saat halaman login (untuk verifikasi perangkat).
   Future<void> _requestDeviceId() async {
     await DeviceService.getDeviceId();
+  }
+
+  Future<void> _checkBiometricLogin() async {
+    final hasCred = await BiometricLoginService.hasStoredCredentials();
+    final canUse = await BiometricLoginService.canUseBiometricLogin;
+    final facePreferred = await BiometricLoginService.isFacePreferred;
+    if (mounted) {
+      setState(() {
+        _showBiometricLogin = hasCred && canUse;
+        _canSaveBiometric = canUse;
+        _isFacePreferred = facePreferred;
+      });
+    }
+  }
+
+  Future<void> _onBiometricLogin() async {
+    if (_biometricLoginLoading) return;
+    setState(() => _biometricLoginLoading = true);
+    AuthRedirectState.setInLoginFlow(true);
+    final reason = l10n.locale == AppLocale.id
+        ? 'Verifikasi sidik jari atau wajah untuk login'
+        : 'Verify fingerprint or face to login';
+    final (success, error) = await BiometricLoginService.loginWithBiometric(
+      reason: reason,
+      isId: l10n.locale == AppLocale.id,
+    );
+    if (!mounted) return;
+    setState(() => _biometricLoginLoading = false);
+    AuthRedirectState.setInLoginFlow(false);
+    if (success) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        await _handlePostLogin(uid);
+      }
+    } else if (error != null && error.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override
@@ -275,15 +326,18 @@ class _LoginScreenState extends State<LoginScreen> {
       logError('LoginScreen._onLoginWithPhoneOrPassword', e, st);
       if (!mounted) return;
       setState(() => _isLoading = false);
+      final errStr = e.toString();
+      final msg = kDebugMode
+          ? (errStr.length > 120 ? '${errStr.substring(0, 120)}...' : errStr)
+          : (l10n.locale == AppLocale.id
+              ? 'Gagal login. Silakan coba lagi.'
+              : 'Login failed. Please try again.');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            l10n.locale == AppLocale.id
-                ? 'Gagal login. Silakan coba lagi.'
-                : 'Login failed. Please try again.',
-          ),
+          content: Text(msg, textAlign: TextAlign.center),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
         ),
       );
     }
@@ -343,6 +397,12 @@ class _LoginScreenState extends State<LoginScreen> {
       final userCredential = await FirebaseAuth.instance
           .signInWithEmailAndPassword(email: email.trim().toLowerCase(), password: password);
       final uid = userCredential.user!.uid;
+      if (_saveBiometricForNextLogin) {
+        await BiometricLoginService.saveCredentials(
+          email: email.trim().toLowerCase(),
+          password: password,
+        );
+      }
       await _handlePostLogin(uid);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
@@ -434,19 +494,24 @@ class _LoginScreenState extends State<LoginScreen> {
         logError('LoginScreen.DeviceSecurityService.recordLoginFailed', e2, st2);
       }
       if (!mounted) return;
+      // Debug: tampilkan error detail (truncate jika panjang)
+      final errStr = e.toString();
+      final msg = kDebugMode
+          ? (errStr.length > 120 ? '${errStr.substring(0, 120)}...' : errStr)
+          : (l10n.locale == AppLocale.id
+              ? 'Gagal login. Silakan coba lagi.'
+              : 'Login failed. Please try again.');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            l10n.locale == AppLocale.id
-                ? 'Gagal login. Silakan coba lagi.'
-                : 'Login failed. Please try again.',
+            msg,
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 5),
         ),
       );
     }
@@ -1398,7 +1463,18 @@ class _LoginScreenState extends State<LoginScreen> {
                 SizedBox(height: context.responsive.spacing(24)),
                 // Logo
                 const _LogoSection(),
-                SizedBox(height: context.responsive.spacing(40)),
+                SizedBox(height: context.responsive.spacing(24)),
+                // Login dengan sidik jari/wajah (jika ada kredensial tersimpan)
+                if (_showBiometricLogin) ...[
+                  _BiometricLoginButton(
+                    isLoading: _biometricLoginLoading,
+                    onTap: _onBiometricLogin,
+                    isId: l10n.locale == AppLocale.id,
+                    isFacePreferred: _isFacePreferred,
+                  ),
+                  SizedBox(height: context.responsive.spacing(24)),
+                ],
+                SizedBox(height: context.responsive.spacing(16)),
                 // Form terpadu: Email atau No. Telepon + Password. Legacy OTP jika akun lama.
                 if (!_loginWithPhone) ...[
                   _UnderlineTextField(
@@ -1442,7 +1518,25 @@ class _LoginScreenState extends State<LoginScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 28),
+                  if (_canSaveBiometric) ...[
+                    CheckboxListTile(
+                      value: _saveBiometricForNextLogin,
+                      onChanged: (v) => setState(() => _saveBiometricForNextLogin = v ?? false),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      title: Text(
+                        l10n.locale == AppLocale.id
+                            ? 'Login dengan sidik jari next time'
+                            : 'Login with fingerprint next time',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
                   Semantics(
                     label: l10n.loginButton,
                     button: true,
@@ -1807,6 +1901,135 @@ class _RegisterTypeTile extends StatelessWidget {
                   fontWeight: FontWeight.w500,
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BiometricLoginButton extends StatelessWidget {
+  final bool isLoading;
+  final VoidCallback onTap;
+  final bool isId;
+  final bool isFacePreferred;
+
+  const _BiometricLoginButton({
+    required this.isLoading,
+    required this.onTap,
+    required this.isId,
+    this.isFacePreferred = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final primary = colorScheme.primary;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isLoading ? null : onTap,
+        borderRadius: BorderRadius.circular(20),
+        splashColor: primary.withValues(alpha: 0.2),
+        highlightColor: primary.withValues(alpha: 0.1),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                primary.withValues(alpha: 0.12),
+                primary.withValues(alpha: 0.05),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: primary.withValues(alpha: 0.35),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: primary.withValues(alpha: 0.08),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      primary.withValues(alpha: 0.25),
+                      primary.withValues(alpha: 0.12),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: primary.withValues(alpha: 0.15),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: isLoading
+                    ? SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: primary,
+                        ),
+                      )
+                    : Icon(
+                        isFacePreferred ? Icons.face_rounded : Icons.fingerprint_rounded,
+                        size: 40,
+                        color: primary,
+                      ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isId
+                          ? (isFacePreferred ? 'Login dengan wajah' : 'Login dengan sidik jari')
+                          : (isFacePreferred ? 'Login with face' : 'Login with fingerprint'),
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.onSurface,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      isId
+                          ? 'Tap untuk verifikasi sidik jari atau wajah'
+                          : 'Tap to verify fingerprint or face',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colorScheme.onSurfaceVariant,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!isLoading)
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 16,
+                  color: primary.withValues(alpha: 0.9),
+                ),
             ],
           ),
         ),

@@ -5,11 +5,9 @@ import 'dart:ui' show PlatformDispatcher;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_performance/firebase_performance.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -38,9 +36,16 @@ import 'services/auth_redirect_state.dart';
 import 'services/lite_mode_service.dart';
 import 'services/connectivity_service.dart';
 import 'widgets/offline_banner.dart';
+import 'services/biometric_lock_service.dart';
+import 'services/car_icon_service.dart';
+import 'widgets/biometric_lifecycle_handler.dart';
+import 'widgets/biometric_lock_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Bersihkan cache icon mobil lama (transparansi, dll.)
+  CarIconService.clearCache();
 
   // Lock orientasi portrait: HP landscape tetap tampil portrait (driver lebih aman)
   await SystemChrome.setPreferredOrientations([
@@ -53,38 +58,15 @@ void main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
   } catch (e, st) {
-    debugPrint('Firebase init error: $e');
-    debugPrint('$st');
-    runApp(_ErrorApp(message: 'Gagal memuat Firebase: $e'));
-    return;
-  }
-
-  // App Check: aktif default. Nonaktifkan via web admin (app_config/settings.appCheckEnabled = false).
-  bool appCheckEnabled = true;
-  try {
-    final settingsDoc = await FirebaseFirestore.instance
-        .collection('app_config')
-        .doc('settings')
-        .get();
-    final v = settingsDoc.data()?['appCheckEnabled'];
-    if (v == false) appCheckEnabled = false;
-  } catch (e, st) {
-    debugPrint('App Check config read error: $e');
-    debugPrint('$st');
-  }
-  if (appCheckEnabled) {
-    try {
-      await FirebaseAppCheck.instance.activate(
-        androidProvider: kDebugMode
-            ? AndroidProvider.debug
-            : AndroidProvider.playIntegrity,
-        appleProvider: kDebugMode
-            ? AppleProvider.debug
-            : AppleProvider.appAttest,
-      );
-    } catch (e, st) {
-      debugPrint('App Check init error: $e');
+    // Android native bisa auto-init Firebase dari google-services.json.
+    // Jika duplicate-app, Firebase sudah ada — lanjut saja.
+    if (_isDuplicateAppError(e)) {
+      debugPrint('Firebase sudah di-init (native/duplicate): $e');
+    } else {
+      debugPrint('Firebase init error: $e');
       debugPrint('$st');
+      runApp(_ErrorApp(message: 'Gagal memuat Firebase: $e'));
+      return;
     }
   }
 
@@ -120,7 +102,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => AppConfigProvider()),
       ],
-      child: const TrakaApp(),
+      child: const BiometricLifecycleHandler(child: TrakaApp()),
     ),
   );
 
@@ -135,6 +117,22 @@ void main() async {
 
   // Tahap 2: authStateChanges – redirect ke Login saat user sign out (token invalid, dll.)
   _setupAuthStateListener();
+}
+
+/// Cek apakah error duplicate-app (Firebase sudah di-init native/plugin).
+bool _isDuplicateAppError(Object e) {
+  final msg = e.toString().toLowerCase();
+  if (msg.contains('duplicate-app') ||
+      msg.contains('core/duplicate-app') ||
+      msg.contains('already exists')) return true;
+  // PlatformException / FirebaseException punya .code
+  try {
+    final code = (e as dynamic).code as String?;
+    return code?.toLowerCase() == 'duplicate-app' ||
+        code?.toLowerCase() == 'core/duplicate-app';
+  } catch (_) {
+    return false;
+  }
 }
 
 /// Cek apakah error dari pemuatan gambar (HttpException 4xx) – jangan laporkan ke Crashlytics.
@@ -158,6 +156,7 @@ void _setupAuthStateListener() {
   User? prevUser;
   FirebaseAuth.instance.authStateChanges().listen((user) {
     if (prevUser != null && user == null) {
+      BiometricLockService.forceUnlock();
       VoiceCallIncomingService.stop();
       // Tunggu 3 detik: token refresh (linkWithCredential, update email, sign in) bisa emit null sementara
       Future<void>.delayed(const Duration(milliseconds: 3000), () {
@@ -313,6 +312,9 @@ class TrakaApp extends StatelessWidget {
                     const Positioned.fill(
                       child: FakeGpsOverlay(),
                     ),
+                  const Positioned.fill(
+                    child: BiometricLockOverlay(),
+                  ),
                 ],
               );
             },

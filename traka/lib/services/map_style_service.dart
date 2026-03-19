@@ -74,4 +74,6 @@ class MapStyleService {
   static const double trackingZoom = 16.0;
   /// Zoom Cari Travel (area luas, banyak driver).
   static const double searchZoom = 11.0;
+  /// Tilt awal untuk efek 3D gedung (35° = gedung tampil 3D, tidak terlalu curam).
+  static const double defaultTilt = 35.0;
 }

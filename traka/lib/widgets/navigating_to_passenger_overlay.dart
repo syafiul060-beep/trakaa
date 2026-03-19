@@ -55,14 +55,14 @@ class NavigatingToPassengerOverlay extends StatelessWidget {
                           Icon(
                             Icons.person_pin_circle,
                             size: 20,
-                            color: const Color(0xFF2E7D32),
+                            color: const Color(0xFF00B14F),
                           ),
                           const SizedBox(width: 8),
                           Flexible(
                             child: Text(
                               'Menuju penumpang',
                               style: const TextStyle(
-                                color: Color(0xFF2E7D32),
+                                color: Color(0xFF00B14F),
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -80,7 +80,7 @@ class NavigatingToPassengerOverlay extends StatelessWidget {
                           size: 22,
                           color: voiceMuted
                               ? Theme.of(context).colorScheme.onSurfaceVariant
-                              : const Color(0xFF2E7D32),
+                              : const Color(0xFF00B14F),
                         ),
                         tooltip: voiceMuted ? 'Nyalakan suara' : 'Matikan suara',
                         style: IconButton.styleFrom(
@@ -106,13 +106,13 @@ class NavigatingToPassengerOverlay extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF2E7D32).withValues(alpha: 0.15),
+                      color: const Color(0xFF00B14F).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       '~1 km lagi',
                       style: const TextStyle(
-                        color: Color(0xFF2E7D32),
+                        color: Color(0xFF00B14F),
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),

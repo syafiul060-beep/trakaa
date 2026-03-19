@@ -75,6 +75,7 @@ Jika berhasil, tabel `users` dan `orders` akan dibuat.
    DATABASE_URL=postgresql://postgres.xxx:password@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres
    ```
 3. Ganti dengan connection string Anda dari Langkah 2
+4. Untuk **produksi**, set `PG_POOL_MAX=50` atau `100` — lihat `docs/SETUP_PG_POOL_PRODUCTION.md`
 
 ---
 

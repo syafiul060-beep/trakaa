@@ -75,9 +75,9 @@ Salam, Tim Traka
 const VERIFICATION_CODE_RATE_LIMIT = 3;
 const VERIFICATION_CODE_RATE_WINDOW_MS = 15 * 60 * 1000;
 
-// App Check: Tahap 4 - enforce request hanya dari app resmi (anti-cloning)
+// App Check: enforce request hanya dari app resmi (anti-cloning)
 // Lihat docs/SETUP_APP_CHECK_DAN_ANTI_CLONING.md
-const ENFORCE_APP_CHECK = true;
+const ENFORCE_APP_CHECK = false;
 const callable = ENFORCE_APP_CHECK
   ? functions.runWith({ enforceAppCheck: true }).https
   : functions.https;

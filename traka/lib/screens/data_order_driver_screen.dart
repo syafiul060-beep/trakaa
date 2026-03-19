@@ -69,6 +69,17 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
   Stream<List<OrderModel>>? _cachedOrdersStream;
   String? _cachedOrdersStreamKey;
 
+  /// Cache stream untuk tab Pesanan Terjadwal (cegah kedip).
+  Stream<List<OrderModel>>? _cachedAllOrdersStream;
+  String? _cachedAllOrdersStreamKey;
+
+  /// Cache stream untuk tab Oper ke Saya (cegah kedip).
+  Stream<List<DriverTransferModel>>? _cachedTransfersStream;
+
+  /// Cache stream untuk tab Riwayat Rute (cegah kedip).
+  Stream<List<OrderModel>>? _cachedCompletedOrdersStream;
+  Stream<List<RouteSessionModel>>? _cachedSessionsStream;
+
   /// Posisi driver untuk cek "dekat penumpang" (nonaktifkan Batal, tombol Konfirmasi dijemput). Di-load sekali saat tab Pemesanan.
   Position? _positionForCancel;
   bool _loadingPositionForCancel = false;
@@ -204,7 +215,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                   duration: Duration(seconds: 4),
                 ),
               );
-              setState(() {});
+              // StreamBuilder akan rebuild otomatis saat Firestore emit; hindari setState (cegah kedip)
             }
             break;
           }
@@ -280,7 +291,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
               duration: Duration(seconds: 4),
             ),
           );
-          setState(() {});
+          // StreamBuilder akan rebuild otomatis saat Firestore emit; hindari setState (cegah kedip)
         } else {
           if (kDebugMode) debugPrint('[Traka AutoComplete] Driver order ${order.id}: gagal - $err');
         }
@@ -414,7 +425,45 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
     _tabController.removeListener(_onTabChanged);
     _ordersSubscription?.cancel();
     _tabController.dispose();
+    _cachedAllOrdersStream = null;
+    _cachedAllOrdersStreamKey = null;
+    _cachedTransfersStream = null;
+    _cachedCompletedOrdersStream = null;
+    _cachedSessionsStream = null;
     super.dispose();
+  }
+
+  /// Stream untuk tab Pesanan Terjadwal (cached).
+  Stream<List<OrderModel>> get _allOrdersStreamForScheduled {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return Stream.value([]);
+    final key = user.uid;
+    if (_cachedAllOrdersStream != null && _cachedAllOrdersStreamKey == key) {
+      return _cachedAllOrdersStream!;
+    }
+    _cachedAllOrdersStreamKey = key;
+    _cachedAllOrdersStream = OrderService.streamOrdersForDriver(user.uid);
+    return _cachedAllOrdersStream!;
+  }
+
+  /// Stream untuk tab Oper ke Saya (cached).
+  Stream<List<DriverTransferModel>> get _transfersStream {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return Stream.value([]);
+    _cachedTransfersStream ??= DriverTransferService.streamTransfersForDriver(uid);
+    return _cachedTransfersStream!;
+  }
+
+  /// Stream completed orders untuk tab Riwayat Rute (cached).
+  Stream<List<OrderModel>> get _completedOrdersStream {
+    _cachedCompletedOrdersStream ??= OrderService.streamCompletedOrdersForDriver();
+    return _cachedCompletedOrdersStream!;
+  }
+
+  /// Stream sessions untuk tab Riwayat Rute (cached).
+  Stream<List<RouteSessionModel>> get _sessionsStream {
+    _cachedSessionsStream ??= RouteSessionService.streamSessionsForDriver();
+    return _cachedSessionsStream!;
   }
 
   @override
@@ -573,7 +622,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
       return const Center(child: Text('Belum login.'));
     }
     return StreamBuilder<List<OrderModel>>(
-      stream: OrderService.streamOrdersForDriver(user.uid),
+      stream: _allOrdersStreamForScheduled,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: ShimmerLoading());
@@ -2062,6 +2111,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                           )
                         : pointLatLng,
                     zoom: MapStyleService.defaultZoom,
+                    tilt: MapStyleService.defaultTilt,
                   ),
                   style: style,
                   markers: {
@@ -2292,6 +2342,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                             )
                           : passengerLatLng,
                       zoom: MapStyleService.defaultZoom,
+                      tilt: MapStyleService.defaultTilt,
                     ),
                     style: style,
                     markers: {
@@ -2335,7 +2386,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
     try {
       final result = await CarIconService.loadCarIcons(
         context: context,
-        baseSize: 42,
+        baseSize: 30,
         padding: 12,
       );
       return result.green; // Driver aktif = hijau
@@ -2513,7 +2564,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
     if (uid == null) return const Center(child: Text('Sesi tidak valid'));
 
     return StreamBuilder<List<DriverTransferModel>>(
-      stream: DriverTransferService.streamTransfersForDriver(uid),
+      stream: _transfersStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: ShimmerLoading());
@@ -2783,7 +2834,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
   /// walau chat disembunyikan/dihapus. Route_sessions dipakai untuk metadata jika ada.
   Widget _buildRiwayatRuteTab() {
     return StreamBuilder<List<OrderModel>>(
-      stream: OrderService.streamCompletedOrdersForDriver(),
+      stream: _completedOrdersStream,
       builder: (context, orderSnap) {
         if (orderSnap.connectionState == ConnectionState.waiting) {
           return const Center(child: ShimmerLoading());
@@ -2847,7 +2898,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
           );
         }
         return StreamBuilder<List<RouteSessionModel>>(
-          stream: RouteSessionService.streamSessionsForDriver(),
+          stream: _sessionsStream,
           builder: (context, sessionSnap) {
             final sessions = sessionSnap.data ?? [];
             // Key -> list of sessions (rute terjadwal bisa punya beberapa sesi per scheduleId)

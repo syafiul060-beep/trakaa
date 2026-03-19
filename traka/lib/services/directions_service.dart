@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 
@@ -25,8 +26,10 @@ List<String> _parseWarnings(Map<String, dynamic> route) {
   return warnings;
 }
 
-String _cacheKey(double oLat, double oLng, double dLat, double dLng) =>
-    '${oLat.toStringAsFixed(4)}_${oLng.toStringAsFixed(4)}_${dLat.toStringAsFixed(4)}_${dLng.toStringAsFixed(4)}';
+String _cacheKey(double oLat, double oLng, double dLat, double dLng, {bool traffic = false}) =>
+    '${oLat.toStringAsFixed(4)}_${oLng.toStringAsFixed(4)}_${dLat.toStringAsFixed(4)}_${dLng.toStringAsFixed(4)}${traffic ? "_traffic" : ""}';
+
+const Duration _trafficCacheDuration = Duration(minutes: 5);
 
 void _evictExpiredCache() {
   final now = DateTime.now();
@@ -109,12 +112,16 @@ class DirectionsService {
       return cached.result;
     }
 
+    final apiKey = MapsConfig.directionsApiKey;
+    if (apiKey.isEmpty && kDebugMode) {
+      debugPrint('Directions API: MAPS_API_KEY kosong. Jalankan via run_hybrid.ps1 atau tambah --dart-define=MAPS_API_KEY=xxx');
+    }
     final uri = Uri.parse(_baseUrl).replace(
       queryParameters: {
         'origin': '$originLat,$originLng',
         'destination': '$destLat,$destLng',
         'mode': 'driving',
-        'key': MapsConfig.directionsApiKey,
+        'key': apiKey,
       },
     );
     try {
@@ -173,27 +180,32 @@ class DirectionsService {
   }
 
   /// Ambil rute lengkap dengan steps untuk turn-by-turn.
+  /// [trafficAware]: true = ETA berdasarkan lalu lintas (departure_time=now).
   static Future<DirectionsResultWithSteps?> getRouteWithSteps({
     required double originLat,
     required double originLng,
     required double destLat,
     required double destLng,
+    bool trafficAware = false,
   }) async {
     _evictExpiredCache();
-    final key = _cacheKey(originLat, originLng, destLat, destLng);
+    final key = _cacheKey(originLat, originLng, destLat, destLng, traffic: trafficAware);
     final cached = _routeWithStepsCache[key];
     if (cached != null && cached.expiredAt.isAfter(DateTime.now())) {
       return cached.data;
     }
 
-    final uri = Uri.parse(_baseUrl).replace(
-      queryParameters: {
-        'origin': '$originLat,$originLng',
-        'destination': '$destLat,$destLng',
-        'mode': 'driving',
-        'key': MapsConfig.directionsApiKey,
-      },
-    );
+    final params = <String, String>{
+      'origin': '$originLat,$originLng',
+      'destination': '$destLat,$destLng',
+      'mode': 'driving',
+      'key': MapsConfig.directionsApiKey,
+    };
+    if (trafficAware) {
+      params['departure_time'] = 'now';
+      params['traffic_model'] = 'best_guess';
+    }
+    final uri = Uri.parse(_baseUrl).replace(queryParameters: params);
     try {
       final response = await RetryUtils.withRetry(() async {
         final r = await http.get(uri);
@@ -224,6 +236,7 @@ class DirectionsService {
         final leg = legs.first as Map<String, dynamic>;
         final dist = leg['distance'] as Map<String, dynamic>?;
         final dur = leg['duration'] as Map<String, dynamic>?;
+        final durInTraffic = leg['duration_in_traffic'] as Map<String, dynamic>?;
         if (dist != null) {
           distanceKm = ((dist['value'] as num?) ?? 0) / 1000;
           distanceText =
@@ -233,6 +246,10 @@ class DirectionsService {
         if (dur != null) {
           durationSeconds = (dur['value'] as num?)?.toInt() ?? 0;
           durationText = (dur['text'] as String?) ?? '-';
+        }
+        if (trafficAware && durInTraffic != null) {
+          durationSeconds = (durInTraffic['value'] as num?)?.toInt() ?? durationSeconds;
+          durationText = (durInTraffic['text'] as String?) ?? durationText;
         }
         final legSteps = leg['steps'] as List<dynamic>?;
         if (legSteps != null) {
@@ -266,7 +283,10 @@ class DirectionsService {
         warnings: warnings,
       );
       final withSteps = DirectionsResultWithSteps(result: result, steps: steps);
-      _routeWithStepsCache[key] = (data: withSteps, expiredAt: DateTime.now().add(_cacheDuration));
+      _routeWithStepsCache[key] = (
+        data: withSteps,
+        expiredAt: DateTime.now().add(trafficAware ? _trafficCacheDuration : _cacheDuration),
+      );
       return withSteps;
     } catch (_) {
       return null;
@@ -274,29 +294,33 @@ class DirectionsService {
   }
 
   /// Ambil semua alternatif rute dari origin ke destination.
-  /// Hasil di-cache 1 jam per origin-destination (hemat API).
+  /// [trafficAware]: true = durasi berdasarkan lalu lintas.
   static Future<List<DirectionsResult>> getAlternativeRoutes({
     required double originLat,
     required double originLng,
     required double destLat,
     required double destLng,
+    bool trafficAware = false,
   }) async {
     _evictExpiredCache();
-    final key = _cacheKey(originLat, originLng, destLat, destLng);
+    final key = _cacheKey(originLat, originLng, destLat, destLng, traffic: trafficAware);
     final cached = _altRouteCache[key];
     if (cached != null && cached.expiredAt.isAfter(DateTime.now())) {
       return cached.results;
     }
 
-    final uri = Uri.parse(_baseUrl).replace(
-      queryParameters: {
-        'origin': '$originLat,$originLng',
-        'destination': '$destLat,$destLng',
-        'mode': 'driving',
-        'alternatives': 'true', // Request alternatif rute
-        'key': MapsConfig.directionsApiKey,
-      },
-    );
+    final params = <String, String>{
+      'origin': '$originLat,$originLng',
+      'destination': '$destLat,$destLng',
+      'mode': 'driving',
+      'alternatives': 'true',
+      'key': MapsConfig.directionsApiKey,
+    };
+    if (trafficAware) {
+      params['departure_time'] = 'now';
+      params['traffic_model'] = 'best_guess';
+    }
+    final uri = Uri.parse(_baseUrl).replace(queryParameters: params);
     try {
       final response = await RetryUtils.withRetry(() async {
         final r = await http.get(uri);
@@ -327,6 +351,7 @@ class DirectionsService {
           final leg = legs.first as Map<String, dynamic>;
           final dist = leg['distance'] as Map<String, dynamic>?;
           final dur = leg['duration'] as Map<String, dynamic>?;
+          final durInTraffic = leg['duration_in_traffic'] as Map<String, dynamic>?;
           if (dist != null) {
             distanceKm = ((dist['value'] as num?) ?? 0) / 1000;
             distanceText =
@@ -336,6 +361,10 @@ class DirectionsService {
           if (dur != null) {
             durationSeconds = (dur['value'] as num?)?.toInt() ?? 0;
             durationText = (dur['text'] as String?) ?? '-';
+          }
+          if (trafficAware && durInTraffic != null) {
+            durationSeconds = (durInTraffic['value'] as num?)?.toInt() ?? durationSeconds;
+            durationText = (durInTraffic['text'] as String?) ?? durationText;
           }
         }
 
@@ -352,7 +381,10 @@ class DirectionsService {
         );
       }
       if (results.isNotEmpty) {
-        _altRouteCache[key] = (results: results, expiredAt: DateTime.now().add(_cacheDuration));
+        _altRouteCache[key] = (
+          results: results,
+          expiredAt: DateTime.now().add(trafficAware ? _trafficCacheDuration : _cacheDuration),
+        );
       }
       return results;
     } catch (_) {
@@ -361,28 +393,33 @@ class DirectionsService {
   }
 
   /// Ambil alternatif rute dengan steps (untuk ganti rute saat navigasi).
+  /// [trafficAware]: true = durasi berdasarkan lalu lintas.
   static Future<List<DirectionsResultWithSteps>> getAlternativeRoutesWithSteps({
     required double originLat,
     required double originLng,
     required double destLat,
     required double destLng,
+    bool trafficAware = false,
   }) async {
     _evictExpiredCache();
-    final key = _cacheKey(originLat, originLng, destLat, destLng);
+    final key = _cacheKey(originLat, originLng, destLat, destLng, traffic: trafficAware);
     final cached = _altRouteWithStepsCache[key];
     if (cached != null && cached.expiredAt.isAfter(DateTime.now())) {
       return cached.results;
     }
 
-    final uri = Uri.parse(_baseUrl).replace(
-      queryParameters: {
-        'origin': '$originLat,$originLng',
-        'destination': '$destLat,$destLng',
-        'mode': 'driving',
-        'alternatives': 'true',
-        'key': MapsConfig.directionsApiKey,
-      },
-    );
+    final params = <String, String>{
+      'origin': '$originLat,$originLng',
+      'destination': '$destLat,$destLng',
+      'mode': 'driving',
+      'alternatives': 'true',
+      'key': MapsConfig.directionsApiKey,
+    };
+    if (trafficAware) {
+      params['departure_time'] = 'now';
+      params['traffic_model'] = 'best_guess';
+    }
+    final uri = Uri.parse(_baseUrl).replace(queryParameters: params);
     try {
       final response = await RetryUtils.withRetry(() async {
         final r = await http.get(uri);
@@ -416,6 +453,7 @@ class DirectionsService {
           final leg = legs.first as Map<String, dynamic>;
           final dist = leg['distance'] as Map<String, dynamic>?;
           final dur = leg['duration'] as Map<String, dynamic>?;
+          final durInTraffic = leg['duration_in_traffic'] as Map<String, dynamic>?;
           if (dist != null) {
             distanceKm = ((dist['value'] as num?) ?? 0) / 1000;
             distanceText = (dist['text'] as String?) ?? '${distanceKm.toStringAsFixed(1)} km';
@@ -423,6 +461,10 @@ class DirectionsService {
           if (dur != null) {
             durationSeconds = (dur['value'] as num?)?.toInt() ?? 0;
             durationText = (dur['text'] as String?) ?? '-';
+          }
+          if (trafficAware && durInTraffic != null) {
+            durationSeconds = (durInTraffic['value'] as num?)?.toInt() ?? durationSeconds;
+            durationText = (durInTraffic['text'] as String?) ?? durationText;
           }
           final legSteps = leg['steps'] as List<dynamic>?;
           if (legSteps != null) {
@@ -458,7 +500,10 @@ class DirectionsService {
         results.add(DirectionsResultWithSteps(result: result, steps: steps));
       }
       if (results.isNotEmpty) {
-        _altRouteWithStepsCache[key] = (results: results, expiredAt: DateTime.now().add(_cacheDuration));
+        _altRouteWithStepsCache[key] = (
+          results: results,
+          expiredAt: DateTime.now().add(trafficAware ? _trafficCacheDuration : _cacheDuration),
+        );
       }
       return results;
     } catch (_) {

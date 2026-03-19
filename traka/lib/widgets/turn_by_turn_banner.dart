@@ -53,12 +53,12 @@ class TurnByTurnBanner extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF2E7D32).withValues(alpha: 0.15),
+                      color: const Color(0xFF00B14F).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(
                       InstructionFormatter.getIconForStep(current),
-                      color: const Color(0xFF2E7D32),
+                      color: const Color(0xFF00B14F),
                       size: 24,
                     ),
                   ),
@@ -72,7 +72,7 @@ class TurnByTurnBanner extends StatelessWidget {
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF1B5E20),
+                            color: Color(0xFF008C3A),
                           ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,

@@ -43,8 +43,14 @@ class CarIconService {
   static bool? _cachedIncludeImages;
   static bool? _cachedUse3D;
   static double? _cachedDpr;
+  static int? _cachedProcessingVersion;
+  static bool? _cachedForPassenger;
+  /// Bump saat ubah logika transparansi agar cache lama tidak dipakai.
+  static const int _processingVersion = 4;
 
   /// Load icon mobil merah & hijau.
+  /// [forPassenger]: true = transparansi agresif (hilangkan kotak hitam di map penumpang).
+  ///                 false = untuk driver, tidak diubah.
   /// [use3DStyle]: true = gambar 3D programatik (gaya Traka), false = dari asset.
   ///
   /// [context]: untuk MediaQuery.devicePixelRatio dan Responsive (opsional).
@@ -57,16 +63,19 @@ class CarIconService {
     double padding = 12,
     bool includeRawImages = false,
     bool use3DStyle = false,
+    bool forPassenger = false,
   }) async {
     final dpr = MediaQuery.of(context).devicePixelRatio;
 
-    // Cache hit: parameter sama
+    // Cache hit: parameter sama + versi processing + forPassenger
     if (_cachedResult != null &&
         _cachedBaseSize == baseSize &&
         _cachedPadding == padding &&
         _cachedIncludeImages == includeRawImages &&
         _cachedUse3D == use3DStyle &&
-        _cachedDpr == dpr) {
+        _cachedDpr == dpr &&
+        _cachedProcessingVersion == _processingVersion &&
+        _cachedForPassenger == forPassenger) {
       return _cachedResult!;
     }
 
@@ -99,10 +108,10 @@ class CarIconService {
     try {
       int decodeWidth;
       try {
-        final size = Responsive.of(context).iconSize(baseSize).round().clamp(24, 80);
-        decodeWidth = (size * dpr).round().clamp(64, 256);
+        final size = Responsive.of(context).iconSize(baseSize).round().clamp(14, 56);
+        decodeWidth = (size * dpr).round().clamp(32, 56);
       } catch (_) {
-        decodeWidth = (baseSize * dpr).round().clamp(64, 256);
+        decodeWidth = (baseSize * dpr).round().clamp(32, 56);
       }
 
       // Pilih variant resolusi (1x, 2.0x, 3.0x) untuk retina
@@ -130,6 +139,9 @@ class CarIconService {
         img.Image withAlpha = decoded.numChannels >= 4
             ? decoded
             : decoded.convert(numChannels: 4);
+        withAlpha.backgroundColor = img.ColorRgba8(0, 0, 0, 0);
+        // Bersihkan background (penumpang: agresif hilangkan kotak hitam; driver: tidak diubah)
+        withAlpha = _makeBackgroundTransparent(withAlpha, forPassenger: forPassenger);
         // Rotasi 180°: asset depan di atas → depan di bawah (sesuai bearing).
         img.Image rotated = img.copyRotate(withAlpha, angle: 180);
         img.Image processed = img.copyResize(rotated, width: decodeWidth);
@@ -141,9 +153,7 @@ class CarIconService {
             backgroundColor: img.ColorRgba8(0, 0, 0, 0),
           );
         }
-
-        // Buat background putih/abu-abu/checkerboard transparan (hindari kotak di marker).
-        processed = _makeBackgroundTransparent(processed);
+        processed = _makeBackgroundTransparent(processed, forPassenger: forPassenger);
 
         final pngBytes = img.encodePng(processed);
         if (pngBytes.isNotEmpty) {
@@ -176,9 +186,11 @@ class CarIconService {
       _cachedResult = result;
       _cachedBaseSize = baseSize;
       _cachedPadding = padding;
-        _cachedIncludeImages = includeRawImages;
-        _cachedUse3D = use3DStyle;
-        _cachedDpr = dpr;
+      _cachedIncludeImages = includeRawImages;
+      _cachedUse3D = use3DStyle;
+      _cachedDpr = dpr;
+      _cachedProcessingVersion = _processingVersion;
+      _cachedForPassenger = forPassenger;
 
       return result;
     } catch (e) {
@@ -187,14 +199,37 @@ class CarIconService {
         debugPrint('[CarIconService] Fallback ke fromAssetImage');
       }
 
-      // Fallback: BitmapDescriptor.fromAssetImage (lebih andal, tanpa package:image)
+      // Fallback: proses dengan package:image (tetap transparan) atau fromAssetImage
       try {
-        const size = 96.0;
+        final fallbackResult = await _loadAndProcessAssetIcons(
+          context: context,
+          baseSize: baseSize,
+          padding: padding,
+          dpr: dpr,
+        );
+        if (fallbackResult != null) {
+          final result = CarIconResult(
+            red: fallbackResult.red,
+            green: fallbackResult.green,
+          );
+          _cachedResult = result;
+          _cachedBaseSize = baseSize;
+          _cachedPadding = padding;
+          _cachedIncludeImages = includeRawImages;
+          _cachedUse3D = use3DStyle;
+          _cachedDpr = dpr;
+          _cachedProcessingVersion = _processingVersion;
+          return result;
+        }
+      } catch (_) {}
+
+      // Last resort: fromAssetImage (bisa ada kotak hitam jika asset punya background)
+      try {
+        const size = 40.0;
         final config = ImageConfiguration(
           devicePixelRatio: dpr,
           size: Size(size, size),
         );
-
         redDesc = await BitmapDescriptor.fromAssetImage(
           config,
           'assets/images/car_merah.png',
@@ -205,43 +240,74 @@ class CarIconService {
           'assets/images/car_hijau.png',
           mipmaps: false,
         );
+      } catch (_) {}
 
-        if (includeRawImages) {
-          final redData = await rootBundle.load('assets/images/car_merah.png');
-          final redCodec = await ui.instantiateImageCodec(redData.buffer.asUint8List());
-          final redFrame = await redCodec.getNextFrame();
-          redImg = redFrame.image;
-
-          final greenData = await rootBundle.load('assets/images/car_hijau.png');
-          final greenCodec = await ui.instantiateImageCodec(greenData.buffer.asUint8List());
-          final greenFrame = await greenCodec.getNextFrame();
-          greenImg = greenFrame.image;
-        }
-
-        final result = CarIconResult(
-          red: redDesc,
-          green: greenDesc,
-          redImage: includeRawImages ? redImg : null,
-          greenImage: includeRawImages ? greenImg : null,
-        );
-
-        _cachedResult = result;
-        _cachedBaseSize = baseSize;
-        _cachedPadding = padding;
-        _cachedIncludeImages = includeRawImages;
-        _cachedUse3D = use3DStyle;
-        _cachedDpr = dpr;
-
-        return result;
-      } catch (e2) {
-        if (kDebugMode) debugPrint('[CarIconService] Fallback juga gagal: $e2');
-        return CarIconResult(red: redDesc, green: greenDesc);
-      }
+      final result = CarIconResult(red: redDesc, green: greenDesc);
+      _cachedResult = result;
+      _cachedBaseSize = baseSize;
+      _cachedPadding = padding;
+      _cachedIncludeImages = includeRawImages;
+      _cachedUse3D = use3DStyle;
+      _cachedDpr = dpr;
+      _cachedProcessingVersion = _processingVersion;
+      _cachedForPassenger = forPassenger;
+      return result;
     }
   }
 
-  /// Buat pixel putih/abu-abu/checkerboard transparan (hindari kotak di marker).
-  static img.Image _makeBackgroundTransparent(img.Image image) {
+  /// Fallback: load asset, proses transparansi, return BitmapDescriptor.bytes.
+  static Future<CarIconResult?> _loadAndProcessAssetIcons({
+    required BuildContext context,
+    required double baseSize,
+    required double padding,
+    required double dpr,
+    bool forPassenger = false,
+  }) async {
+    try {
+      final size = Responsive.of(context).iconSize(baseSize).round().clamp(14, 56);
+      final decodeWidth = (size * dpr).round().clamp(32, 56);
+      BitmapDescriptor? redDesc;
+      BitmapDescriptor? greenDesc;
+      for (final name in ['car_merah.png', 'car_hijau.png']) {
+        final data = await rootBundle.load('assets/images/$name');
+        final decoded = img.decodeImage(data.buffer.asUint8List());
+        if (decoded == null) continue;
+        img.Image withAlpha = decoded.numChannels >= 4
+            ? decoded
+            : decoded.convert(numChannels: 4);
+        withAlpha.backgroundColor = img.ColorRgba8(0, 0, 0, 0);
+        withAlpha = _makeBackgroundTransparent(withAlpha, forPassenger: forPassenger);
+        img.Image rotated = img.copyRotate(withAlpha, angle: 180);
+        img.Image processed = img.copyResize(rotated, width: decodeWidth);
+        if (padding > 0) {
+          processed = img.copyExpandCanvas(
+            processed,
+            padding: padding.round(),
+            position: img.ExpandCanvasPosition.center,
+            backgroundColor: img.ColorRgba8(0, 0, 0, 0),
+          );
+        }
+        processed = _makeBackgroundTransparent(processed, forPassenger: forPassenger);
+        final pngBytes = img.encodePng(processed);
+        if (pngBytes.isEmpty) continue;
+        final descriptor = BitmapDescriptor.bytes(pngBytes);
+        if (name.contains('car_merah')) {
+          redDesc = descriptor;
+        } else {
+          greenDesc = descriptor;
+        }
+      }
+      if (redDesc != null && greenDesc != null) {
+        return CarIconResult(red: redDesc, green: greenDesc);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Buat background transparan. [forPassenger] true = agresif hilangkan kotak hitam.
+  /// Driver (false) = konservatif, mobil tetap solid.
+  static img.Image _makeBackgroundTransparent(img.Image image, {bool forPassenger = false}) {
+    final transparent = img.ColorRgba8(0, 0, 0, 0);
     for (int y = 0; y < image.height; y++) {
       for (int x = 0; x < image.width; x++) {
         final p = image.getPixel(x, y);
@@ -249,11 +315,28 @@ class CarIconService {
         final g = p.g.toInt();
         final b = p.b.toInt();
         final a = p.a.toInt();
-        // Putih (255,255,255) atau abu-abu terang/checkerboard (r≈g≈b > 200)
-        final isWhiteOrLightGray = r > 200 && g > 200 && b > 200;
-        final isTransparentInSource = a < 128;
-        if (isWhiteOrLightGray || isTransparentInSource) {
-          image.setPixel(x, y, img.ColorRgba8(0, 0, 0, 0));
+        final maxC = r > g ? (r > b ? r : b) : (g > b ? g : b);
+        final minC = r < g ? (r < b ? r : b) : (g < b ? g : b);
+
+        if (forPassenger) {
+          // Penumpang: agresif hilangkan kotak hitam (background hitam/abu gelap)
+          final isWhite = r > 220 && g > 220 && b > 220;
+          final isBlackOrDark = r < 100 && g < 100 && b < 100;
+          final isNeutralGray = (maxC - minC) < 50 && maxC < 150;
+          final isTransparentInSource = a < 128;
+          final isCarBody = r > 80 || g > 80;
+          if (!isCarBody && (isWhite || isBlackOrDark || isNeutralGray || isTransparentInSource)) {
+            image.setPixel(x, y, transparent);
+          }
+        } else {
+          // Driver: konservatif, jangan ubah
+          final isWhite = r > 245 && g > 245 && b > 245;
+          final isNeutralDark = r < 55 && g < 55 && b < 55 && (maxC - minC) < 20;
+          final isTransparentInSource = a < 128;
+          final isCarBody = r > 100 || g > 100;
+          if (!isCarBody && (isWhite || isNeutralDark || isTransparentInSource)) {
+            image.setPixel(x, y, transparent);
+          }
         }
       }
     }
@@ -268,6 +351,8 @@ class CarIconService {
     _cachedIncludeImages = null;
     _cachedUse3D = null;
     _cachedDpr = null;
+    _cachedProcessingVersion = null;
+    _cachedForPassenger = null;
   }
 }
 

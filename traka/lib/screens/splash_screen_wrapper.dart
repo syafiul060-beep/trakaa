@@ -129,7 +129,7 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(
-            builder: (_) => Scaffold(
+            builder: (routeCtx) => Scaffold(
               body: SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
@@ -139,7 +139,7 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
                       Icon(Icons.block, size: 64, color: Colors.red.shade700),
                       const SizedBox(height: 16),
                       Text(
-                        TrakaL10n.of(context).accountBlocked,
+                        TrakaL10n.of(routeCtx).accountBlocked,
                         style: const TextStyle(
                             fontSize: 20, fontWeight: FontWeight.bold),
                         textAlign: TextAlign.center,
@@ -147,19 +147,19 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
                       const SizedBox(height: 12),
                       Text(
                         (data?['suspendedReason'] as String?) ??
-                            TrakaL10n.of(context).accountSuspendedMessage,
+                            TrakaL10n.of(routeCtx).accountSuspendedMessage,
                         style: const TextStyle(fontSize: 14),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 24),
                       FilledButton(
-                        onPressed: () => Navigator.of(context).pushReplacement(
+                        onPressed: () => Navigator.of(routeCtx).pushReplacement(
                           MaterialPageRoute<void>(
                             builder: (_) => const AppUpdateWrapper(
                                 child: LoginScreen()),
                           ),
                         ),
-                        child: Text(TrakaL10n.of(context).backToLogin),
+                        child: Text(TrakaL10n.of(routeCtx).backToLogin),
                       ),
                     ],
                   ),
@@ -286,7 +286,7 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) => Scaffold(
+          builder: (routeCtx) => Scaffold(
             body: SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -296,27 +296,27 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
                     Icon(Icons.block, size: 64, color: Colors.red.shade700),
                     const SizedBox(height: 16),
                     Text(
-                      TrakaL10n.of(context).accountBlocked,
+                      TrakaL10n.of(routeCtx).accountBlocked,
                       style: const TextStyle(
                           fontSize: 20, fontWeight: FontWeight.bold),
-                      textAlign: TextAlign.center,
+                        textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),
                     Text(
                       (data?['suspendedReason'] as String?) ??
-                          TrakaL10n.of(context).accountSuspendedMessage,
+                          TrakaL10n.of(routeCtx).accountSuspendedMessage,
                       style: const TextStyle(fontSize: 14),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 24),
                     FilledButton(
-                      onPressed: () => Navigator.of(context).pushReplacement(
+                      onPressed: () => Navigator.of(routeCtx).pushReplacement(
                         MaterialPageRoute<void>(
                           builder: (_) => const AppUpdateWrapper(
                               child: LoginScreen()),
                         ),
                       ),
-                      child: Text(TrakaL10n.of(context).backToLogin),
+                      child: Text(TrakaL10n.of(routeCtx).backToLogin),
                     ),
                   ],
                 ),
@@ -381,7 +381,7 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
   void _showConnectionErrorAndRetry() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (_) => Scaffold(
+        builder: (routeCtx) => Scaffold(
           body: SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -405,7 +405,7 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
                   const SizedBox(height: 24),
                   FilledButton(
                     onPressed: () {
-                      Navigator.of(context).pushReplacement(
+                      Navigator.of(routeCtx).pushReplacement(
                         MaterialPageRoute<void>(
                           builder: (_) => const SplashScreenWrapper(),
                         ),

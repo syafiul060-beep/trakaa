@@ -60,5 +60,8 @@ app.*.map.json
 # Firebase config untuk track.html (copy dari firebase-config.example.js)
 hosting/firebase-config.js
 
+# Firebase config Flutter (berisi API keys - JANGAN commit!)
+lib/firebase_options.dart
+
 # Build output untuk hosting (build dari traka-admin)
 hosting/admin/
