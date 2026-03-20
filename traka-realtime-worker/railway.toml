@@ -1,0 +1,9 @@
+# Konfigurasi Railway — service realtime worker (Node).
+# Pastikan di dashboard: Root Directory = traka-realtime-worker
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npm start"
+restartPolicyType = "on_failure"

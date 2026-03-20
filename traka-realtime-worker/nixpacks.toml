@@ -1,0 +1,8 @@
+# Build eksplisit: npm install + npm start (Node terdeteksi dari package.json di folder ini).
+# Wajib: di Railway → Settings → Root Directory = traka-realtime-worker
+
+[phases.install]
+cmds = ["npm install"]
+
+[start]
+cmd = "npm start"
