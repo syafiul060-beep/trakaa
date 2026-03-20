@@ -48,7 +48,13 @@ app.get('/health', async (req, res) => {
       pgError = e.message;
     }
     const ok = checks.api && checks.redis;
-    const body = { ok, status: 'traka-api', checks };
+    const body = {
+      ok,
+      status: 'traka-api',
+      checks,
+      ...(process.env.APP_VERSION ? { version: process.env.APP_VERSION } : {}),
+      uptimeSeconds: Math.floor(process.uptime()),
+    };
     if (req.query.debug === '1' && pgError) body.pgError = pgError;
     res.status(ok ? 200 : 503).json(body);
   } catch (err) {
@@ -58,6 +64,8 @@ app.get('/health', async (req, res) => {
       ok: false,
       status: 'traka-api',
       checks: { ...checks, api: false },
+      uptimeSeconds: Math.floor(process.uptime()),
+      ...(process.env.APP_VERSION ? { version: process.env.APP_VERSION } : {}),
       error: req.query.debug === '1' ? err.message : undefined,
     });
   }

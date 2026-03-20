@@ -168,6 +168,8 @@ await subscriber.subscribe('order:new', (message) => { ... });
 7. ~~Validasi response matching~~ ✅ (Tahap 1: filter status siap_kerja, punya route)
 8. ~~Integrasi di Flutter penumpang~~ ✅ (Tahap 2: getMatchDrivers → getActiveDriversForMap, fallback ke getDriverStatusList)
 9. ~~Filter kapasitas di backend~~ ✅ (Tahap 4.2: minCapacity query, maxPassengers di driver_status)
+10. ~~Skor matching opsional~~ ✅ `GET /api/match/drivers?destLat=&destLng=` → urutan `matchScore` (jarak + arah ke tujuan + kapasitas + fresh `lastUpdated`)
+11. ~~Pub/Sub lokasi~~ ✅ Opsional: `REDIS_PUBLISH_DRIVER_LOCATION=1` → channel `driver:location` (lihat `REALTIME_DRIVER_UPDATES.md`)
 
 ---
 

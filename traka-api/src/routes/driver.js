@@ -85,6 +85,22 @@ router.post('/location', verifyToken, async (req, res) => {
     } catch (geoErr) {
       console.warn('[driver/location] GEOADD failed:', geoErr.message);
     }
+    if (process.env.REDIS_PUBLISH_DRIVER_LOCATION === '1') {
+      try {
+        await redis.publish(
+          'driver:location',
+          JSON.stringify({
+            uid,
+            city: citySlug,
+            lat: data.latitude,
+            lng: data.longitude,
+            ts: Date.now(),
+          }),
+        );
+      } catch (pubErr) {
+        console.warn('[driver/location] publish:', pubErr.message);
+      }
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error('POST /driver/location:', err);
