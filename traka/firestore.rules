@@ -365,5 +365,10 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // driver_payment_methods – bank/e-wallet/QRIS driver. Tulis/baca lewat traka-api (Admin SDK) + cek unik di Postgres.
+    match /driver_payment_methods/{methodId} {
+      allow read, write: if false;
+    }
+
   }
 }

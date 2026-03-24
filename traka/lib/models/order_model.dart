@@ -219,6 +219,12 @@ class OrderModel {
   /// Waktu penumpang memberi rating.
   final DateTime? passengerRatedAt;
 
+  /// cash | bank | ewallet | qris — instruksi bayar ke driver (bukan escrow).
+  final String? passengerPayMethod;
+  final String? passengerPayMethodId;
+  final DateTime? passengerPayDisclaimerAt;
+  final DateTime? passengerPayMarkedAt;
+
   const OrderModel({
     required this.id,
     this.orderNumber,
@@ -310,6 +316,10 @@ class OrderModel {
     this.passengerRating,
     this.passengerReview,
     this.passengerRatedAt,
+    this.passengerPayMethod,
+    this.passengerPayMethodId,
+    this.passengerPayDisclaimerAt,
+    this.passengerPayMarkedAt,
   });
 
   factory OrderModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -405,7 +415,26 @@ class OrderModel {
       passengerRating: (d['passengerRating'] as num?)?.toInt(),
       passengerReview: d['passengerReview'] as String?,
       passengerRatedAt: (d['passengerRatedAt'] as Timestamp?)?.toDate(),
+      passengerPayMethod: d['passengerPayMethod'] as String?,
+      passengerPayMethodId: d['passengerPayMethodId'] as String?,
+      passengerPayDisclaimerAt:
+          (d['passengerPayDisclaimerAt'] as Timestamp?)?.toDate(),
+      passengerPayMarkedAt: (d['passengerPayMarkedAt'] as Timestamp?)?.toDate(),
     );
+  }
+
+  /// Siap buka scan barcode: tunai (setelah disclaimer) atau non-tunai (setelah tandai sudah bayar).
+  bool get passengerPayReadyForScan {
+    final m = passengerPayMethod;
+    if (m == null || m.isEmpty) return false;
+    if (passengerPayDisclaimerAt == null) return false;
+    if (m == 'cash') return true;
+    if (m == 'bank' || m == 'ewallet' || m == 'qris') {
+      return passengerPayMarkedAt != null &&
+          passengerPayMethodId != null &&
+          passengerPayMethodId!.isNotEmpty;
+    }
+    return false;
   }
 
   bool get isTravel => orderType == OrderModel.typeTravel;

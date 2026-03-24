@@ -124,6 +124,14 @@ export function NavIconChevronRight({ className }) {
   )
 }
 
+export function NavIconPayment({ className }) {
+  return (
+    <svg {...svgProps(className)}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+    </svg>
+  )
+}
+
 const ICON_MAP = {
   dashboard: NavIconDashboard,
   orders: NavIconOrders,
@@ -136,6 +144,7 @@ const ICON_MAP = {
   audit: NavIconAudit,
   broadcast: NavIconBroadcast,
   settings: NavIconSettings,
+  payment: NavIconPayment,
 }
 
 export function AdminNavIcon({ name, className }) {

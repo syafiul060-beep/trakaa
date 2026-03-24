@@ -54,6 +54,7 @@ import 'login_screen.dart';
 import 'notification_settings_screen.dart';
 import 'contribution_driver_screen.dart';
 import 'driver_earnings_screen.dart';
+import 'driver_payment_methods_screen.dart';
 import 'payment_history_screen.dart';
 import 'panduan_aplikasi_screen.dart';
 import 'promo_list_screen.dart';
@@ -1894,6 +1895,18 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                                 MaterialPageRoute(
                                   builder: (_) =>
                                       const PaymentHistoryScreen(isDriver: true),
+                                ),
+                              );
+                            },
+                          ),
+                          _buildMenuCard(
+                            title: 'Rekening & QRIS',
+                            icon: Icons.account_balance,
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const DriverPaymentMethodsScreen(),
                                 ),
                               );
                             },

@@ -10,6 +10,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../config/feature_flags.dart';
+import '../config/traka_api_config.dart';
 import '../models/order_model.dart';
 import '../services/app_config_service.dart';
 import '../services/exemption_service.dart';
@@ -26,6 +27,7 @@ import '../theme/app_theme.dart';
 import '../theme/responsive.dart';
 import '../widgets/shimmer_loading.dart';
 import '../widgets/traka_l10n_scope.dart';
+import '../widgets/passenger_payment_before_scan_sheet.dart';
 import '../utils/app_logger.dart';
 import 'admin_chat_screen.dart';
 import 'cek_lokasi_barang_screen.dart';
@@ -622,7 +624,14 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                           cacheExtent: 200,
                           itemBuilder: (context, index) {
                             final order = pickedUpOrders[index];
-                            return _buildDriverTabOrderCard(order, isReceiver: order.receiverUid == user.uid);
+                            return _buildDriverTabOrderCard(
+                              order,
+                              isReceiver: order.isKirimBarang &&
+                                  order.receiverUid != null &&
+                                  order.receiverUid!.isNotEmpty &&
+                                  order.receiverUid == user.uid &&
+                                  order.passengerUid != user.uid,
+                            );
                           },
                         ),
                       ),
@@ -836,44 +845,8 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: () async {
-                  final result = await Navigator.of(context).push<Object?>(
-                    MaterialPageRoute(
-                      builder: (ctx) => const ScanBarcodePenumpangScreen(),
-                    ),
-                  );
-                  if (context.mounted) {
-                    if (result == ScanBarcodePenumpangScreen.resultPickup) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Penjemputan terkonfirmasi. Saat sampai tujuan, scan barcode selesai.',
-                          ),
-                          backgroundColor: Colors.green,
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    } else if (result == ScanBarcodePenumpangScreen.resultReceiver) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Barang diterima. Terima kasih.'),
-                          backgroundColor: Colors.green,
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    } else if (result is String) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Perjalanan selesai. Pesanan pindah ke Riwayat.',
-                          ),
-                          backgroundColor: Colors.green,
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                      _showRatingDialog(context, result);
-                    }
-                  }
-                },
+                    await _runScanFlow(context, order, isReceiver: isReceiver);
+                  },
                 icon: const Icon(Icons.qr_code_scanner, size: 22),
                 label: Text(
                   isReceiver
@@ -1888,6 +1861,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
   }
 
   Future<void> _openScanBarcode(BuildContext context) async {
+    // Legacy: tanpa order context — tidak memakai gerbang pembayaran.
     final result = await Navigator.of(context).push<Object?>(
       MaterialPageRoute(builder: (ctx) => const ScanBarcodePenumpangScreen()),
     );
@@ -1911,6 +1885,61 @@ class _DataOrderScreenState extends State<DataOrderScreen>
         ),
       );
     } else if (result is String) {
+      _showRatingDialog(context, result);
+    }
+  }
+
+  /// Scan barcode penumpang/pengirim dengan alur bayar (hybrid) bila perlu.
+  Future<void> _runScanFlow(
+    BuildContext context,
+    OrderModel order, {
+    required bool isReceiver,
+  }) async {
+    if (!isReceiver && TrakaApiConfig.isApiEnabled) {
+      final fresh = await OrderService.getOrderById(order.id);
+      final o = fresh ?? order;
+      if (!o.passengerPayReadyForScan) {
+        final go = await PassengerPaymentBeforeScanSheet.show(
+          context,
+          order: o,
+        );
+        if (!context.mounted || go != true) return;
+      }
+    }
+    final result = await Navigator.of(context).push<Object?>(
+      MaterialPageRoute(
+        builder: (ctx) => const ScanBarcodePenumpangScreen(),
+      ),
+    );
+    if (!context.mounted) return;
+    if (result == ScanBarcodePenumpangScreen.resultPickup) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Penjemputan terkonfirmasi. Saat sampai tujuan, scan barcode selesai.',
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else if (result == ScanBarcodePenumpangScreen.resultReceiver) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Barang diterima. Terima kasih.'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else if (result is String) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Perjalanan selesai. Pesanan pindah ke Riwayat.',
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
       _showRatingDialog(context, result);
     }
   }
@@ -2060,7 +2089,11 @@ class _DataOrderScreenState extends State<DataOrderScreen>
           driverName: driverName,
           driverPhotoUrl: driverPhotoUrl,
           driverVerified: driverVerified,
-          isReceiver: order.receiverUid == user.uid,
+          isReceiver: order.isKirimBarang &&
+              order.receiverUid != null &&
+              order.receiverUid!.isNotEmpty &&
+              order.receiverUid == user.uid &&
+              order.passengerUid != user.uid,
         ),
       ),
     );

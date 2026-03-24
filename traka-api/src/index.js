@@ -7,6 +7,8 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
 const driverRoutes = require('./routes/driver.js');
+const driverPaymentRoutes = require('./routes/driver_payment.js');
+const adminPaymentRoutes = require('./routes/admin_payment_methods.js');
 const matchRoutes = require('./routes/match.js');
 const ordersRoutes = require('./routes/orders.js');
 const usersRoutes = require('./routes/users.js');
@@ -92,6 +94,8 @@ async function start() {
     app.use(limiter);
 
     app.use('/api/driver', driverRoutes);
+    app.use('/api/driver/payment-methods', driverPaymentRoutes);
+    app.use('/api/admin/payment-methods', adminPaymentRoutes);
     app.use('/api/match', matchRoutes);
     app.use('/api/orders', ordersRoutes);
     app.use('/api/users', usersRoutes);

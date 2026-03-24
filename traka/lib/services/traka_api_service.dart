@@ -270,6 +270,99 @@ class TrakaApiService {
     }
   }
 
+  /// GET …/api/orders/:orderId/driver-payment-methods
+  static Future<List<Map<String, dynamic>>> getOrderDriverPaymentMethods(
+    String orderId,
+  ) async {
+    if (!_enabled) return [];
+    try {
+      final res = await _httpGet(
+        Uri.parse('$_base/api/orders/$orderId/driver-payment-methods'),
+        headers: await _authHeaders(),
+      );
+      if (res.statusCode != 200) return [];
+      final data = _jsonDecode(res.body) as Map<String, dynamic>?;
+      final list = data?['methods'] as List<dynamic>?;
+      if (list == null) return [];
+      return list
+          .whereType<Map<String, dynamic>>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('TrakaApiService.getOrderDriverPaymentMethods: $e');
+      }
+      return [];
+    }
+  }
+
+  /// GET …/api/driver/payment-methods (driver login).
+  static Future<List<Map<String, dynamic>>> listMyPaymentMethods() async {
+    if (!_enabled) return [];
+    try {
+      final res = await _httpGet(
+        Uri.parse('$_base/api/driver/payment-methods'),
+        headers: await _authHeaders(),
+      );
+      if (res.statusCode != 200) return [];
+      final data = _jsonDecode(res.body) as Map<String, dynamic>?;
+      final list = data?['methods'] as List<dynamic>?;
+      if (list == null) return [];
+      return list
+          .whereType<Map<String, dynamic>>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (e) {
+      if (kDebugMode) debugPrint('TrakaApiService.listMyPaymentMethods: $e');
+      return [];
+    }
+  }
+
+  static Future<({bool ok, String? error, Map<String, dynamic>? data})>
+      createDriverPaymentMethod(Map<String, dynamic> body) async {
+    if (!_enabled) {
+      return (ok: false, error: 'API nonaktif', data: null);
+    }
+    try {
+      final res = await _httpPost(
+        Uri.parse('$_base/api/driver/payment-methods'),
+        headers: await _authHeaders(),
+        body: _jsonEncode(body),
+      );
+      final data = _jsonDecode(res.body) as Map<String, dynamic>?;
+      if (res.statusCode == 201) {
+        return (ok: true, error: null, data: data);
+      }
+      return (
+        ok: false,
+        error: data?['error'] as String? ?? 'HTTP ${res.statusCode}',
+        data: data,
+      );
+    } catch (e) {
+      return (ok: false, error: e.toString(), data: null);
+    }
+  }
+
+  static Future<({bool ok, String? error})> deleteDriverPaymentMethod(
+    String id,
+  ) async {
+    if (!_enabled) return (ok: false, error: 'API nonaktif');
+    try {
+      final res = await _httpDelete(
+        Uri.parse('$_base/api/driver/payment-methods/$id'),
+        headers: await _authHeaders(),
+      );
+      if (res.statusCode == 200) return (ok: true, error: null);
+      final data = _jsonDecode(res.body) as Map<String, dynamic>?;
+      return (
+        ok: false,
+        error: data?['error'] as String? ?? 'HTTP ${res.statusCode}',
+      );
+    } catch (e) {
+      return (ok: false, error: e.toString());
+    }
+  }
+
   /// Stream status driver via polling (setiap 4 detik).
   static Stream<Map<String, dynamic>?> streamDriverStatus(String driverUid) async* {
     if (!_enabled) return;

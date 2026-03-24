@@ -40,6 +40,20 @@ Authorization: Bearer <Firebase ID Token>
   - Query: `role` (driver|passenger), `limit` (default 50, max 100), `offset` (default 0)
 - `GET /api/orders/:id` - Detail order (auth required)
 
+### Driver payment methods (instruksi bayar non-escrow)
+- `GET /api/driver/payment-methods` — daftar metode milik driver (auth)
+- `POST /api/driver/payment-methods` — body: `type` (`bank`|`ewallet`|`qris`), `accountHolderName`, plus field sesuai jenis. Nama harus cocok profil atau `pending_review`.
+- `PATCH /api/driver/payment-methods/:id` — ubah data
+- `DELETE /api/driver/payment-methods/:id` — suspend (hapus dari tampilan penumpang)
+
+### Order: instruksi bayar untuk penumpang
+- `GET /api/orders/:orderId/driver-payment-methods` — hanya peserta order; kembalikan metode **active** driver (tanpa `normalized_key`).
+
+### Admin
+- `GET /api/admin/payment-methods/pending` — antrian `pending_review` (admin + Bearer)
+- `POST /api/admin/payment-methods/:id/approve` — body opsional `{ adminNote }`
+- `POST /api/admin/payment-methods/:id/reject` — body opsional `{ adminNote }`
+
 ## Rate Limiting
 - 100 requests per 15 menit per IP
 - Header: `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`

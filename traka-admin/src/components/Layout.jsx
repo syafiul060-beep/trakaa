@@ -21,6 +21,7 @@ const navItems = [
   { path: '/users', label: 'Pengguna', icon: 'users' },
   { path: '/notifications', label: 'Notifikasi', icon: 'notifications' },
   { path: '/drivers', label: 'Driver', icon: 'drivers' },
+  { path: '/payment-review', label: 'Review bayar', icon: 'payment' },
   { path: '/chat', label: 'Chat', icon: 'chat' },
   { path: '/reports', label: 'Laporan', icon: 'reports' },
   { path: '/violations', label: 'Pelanggaran', icon: 'violations' },

@@ -13,6 +13,7 @@ const {
   ORDER_KIRIM_BARANG,
   ORDER_TRAVEL,
 } = require('../lib/order_create.js');
+const { assertOrderParticipant, listActiveForDriver } = require('../lib/driver_payment.js');
 
 /**
  * POST /api/orders — buat order (penumpang). Selaras OrderService.createOrder + ORDER_CREATE_HYBRID.md
@@ -143,6 +144,33 @@ router.get('/', verifyToken, async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error('GET /orders:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Instruksi bayar aktif milik driver order (penumpang/pengirim/penerima order). */
+router.get('/:orderId/driver-payment-methods', verifyToken, async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    const check = await assertOrderParticipant(orderId, req.uid);
+    if (!check.ok) {
+      return res
+        .status(check.code)
+        .json({ error: check.code === 404 ? 'Order not found' : 'Forbidden' });
+    }
+    const methods = await listActiveForDriver(check.driverUid);
+    const safe = methods.map((m) => ({
+      id: m.id,
+      type: m.type,
+      bankName: m.bankName,
+      ewalletProvider: m.ewalletProvider,
+      accountNumber: m.accountNumber,
+      accountHolderName: m.accountHolderName,
+      qrisImageUrl: m.qrisImageUrl,
+    }));
+    res.json({ methods: safe });
+  } catch (err) {
+    console.error('GET /orders/:orderId/driver-payment-methods:', err);
     res.status(500).json({ error: err.message });
   }
 });

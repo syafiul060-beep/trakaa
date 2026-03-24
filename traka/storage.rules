@@ -30,5 +30,11 @@ service firebase.storage {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // QRIS statis driver: upload pemilik; baca semua user login (penumpang lihat saat bayar).
+    match /driver_qris/{userId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
   }
 }

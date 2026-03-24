@@ -568,6 +568,34 @@ class OrderService {
     return ref.id;
   }
 
+  /// Alur bayar ke driver sebelum scan barcode (Traka bukan pemegang uang).
+  static Future<void> updatePassengerPayFlow({
+    required String orderId,
+    String? passengerPayMethod,
+    String? passengerPayMethodId,
+    bool setDisclaimer = false,
+    bool setMarkedPaid = false,
+  }) async {
+    final ref =
+        FirebaseFirestore.instance.collection(_collectionOrders).doc(orderId);
+    final u = <String, dynamic>{
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (passengerPayMethod != null) {
+      u['passengerPayMethod'] = passengerPayMethod;
+    }
+    if (passengerPayMethodId != null) {
+      u['passengerPayMethodId'] = passengerPayMethodId;
+    }
+    if (setDisclaimer) {
+      u['passengerPayDisclaimerAt'] = FieldValue.serverTimestamp();
+    }
+    if (setMarkedPaid) {
+      u['passengerPayMarkedAt'] = FieldValue.serverTimestamp();
+    }
+    await ref.update(u);
+  }
+
   /// Jumlah penumpang dan jumlah kirim barang yang sudah dipesan untuk jadwal ini (status agreed/picked_up).
   /// [kargoCount]: hanya barangCategory == 'kargo' (barang besar, mengurangi kapasitas). Dokumen tidak.
   /// [legacyScheduleId]: format lama (tanpa hash) untuk backward compat dengan order yang sudah ada.
