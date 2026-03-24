@@ -37,10 +37,24 @@ service cloud.firestore {
         );
     }
 
+    // travelFarePaidBy: hanya kirim_barang sender|receiver; tidak boleh diubah setelah create.
+    function validTravelFarePaidByOnCreate() {
+      let ot = request.resource.data.get('orderType', 'travel');
+      let tf = request.resource.data.get('travelFarePaidBy', 'sender');
+      return (ot == 'travel' && tf == 'sender')
+        || (ot == 'kirim_barang' && (tf == 'sender' || tf == 'receiver'));
+    }
+
+    function travelFarePaidByUnchanged() {
+      return request.resource.data.get('travelFarePaidBy', 'sender')
+        == resource.data.get('travelFarePaidBy', 'sender');
+    }
+
     function orderUpdateIntegrity() {
       return orderParticipantUidsUnchanged()
         && orderTypeUnchanged()
-        && kirimBarangNoAutoConfirmFlags();
+        && kirimBarangNoAutoConfirmFlags()
+        && travelFarePaidByUnchanged();
     }
 
     // Field verifikasi admin — hanya admin boleh mengubah (kecuali user set submittedAt).
@@ -168,7 +182,8 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if request.auth != null
         && request.resource.data.passengerUid == request.auth.uid
-        && validNewOrderNoKirimAutoConfirm();
+        && validNewOrderNoKirimAutoConfirm()
+        && validTravelFarePaidByOnCreate();
       allow update: if request.auth != null
         && (isAdmin()
             || (

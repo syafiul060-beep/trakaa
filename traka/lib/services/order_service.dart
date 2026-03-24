@@ -438,6 +438,8 @@ class OrderService {
     double? barangLebarCm,
     double? barangTinggiCm,
     String? barangFotoUrl,
+    /// Kirim barang: [OrderModel.travelFarePaidBySender] atau [OrderModel.travelFarePaidByReceiver].
+    String? travelFarePaidBy,
     bool bypassDuplicatePendingKirimBarang = false,
     bool bypassDuplicatePendingTravel = false,
   }) async {
@@ -510,6 +512,12 @@ class OrderService {
     if (barangLebarCm != null && barangLebarCm! > 0) data['barangLebarCm'] = barangLebarCm;
     if (barangTinggiCm != null && barangTinggiCm! > 0) data['barangTinggiCm'] = barangTinggiCm;
     if (barangFotoUrl != null && barangFotoUrl!.trim().isNotEmpty) data['barangFotoUrl'] = barangFotoUrl!.trim();
+    if (orderType == OrderModel.typeKirimBarang) {
+      final tf = travelFarePaidBy == OrderModel.travelFarePaidByReceiver
+          ? OrderModel.travelFarePaidByReceiver
+          : OrderModel.travelFarePaidBySender;
+      data['travelFarePaidBy'] = tf;
+    }
     if (orderType == OrderModel.typeKirimBarang &&
         originLat != null &&
         originLng != null &&
@@ -592,6 +600,34 @@ class OrderService {
     }
     if (setMarkedPaid) {
       u['passengerPayMarkedAt'] = FieldValue.serverTimestamp();
+    }
+    await ref.update(u);
+  }
+
+  /// Alur hybrid untuk **penerima** (ongkos ditanggung penerima, kirim barang).
+  static Future<void> updateReceiverPayFlow({
+    required String orderId,
+    String? receiverPayMethod,
+    String? receiverPayMethodId,
+    bool setDisclaimer = false,
+    bool setMarkedPaid = false,
+  }) async {
+    final ref =
+        FirebaseFirestore.instance.collection(_collectionOrders).doc(orderId);
+    final u = <String, dynamic>{
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (receiverPayMethod != null) {
+      u['receiverPayMethod'] = receiverPayMethod;
+    }
+    if (receiverPayMethodId != null) {
+      u['receiverPayMethodId'] = receiverPayMethodId;
+    }
+    if (setDisclaimer) {
+      u['receiverPayDisclaimerAt'] = FieldValue.serverTimestamp();
+    }
+    if (setMarkedPaid) {
+      u['receiverPayMarkedAt'] = FieldValue.serverTimestamp();
     }
     await ref.update(u);
   }

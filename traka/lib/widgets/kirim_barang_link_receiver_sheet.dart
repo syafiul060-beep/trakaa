@@ -71,6 +71,7 @@ class _KirimBarangLinkReceiverSheetState
   String? _notFound;
   List<Map<String, dynamic>> _recentReceivers = [];
   String? _estimasiLacakBarang; // "Rp X" atau "Rp 10.000 - Rp 25.000"
+  String _travelFarePaidBy = OrderModel.travelFarePaidBySender;
 
   @override
   void initState() {
@@ -232,6 +233,7 @@ class _KirimBarangLinkReceiverSheetState
       barangLebarCm: widget.barangLebarCm,
       barangTinggiCm: widget.barangTinggiCm,
       barangFotoUrl: widget.barangFotoUrl,
+      travelFarePaidBy: _travelFarePaidBy,
       bypassDuplicatePendingKirimBarang:
           widget.bypassDuplicatePendingKirimBarang,
     );
@@ -308,6 +310,7 @@ class _KirimBarangLinkReceiverSheetState
       asal: widget.asal,
       tujuan: widget.tujuan,
       jarakKontribusiLines: jarakKontribusiLines,
+      travelFarePaidBy: _travelFarePaidBy,
     );
     widget.onOrderCreated(orderId, message, widget.barangFotoUrl);
   }
@@ -517,6 +520,46 @@ class _KirimBarangLinkReceiverSheetState
                       fontSize: 12,
                       color:
                           Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Ongkos travel ke driver',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Ditanggung pengirim'),
+                      selected:
+                          _travelFarePaidBy == OrderModel.travelFarePaidBySender,
+                      onSelected: (_) => setState(() =>
+                          _travelFarePaidBy = OrderModel.travelFarePaidBySender),
+                    ),
+                    ChoiceChip(
+                      label: const Text('Ditanggung penerima'),
+                      selected: _travelFarePaidBy ==
+                          OrderModel.travelFarePaidByReceiver,
+                      onSelected: (_) => setState(() => _travelFarePaidBy =
+                          OrderModel.travelFarePaidByReceiver),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _travelFarePaidBy == OrderModel.travelFarePaidByReceiver
+                      ? 'Penerima mengisi konfirmasi bayar (hybrid) di app sebelum scan terima barang.'
+                      : 'Anda (pengirim) mengisi konfirmasi bayar sebelum scan jemput barang.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 16),
               ],

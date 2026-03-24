@@ -1,5 +1,6 @@
 import '../l10n/app_localizations.dart';
 import '../models/jarak_kontribusi_preview.dart';
+import '../models/order_model.dart';
 
 /// Teks pesan otomatis pertama penumpang → driver (gaya seragam: salam netral, emoji ringan, permintaan ongkos konsisten).
 ///
@@ -64,6 +65,7 @@ class PassengerFirstChatMessage {
     required String asal,
     required String tujuan,
     String? jarakKontribusiLines,
+    String travelFarePaidBy = OrderModel.travelFarePaidBySender,
   }) {
     final intro = isScheduled
         ? 'Saya ingin mengirim barang (terjadwal).'
@@ -81,6 +83,13 @@ class PassengerFirstChatMessage {
     if (extra != null && extra.isNotEmpty) {
       buf.writeln();
       buf.writeln(extra);
+    }
+    if (travelFarePaidBy == OrderModel.travelFarePaidByReceiver) {
+      buf
+        ..writeln()
+        ..writeln(
+          '💳 Ongkos travel ke driver ditanggung penerima (bukan pengirim).',
+        );
     }
     buf
       ..writeln()

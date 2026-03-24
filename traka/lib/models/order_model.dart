@@ -225,6 +225,15 @@ class OrderModel {
   final DateTime? passengerPayDisclaimerAt;
   final DateTime? passengerPayMarkedAt;
 
+  /// Kirim barang: `sender` | `receiver` — siapa yang lewat hybrid bayar ongkos ke driver. Default pengirim.
+  final String? travelFarePaidBy;
+
+  /// Instruksi bayar ke driver untuk penerima (mirror [passengerPay*]) jika [travelFarePaidBy] == receiver.
+  final String? receiverPayMethod;
+  final String? receiverPayMethodId;
+  final DateTime? receiverPayDisclaimerAt;
+  final DateTime? receiverPayMarkedAt;
+
   const OrderModel({
     required this.id,
     this.orderNumber,
@@ -320,6 +329,11 @@ class OrderModel {
     this.passengerPayMethodId,
     this.passengerPayDisclaimerAt,
     this.passengerPayMarkedAt,
+    this.travelFarePaidBy,
+    this.receiverPayMethod,
+    this.receiverPayMethodId,
+    this.receiverPayDisclaimerAt,
+    this.receiverPayMarkedAt,
   });
 
   factory OrderModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -420,6 +434,12 @@ class OrderModel {
       passengerPayDisclaimerAt:
           (d['passengerPayDisclaimerAt'] as Timestamp?)?.toDate(),
       passengerPayMarkedAt: (d['passengerPayMarkedAt'] as Timestamp?)?.toDate(),
+      travelFarePaidBy: d['travelFarePaidBy'] as String?,
+      receiverPayMethod: d['receiverPayMethod'] as String?,
+      receiverPayMethodId: d['receiverPayMethodId'] as String?,
+      receiverPayDisclaimerAt:
+          (d['receiverPayDisclaimerAt'] as Timestamp?)?.toDate(),
+      receiverPayMarkedAt: (d['receiverPayMarkedAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -437,12 +457,47 @@ class OrderModel {
     return false;
   }
 
+  /// Siap scan selesai (penerima) setelah hybrid, jika ongkos ditanggung penerima.
+  bool get receiverPayReadyForScan {
+    final m = receiverPayMethod;
+    if (m == null || m.isEmpty) return false;
+    if (receiverPayDisclaimerAt == null) return false;
+    if (m == 'cash') return true;
+    if (m == 'bank' || m == 'ewallet' || m == 'qris') {
+      return receiverPayMarkedAt != null &&
+          receiverPayMethodId != null &&
+          receiverPayMethodId!.isNotEmpty;
+    }
+    return false;
+  }
+
+  /// Untuk kirim barang: `sender` atau `receiver`. Order lama / travel: selalu sender.
+  String get effectiveTravelFarePaidBy {
+    if (!isKirimBarang) return travelFarePaidBySender;
+    if (travelFarePaidBy == travelFarePaidByReceiver) {
+      return travelFarePaidByReceiver;
+    }
+    return travelFarePaidBySender;
+  }
+
+  /// Hybrid ongkos sebelum scan PICKUP (pengirim): travel selalu ya; kirim barang hanya jika pengirim yang bayar ongkos.
+  bool get hybridPayRequiredBeforeSenderScan =>
+      !isKirimBarang || effectiveTravelFarePaidBy == travelFarePaidBySender;
+
+  /// Hybrid ongkos sebelum scan COMPLETE (penerima): hanya kirim barang + ongkos penerima.
+  bool get hybridPayRequiredBeforeReceiverScan =>
+      isKirimBarang && effectiveTravelFarePaidBy == travelFarePaidByReceiver;
+
   bool get isTravel => orderType == OrderModel.typeTravel;
   bool get isKirimBarang => orderType == OrderModel.typeKirimBarang;
 
   /// Konstanta jenis pesanan (untuk program/fungsi nanti).
   static const String typeKirimBarang = 'kirim_barang';
   static const String typeTravel = 'travel';
+
+  /// Siapa membayar ongkos travel ke driver (kirim barang).
+  static const String travelFarePaidBySender = 'sender';
+  static const String travelFarePaidByReceiver = 'receiver';
 
   /// Apakah pesan travel sendiri (1 orang).
   bool get isTravelSendiri =>

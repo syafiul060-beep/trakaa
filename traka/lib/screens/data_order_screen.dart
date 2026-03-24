@@ -1895,15 +1895,26 @@ class _DataOrderScreenState extends State<DataOrderScreen>
     OrderModel order, {
     required bool isReceiver,
   }) async {
-    if (!isReceiver && TrakaApiConfig.isApiEnabled) {
+    if (TrakaApiConfig.isApiEnabled) {
       final fresh = await OrderService.getOrderById(order.id);
       final o = fresh ?? order;
-      if (!o.passengerPayReadyForScan) {
-        final go = await PassengerPaymentBeforeScanSheet.show(
-          context,
-          order: o,
-        );
-        if (!context.mounted || go != true) return;
+      if (!isReceiver) {
+        if (o.hybridPayRequiredBeforeSenderScan && !o.passengerPayReadyForScan) {
+          final go = await PassengerPaymentBeforeScanSheet.show(
+            context,
+            order: o,
+          );
+          if (!context.mounted || go != true) return;
+        }
+      } else {
+        if (o.hybridPayRequiredBeforeReceiverScan && !o.receiverPayReadyForScan) {
+          final go = await PassengerPaymentBeforeScanSheet.show(
+            context,
+            order: o,
+            forReceiver: true,
+          );
+          if (!context.mounted || go != true) return;
+        }
       }
     }
     final result = await Navigator.of(context).push<Object?>(

@@ -107,7 +107,8 @@ CREATE TABLE IF NOT EXISTS orders (
   "barangTinggiCm" DOUBLE PRECISION,
   "passengerAppLocale" TEXT,
   "barangFotoUrl" TEXT,
-  "lacakBarangIapFeeRupiah" INT
+  "lacakBarangIapFeeRupiah" INT,
+  "travelFarePaidBy" TEXT DEFAULT 'sender'
 );
 
 CREATE INDEX IF NOT EXISTS idx_orders_driver ON orders("driverUid");

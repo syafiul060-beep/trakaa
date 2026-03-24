@@ -8,18 +8,31 @@ import '../services/traka_api_service.dart';
 
 /// Alur bayar ke driver sebelum scan barcode (non-escrow). Butuh hybrid + API.
 class PassengerPaymentBeforeScanSheet extends StatefulWidget {
-  const PassengerPaymentBeforeScanSheet({super.key, required this.order});
+  const PassengerPaymentBeforeScanSheet({
+    super.key,
+    required this.order,
+    this.forReceiver = false,
+  });
 
   final OrderModel order;
 
-  static Future<bool?> show(BuildContext context, {required OrderModel order}) {
+  /// [forReceiver]: kirim barang + ongkos ditanggung penerima — isi [receiverPay*] di Firestore.
+  static Future<bool?> show(
+    BuildContext context, {
+    required OrderModel order,
+    bool forReceiver = false,
+  }) {
     return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (ctx) => PassengerPaymentBeforeScanSheet(order: order),
+      builder: (ctx) =>
+          PassengerPaymentBeforeScanSheet(order: order, forReceiver: forReceiver),
     );
   }
+
+  /// True = penerima bayar ongkos sebelum scan terima barang.
+  final bool forReceiver;
 
   @override
   State<PassengerPaymentBeforeScanSheet> createState() =>
@@ -60,11 +73,19 @@ class _PassengerPaymentBeforeScanSheetState
   Future<void> _saveCash() async {
     setState(() => _loading = true);
     try {
-      await OrderService.updatePassengerPayFlow(
-        orderId: widget.order.id,
-        passengerPayMethod: 'cash',
-        setDisclaimer: true,
-      );
+      if (widget.forReceiver) {
+        await OrderService.updateReceiverPayFlow(
+          orderId: widget.order.id,
+          receiverPayMethod: 'cash',
+          setDisclaimer: true,
+        );
+      } else {
+        await OrderService.updatePassengerPayFlow(
+          orderId: widget.order.id,
+          passengerPayMethod: 'cash',
+          setDisclaimer: true,
+        );
+      }
       if (mounted) Navigator.of(context).pop(true);
     } catch (_) {
       if (mounted) {
@@ -79,13 +100,23 @@ class _PassengerPaymentBeforeScanSheetState
   Future<void> _saveNonCash(String type, String methodId) async {
     setState(() => _loading = true);
     try {
-      await OrderService.updatePassengerPayFlow(
-        orderId: widget.order.id,
-        passengerPayMethod: type,
-        passengerPayMethodId: methodId,
-        setDisclaimer: true,
-        setMarkedPaid: true,
-      );
+      if (widget.forReceiver) {
+        await OrderService.updateReceiverPayFlow(
+          orderId: widget.order.id,
+          receiverPayMethod: type,
+          receiverPayMethodId: methodId,
+          setDisclaimer: true,
+          setMarkedPaid: true,
+        );
+      } else {
+        await OrderService.updatePassengerPayFlow(
+          orderId: widget.order.id,
+          passengerPayMethod: type,
+          passengerPayMethodId: methodId,
+          setDisclaimer: true,
+          setMarkedPaid: true,
+        );
+      }
       if (mounted) Navigator.of(context).pop(true);
     } catch (_) {
       if (mounted) {
@@ -259,16 +290,20 @@ class _PassengerPaymentBeforeScanSheetState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            widget.order.isKirimBarang
-                ? 'Bayar ke driver (Anda pengirim)'
-                : 'Bayar ke driver',
+            widget.forReceiver
+                ? 'Bayar ke driver (Anda penerima)'
+                : widget.order.isKirimBarang
+                    ? 'Bayar ke driver (Anda pengirim)'
+                    : 'Bayar ke driver',
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
           Text(
-            widget.order.isKirimBarang
-                ? 'Sebagai pengirim barang, pilih cara bayar ke driver. Penerima barang tidak lewat langkah ini — mereka hanya scan saat terima barang.'
-                : 'Traka tidak menampung uang. Instruksi di bawah dari driver; konfirmasi transfer adalah antara Anda dan driver.',
+            widget.forReceiver
+                ? 'Ongkos travel untuk kirim barang ini ditanggung penerima. Pilih cara bayar ke driver lalu scan barcode saat terima barang.'
+                : widget.order.isKirimBarang
+                    ? 'Sebagai pengirim barang, pilih cara bayar ke driver (jika Anda yang menanggung ongkos). Jika ongkos ditanggung penerima, mereka akan mengisi langkah ini sebelum scan terima barang.'
+                    : 'Traka tidak menampung uang. Instruksi di bawah dari driver; konfirmasi transfer adalah antara Anda dan driver.',
             style: const TextStyle(fontSize: 13),
           ),
           CheckboxListTile(

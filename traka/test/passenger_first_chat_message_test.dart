@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:traka/l10n/app_localizations.dart';
 import 'package:traka/models/jarak_kontribusi_preview.dart';
+import 'package:traka/models/order_model.dart';
 import 'package:traka/services/passenger_first_chat_message.dart';
 
 void main() {
@@ -30,6 +31,33 @@ void main() {
       expect(s, contains('Estimated origin'));
       expect(s, contains('50.000'));
       expect(s, isNot(contains('sea segment')));
+    });
+  });
+
+  group('kirimBarang', () {
+    test('includes payer note when travel paid by receiver', () {
+      final s = PassengerFirstChatMessage.kirimBarang(
+        driverName: 'Budi',
+        isScheduled: false,
+        jenisLabel: 'Kargo',
+        receiverName: 'Ani',
+        asal: 'A',
+        tujuan: 'B',
+        travelFarePaidBy: OrderModel.travelFarePaidByReceiver,
+      );
+      expect(s, contains('ditanggung penerima'));
+    });
+
+    test('omits payer note when travel paid by sender', () {
+      final s = PassengerFirstChatMessage.kirimBarang(
+        driverName: 'Budi',
+        isScheduled: false,
+        jenisLabel: 'Kargo',
+        receiverName: 'Ani',
+        asal: 'A',
+        tujuan: 'B',
+      );
+      expect(s, isNot(contains('ditanggung penerima')));
     });
   });
 }

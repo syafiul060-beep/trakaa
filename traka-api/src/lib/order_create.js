@@ -146,6 +146,12 @@ function normalizeBody(body) {
       body.lacakBarangIapFeeRupiah != null && Number.isFinite(Number(body.lacakBarangIapFeeRupiah))
         ? Math.trunc(Number(body.lacakBarangIapFeeRupiah))
         : null,
+    travelFarePaidBy:
+      orderType === ORDER_KIRIM_BARANG &&
+      typeof body.travelFarePaidBy === 'string' &&
+      body.travelFarePaidBy.trim() === 'receiver'
+        ? 'receiver'
+        : 'sender',
     status,
     isKirimBarangWithReceiver,
     bypassDuplicatePendingTravel: bypassTravel,
@@ -209,6 +215,7 @@ function buildFirestorePayload(n, orderId) {
   if (n.barangTinggiCm != null) data.barangTinggiCm = n.barangTinggiCm;
   if (n.barangFotoUrl) data.barangFotoUrl = n.barangFotoUrl;
   if (n.lacakBarangIapFeeRupiah != null) data.lacakBarangIapFeeRupiah = n.lacakBarangIapFeeRupiah;
+  if (n.orderType === ORDER_KIRIM_BARANG) data.travelFarePaidBy = n.travelFarePaidBy;
 
   return { id: orderId, data };
 }
@@ -229,13 +236,13 @@ async function insertOrderPostgres(pg, id, n) {
       "orderType", "receiverUid", "receiverName", "receiverPhotoUrl",
       "jumlahKerabat", "scheduleId", "scheduledDate",
       "barangCategory", "barangNama", "barangBeratKg", "barangPanjangCm", "barangLebarCm", "barangTinggiCm",
-      "barangFotoUrl", "lacakBarangIapFeeRupiah",
+      "barangFotoUrl", "lacakBarangIapFeeRupiah", "travelFarePaidBy",
       "createdAt", "updatedAt"
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
       $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
       $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-      $31, $32, $33, $34, $35, $36, $37
+      $31, $32, $33, $34, $35, $36, $37, $38
     )
   `;
   const values = [
@@ -274,6 +281,7 @@ async function insertOrderPostgres(pg, id, n) {
     n.barangTinggiCm,
     n.barangFotoUrl,
     n.lacakBarangIapFeeRupiah,
+    n.orderType === ORDER_KIRIM_BARANG ? n.travelFarePaidBy : 'sender',
     now,
     now,
   ];
