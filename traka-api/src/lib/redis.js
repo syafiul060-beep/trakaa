@@ -34,6 +34,22 @@ function getRedis() {
   return client;
 }
 
+/** node-redis v4+: scan() mengembalikan { cursor, keys }, bukan [cursor, keys]. */
+function scanReplyToCursorKeys(reply) {
+  if (reply && typeof reply === 'object' && 'keys' in reply) {
+    const c = reply.cursor;
+    const cursorNum = typeof c === 'string' ? parseInt(c, 10) : Number(c);
+    const found = Array.isArray(reply.keys) ? reply.keys : [];
+    return { cursor: Number.isFinite(cursorNum) ? cursorNum : 0, found };
+  }
+  if (Array.isArray(reply) && reply.length >= 2) {
+    const cursorNum = typeof reply[0] === 'string' ? parseInt(reply[0], 10) : Number(reply[0]);
+    const found = Array.isArray(reply[1]) ? reply[1] : [];
+    return { cursor: Number.isFinite(cursorNum) ? cursorNum : 0, found };
+  }
+  return { cursor: 0, found: [] };
+}
+
 /**
  * Scan keys dengan pattern (ganti KEYS * yang tidak aman di production).
  * @param {string} pattern - e.g. 'driver_status:*'
@@ -44,8 +60,9 @@ async function scanKeys(pattern) {
   const keys = [];
   let cursor = 0;
   do {
-    const [nextCursor, found] = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
-    cursor = parseInt(nextCursor, 10);
+    const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
+    const { cursor: nextCursor, found } = scanReplyToCursorKeys(reply);
+    cursor = nextCursor;
     keys.push(...found);
   } while (cursor !== 0);
   return keys;
@@ -65,8 +82,9 @@ async function scanKeysPaginated(pattern, startCursor = 0, limit = 50) {
   let cursor = parseInt(startCursor, 10) || 0;
 
   do {
-    const [nextCursor, found] = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
-    cursor = parseInt(nextCursor, 10);
+    const reply = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
+    const { cursor: nextCursor, found } = scanReplyToCursorKeys(reply);
+    cursor = nextCursor;
     for (const k of found) {
       keys.push(k);
       if (keys.length >= limitNum) break;

@@ -21,7 +21,8 @@ router.get('/status', async (req, res) => {
 
     const drivers = [];
     if (keys.length > 0) {
-      const values = await redis.mGet(...keys);
+      // node-redis v4: mGet(mkeys: string[]) — jangan spread variadic
+      const values = await redis.mGet(keys);
       for (let i = 0; i < values.length; i++) {
         const raw = values[i];
         if (raw) {
