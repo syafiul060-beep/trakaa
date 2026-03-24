@@ -8,9 +8,10 @@ import '../widgets/traka_l10n_scope.dart';
 import '../services/sos_service.dart';
 import '../widgets/passenger_track_map_widget.dart';
 
-/// Halaman Lacak Driver: full-screen map hybrid, posisi driver dengan icon mobil
-/// (car_hijau = bergerak, car_merah = tidak bergerak). Pin penumpang + foto profil.
-/// Pergerakan halus (semut) dan mengikuti alur jalan (snap-to-road).
+/// Halaman Lacak Driver: full-screen map hybrid, posisi driver dengan marker mobil
+/// (premium biru/hijau di peta + overlay head unit hijau/merah = bergerak/berhenti).
+/// Pin penumpang + foto profil. Pergerakan halus dan snap-to-road.
+/// Kebijakan aset: `docs/KEBIJAKAN_ICON_MOBIL_DAN_OVERLAY.md`.
 class CekLokasiDriverScreen extends StatefulWidget {
   const CekLokasiDriverScreen({
     super.key,

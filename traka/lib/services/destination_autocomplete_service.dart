@@ -15,6 +15,12 @@ class DestinationAutocompleteConfig {
   /// Filter provinsi: hanya tampilkan yang provinsinya ada di list (untuk sameIslandOnly).
   final List<String>? filterProvincesInIsland;
 
+  /// Rute dalam provinsi: hanya hasil yang [Placemark.administrativeArea] sama provinsi dengan ini (setelah [ProvinceIsland.resolveProvinceCanonical]).
+  final String? filterSameProvinceAs;
+
+  /// Rute antar provinsi (satu pulau): sembunyikan hasil yang provinsinya sama dengan provinsi asal ([driverProvince]).
+  final String? excludeSameProvinceAs;
+
   /// Maksimal lokasi yang di-fetch dari geocode (sebelum placemark).
   final int maxLocations;
 
@@ -28,6 +34,8 @@ class DestinationAutocompleteConfig {
     required this.buildQueries,
     this.sortByDistanceFrom,
     this.filterProvincesInIsland,
+    this.filterSameProvinceAs,
+    this.excludeSameProvinceAs,
     this.maxLocations = 20,
     this.maxCandidates = 10,
     this.maxDisplayCount = 10,
@@ -106,6 +114,26 @@ class DestinationAutocompleteService {
         );
         if (list.isNotEmpty) {
           final p = list.first;
+          final filterProv = config.filterSameProvinceAs?.trim();
+          if (filterProv != null && filterProv.isNotEmpty) {
+            final rp = ProvinceIsland.resolveProvinceCanonical(
+              p.administrativeArea,
+            );
+            final rt = ProvinceIsland.resolveProvinceCanonical(filterProv);
+            if (rp != null && rt != null && rp != rt) {
+              continue;
+            }
+          }
+          final excludeProv = config.excludeSameProvinceAs?.trim();
+          if (excludeProv != null && excludeProv.isNotEmpty) {
+            final rp = ProvinceIsland.resolveProvinceCanonical(
+              p.administrativeArea,
+            );
+            final rt = ProvinceIsland.resolveProvinceCanonical(excludeProv);
+            if (rp != null && rt != null && rp == rt) {
+              continue;
+            }
+          }
           if (config.filterProvincesInIsland != null &&
               config.filterProvincesInIsland!.isNotEmpty) {
             final prov = p.administrativeArea ?? '';

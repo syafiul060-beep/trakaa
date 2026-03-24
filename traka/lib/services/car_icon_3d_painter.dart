@@ -5,20 +5,37 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 /// Gambar icon mobil 3D secara programatik untuk marker peta.
 /// Gaya referensi: glossy, pseudo-3D dengan highlight, headlight, roof rails.
+///
+/// Di Android, PNG custom sering jadi kotak hitam di Google Maps; ikon ini
+/// (Canvas → PNG lewat engine Flutter) biasanya aman.
 class CarIcon3dPainter {
   CarIcon3dPainter._();
 
-  /// Warna Traka: merah ceri & hijau terang (ala referensi).
-  static const Color _red = Color(0xFFE53935);
-  static const Color _green = Color(0xFF43A047);
+  /// Warna untuk set premium penumpang (sinkron semantik hijau/merah/biru).
+  static const Color passengerCarAvailableGreen = Color(0xFF43A047);
+  static const Color passengerCarFullRed = Color(0xFFE53935);
+  static const Color passengerCarRecommendedBlue = Color(0xFF1E88E5);
 
   /// Gambar mobil 3D dan return BitmapDescriptor.
-  /// Orientasi: depan mobil = bawah (selatan), untuk rotasi bearing.
+  /// Orientasi: depan mobil = bawah (selatan), untuk rotasi bearing (+180 vs PNG premium).
   static Future<BitmapDescriptor> drawCarIcon({
     required double size,
     required bool isRed,
+  }) {
+    return drawCarIconWithColor(
+      size: size,
+      bodyColor: isRed ? passengerCarFullRed : passengerCarAvailableGreen,
+      fallbackHue: isRed ? BitmapDescriptor.hueRed : BitmapDescriptor.hueGreen,
+    );
+  }
+
+  /// [bodyColor] warna badan mobil; [fallbackHue] jika encode PNG gagal.
+  static Future<BitmapDescriptor> drawCarIconWithColor({
+    required double size,
+    required Color bodyColor,
+    required double fallbackHue,
   }) async {
-    final color = isRed ? _red : _green;
+    final color = bodyColor;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     final s = size;
@@ -28,7 +45,6 @@ class CarIcon3dPainter {
     canvas.translate(padding, padding);
     final d = s - padding * 2;
 
-    // 1. Shadow elips (efek mengambang).
     final shadowPaint = Paint()
       ..color = Colors.black.withValues(alpha: 0.2)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
@@ -41,14 +57,12 @@ class CarIcon3dPainter {
       shadowPaint,
     );
 
-    // 2. Body mobil (rounded rect, sedikit SUV).
     final bodyRect = Rect.fromLTWH(d * 0.1, d * 0.18, d * 0.8, d * 0.52);
     final bodyPath = RRect.fromRectAndRadius(
       bodyRect,
       Radius.circular(d * 0.1),
     );
 
-    // Base gradient (glossy, cahaya dari atas).
     final baseGradient = LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
@@ -61,7 +75,6 @@ class CarIcon3dPainter {
     );
     canvas.drawRRect(bodyPath, Paint()..shader = baseGradient.createShader(bodyRect));
 
-    // 3. Highlight glossy (hotspot di hood/atap).
     final highlightRect = Rect.fromLTWH(
       bodyRect.left + d * 0.15,
       bodyRect.top + d * 0.05,
@@ -83,7 +96,6 @@ class CarIcon3dPainter {
       Paint()..shader = highlightGradient.createShader(highlightRect),
     );
 
-    // 4. Roof rails (garis silver di atap).
     final railPaint = Paint()
       ..color = const Color(0xFFE0E0E0)
       ..strokeWidth = d * 0.03
@@ -94,7 +106,6 @@ class CarIcon3dPainter {
     canvas.drawLine(Offset(bodyRect.left + d * 0.12, railY1), Offset(bodyRect.right - d * 0.12, railY1), railPaint);
     canvas.drawLine(Offset(bodyRect.left + d * 0.12, railY2), Offset(bodyRect.right - d * 0.12, railY2), railPaint);
 
-    // 5. Kaca depan & belakang (hitam reflektif).
     final windowColor = const Color(0xFF1A1A1A);
     final frontWindow = RRect.fromRectAndRadius(
       Rect.fromLTWH(bodyRect.left + d * 0.1, bodyRect.top + d * 0.08, d * 0.22, bodyRect.height * 0.45),
@@ -107,7 +118,6 @@ class CarIcon3dPainter {
     canvas.drawRRect(frontWindow, Paint()..color = windowColor);
     canvas.drawRRect(rearWindow, Paint()..color = windowColor);
 
-    // 6. Headlights (glow biru-putih di depan).
     final headlightY = bodyRect.bottom - d * 0.08;
     final headlightGlow = Paint()
       ..color = const Color(0xFFB3E5FC).withValues(alpha: 0.8)
@@ -118,7 +128,6 @@ class CarIcon3dPainter {
     canvas.drawCircle(Offset(bodyRect.left + d * 0.25, headlightY), d * 0.035, headlightCore);
     canvas.drawCircle(Offset(bodyRect.right - d * 0.25, headlightY), d * 0.035, headlightCore);
 
-    // 7. Spion dengan highlight.
     final mirrorRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(bodyRect.left - d * 0.02, bodyRect.top + d * 0.1, d * 0.09, d * 0.12),
       Radius.circular(d * 0.02),
@@ -146,9 +155,7 @@ class CarIcon3dPainter {
     img.dispose();
 
     if (byteData == null) {
-      return BitmapDescriptor.defaultMarkerWithHue(
-        isRed ? BitmapDescriptor.hueRed : BitmapDescriptor.hueGreen,
-      );
+      return BitmapDescriptor.defaultMarkerWithHue(fallbackHue);
     }
     return BitmapDescriptor.bytes(byteData.buffer.asUint8List());
   }

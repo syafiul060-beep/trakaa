@@ -139,9 +139,9 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
   }
 
   /// Toggle selection untuk order tertentu
-  void _toggleOrderSelection(String orderId, bool isAgreed) {
-    // Hanya bisa pilih order yang belum agreed (warna kuning)
-    if (isAgreed) return;
+  void _toggleOrderSelection(String orderId, bool isAgreed, bool locked) {
+    // Hanya bisa pilih order yang belum agreed dan tidak terkunci (warna kuning)
+    if (isAgreed || locked) return;
 
     setState(() {
       if (_selectedOrderIds.contains(orderId)) {
@@ -312,7 +312,10 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
             // Hanya tampilkan chat yang sudah ada isi pesan dan belum selesai.
             // Pesanan selesai tidak ditampilkan agar tidak bisa dihapus/sembunyikan (riwayat tetap di Data Order).
             // Pesanan dibatalkan tidak ditampilkan — pesan chat sudah dihapus, tampil sebagai chat kosong.
-            final allOrders = (snapshot.data ?? [])
+            final snapshotOrders = snapshot.data ?? [];
+            final travelAgreedDriverUids =
+                OrderService.travelAgreedDriverUidsFromOrders(snapshotOrders);
+            final allOrders = snapshotOrders
                 .where((o) =>
                     o.lastMessageAt != null &&
                     !o.isCompleted &&
@@ -427,8 +430,12 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
                   final categoryIcon = _getCategoryIcon(order);
 
                   final isSelected = _selectedOrderIds.contains(order.id);
-                  final canSelect =
-                      !isAgreed; // Hanya yang belum agreed bisa dipilih
+                  final locked =
+                      OrderService.isPassengerTravelPendingLockedOtherDriver(
+                    order,
+                    travelAgreedDriverUids,
+                  );
+                  final canSelect = !isAgreed && !locked;
 
                   return Container(
                     color: tileColor,
@@ -437,7 +444,7 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
                           ? Checkbox(
                               value: isSelected,
                               onChanged: (value) =>
-                                  _toggleOrderSelection(order.id, isAgreed),
+                                  _toggleOrderSelection(order.id, isAgreed, locked),
                             )
                           : CircleAvatar(
                               radius: 28,
@@ -498,71 +505,105 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
                                 : Colors.yellow.shade700,
                             size: 24,
                           ),
-                          PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert),
-                            onSelected: (value) async {
-                              if (value == 'sembunyikan') {
-                                final err = await OrderService.hideChatForPassenger(
-                                    order.id);
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(err ?? 'Chat disembunyikan'),
-                                      backgroundColor:
-                                          err != null ? Colors.orange : null,
-                                    ),
-                                  );
-                                }
-                              } else if (value == 'hapus') {
-                                final err = await OrderService.deleteOrderAndChat(
-                                    order.id);
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(err ?? 'Pesan dihapus'),
-                                      backgroundColor:
-                                          err != null ? Colors.orange : null,
-                                    ),
-                                  );
-                                }
+                          Builder(
+                            builder: (ctx) {
+                              final showHide =
+                                  (isAgreed || order.isCompleted) && !locked;
+                              final showDelete =
+                                  !isAgreed && !order.isCompleted && !locked;
+                              if (showDelete || showHide) {
+                                return PopupMenuButton<String>(
+                                  icon: const Icon(Icons.more_vert),
+                                  onSelected: (value) async {
+                                    if (value == 'sembunyikan') {
+                                      final err =
+                                          await OrderService.hideChatForPassenger(
+                                              order.id);
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                                err ?? 'Chat disembunyikan'),
+                                            backgroundColor: err != null
+                                                ? Colors.orange
+                                                : null,
+                                          ),
+                                        );
+                                      }
+                                    } else if (value == 'hapus') {
+                                      final err =
+                                          await OrderService.deleteOrderAndChat(
+                                              order.id);
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content:
+                                                Text(err ?? 'Pesan dihapus'),
+                                            backgroundColor: err != null
+                                                ? Colors.orange
+                                                : null,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                                  itemBuilder: (ctx2) => [
+                                    if (showHide)
+                                      PopupMenuItem(
+                                        value: 'sembunyikan',
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.visibility_off),
+                                            const SizedBox(width: 8),
+                                            Text(TrakaL10n.of(context).hide),
+                                          ],
+                                        ),
+                                      ),
+                                    if (showDelete)
+                                      PopupMenuItem(
+                                        value: 'hapus',
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.delete,
+                                                color: Colors.red),
+                                            const SizedBox(width: 8),
+                                            Text(TrakaL10n.of(context).delete),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
+                                );
                               }
+                              if (locked) {
+                                return Tooltip(
+                                  message: TrakaL10n.of(context)
+                                      .chatTravelLockedOtherDriver,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(left: 4),
+                                    child: Icon(
+                                      Icons.lock_outline,
+                                      color: AppTheme.onSurfaceVariant,
+                                      size: 22,
+                                    ),
+                                  ),
+                                );
+                              }
+                              return const SizedBox.shrink();
                             },
-                            itemBuilder: (ctx) => [
-                              if (isAgreed || order.isCompleted)
-                                PopupMenuItem(
-                                  value: 'sembunyikan',
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.visibility_off),
-                                      const SizedBox(width: 8),
-                                      Text(TrakaL10n.of(context).hide),
-                                    ],
-                                  ),
-                                ),
-                              if (!isAgreed && !order.isCompleted)
-                                PopupMenuItem(
-                                  value: 'hapus',
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.delete, color: Colors.red),
-                                      const SizedBox(width: 8),
-                                      Text(TrakaL10n.of(context).delete),
-                                    ],
-                                  ),
-                                ),
-                            ],
                           ),
                         ],
                       ),
                       onTap: _isSelectionMode && canSelect
-                          ? () => _toggleOrderSelection(order.id, isAgreed)
+                          ? () => _toggleOrderSelection(order.id, isAgreed, locked)
                           : () => _openChat(order),
                       onLongPress: canSelect
                           ? () {
                               if (!_isSelectionMode) {
                                 _toggleSelectionMode();
                               }
-                              _toggleOrderSelection(order.id, isAgreed);
+                              _toggleOrderSelection(order.id, isAgreed, locked);
                             }
                           : null,
                     ),

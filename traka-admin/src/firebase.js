@@ -1,6 +1,9 @@
 /**
  * Konfigurasi Firebase untuk Traka Admin.
- * 
+ *
+ * Catatan: tidak ada Firebase Cloud Messaging (web push) di panel ini — admin mengandalkan
+ * email (GMAIL_EMAIL di Cloud Functions) untuk alert konfirmasi kirim data / STNK.
+ *
  * Cara setup:
  * 1. Buka Firebase Console > Project Settings > General
  * 2. Scroll ke "Your apps" > Tambah web app (jika belum)

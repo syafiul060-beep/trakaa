@@ -110,6 +110,28 @@ class ActiveDriverRoute {
 
 }
 
+/// Hasil [getActiveDriversForMapResult]: daftar driver + statistik kegagalan Directions per kandidat.
+class ActiveDriversMapResult {
+  const ActiveDriversMapResult({
+    required this.drivers,
+    this.routeCandidatesTotal = 0,
+    this.skippedDirectionsEmpty = 0,
+    this.skippedDirectionsError = 0,
+  });
+
+  final List<ActiveDriverRoute> drivers;
+  /// Jumlah driver yang dicek di mode rute (sama dengan panjang daftar sebelum filter polyline).
+  final int routeCandidatesTotal;
+  final int skippedDirectionsEmpty;
+  final int skippedDirectionsError;
+
+  /// Semua kandidat gagal di [DirectionsService.getAlternativeRoutes] (kosong atau error), sehingga tidak ada yang lolos filter rute.
+  bool get allCandidatesFailedAtDirections =>
+      routeCandidatesTotal > 0 &&
+      drivers.isEmpty &&
+      skippedDirectionsEmpty + skippedDirectionsError == routeCandidatesTotal;
+}
+
 /// Service untuk daftar driver yang sedang siap kerja (ada rute aktif).
 /// Dipakai penumpang untuk "Cari travel".
 class ActiveDriversService {
@@ -150,6 +172,8 @@ class ActiveDriversService {
   static Future<List<ActiveDriverRoute>> getActiveDriverRoutes({
     double? pickupLat,
     double? pickupLng,
+    double? matchDestLat,
+    double? matchDestLng,
     String? city,
     double? radiusKm,
     int? limit,
@@ -158,17 +182,21 @@ class ActiveDriversService {
         () => _getActiveDriverRoutesImpl(
           pickupLat: pickupLat,
           pickupLng: pickupLng,
+          matchDestLat: matchDestLat,
+          matchDestLng: matchDestLng,
           city: city,
           radiusKm: radiusKm,
           limit: limit,
         ),
-        maxAttempts: 2,
+        maxAttempts: TrakaApiConfig.isApiEnabled ? 3 : 2,
         baseDelayMs: 1500,
       );
 
   static Future<List<ActiveDriverRoute>> _getActiveDriverRoutesImpl({
     double? pickupLat,
     double? pickupLng,
+    double? matchDestLat,
+    double? matchDestLng,
     String? city,
     double? radiusKm,
     int? limit,
@@ -181,6 +209,8 @@ class ActiveDriversService {
           final matchList = await TrakaApiService.getMatchDrivers(
             lat: pickupLat,
             lng: pickupLng,
+            destLat: matchDestLat,
+            destLng: matchDestLng,
             city: city,
             radiusKm: radiusKm ?? 30,
             limit: limit ?? 50,
@@ -390,7 +420,20 @@ class ActiveDriversService {
     return (radiusKm: 100, limit: 80);
   }
 
-  static Future<List<ActiveDriverRoute>> getActiveDriversForMap({
+  /// Peta penumpang «Cari travel»: filter driver `siap_kerja` yang **searah** dengan asal/tujuan penumpang.
+  ///
+  /// **Kebijakan OD + koridor (bukan satu polyline pilihan driver):**
+  /// - Kunci operasional driver di `driver_status` = **asal & tujuan rute** (OD) + opsional `routeCategory`.
+  /// - Garis biru/hijau yang dipilih driver di app hanya untuk navigasi; **matching** memanggil
+  ///   Directions **alternatif** untuk OD yang sama, lalu cek apakah jemput & turun penumpang
+  ///   masuk **koridor buffer** ke salah satu polyline itu ([RouteUtils.defaultToleranceMeters] /
+  ///   [RouteUtils.passengerDropoffToleranceMeters]). Jadi jalan alternatif menuju tujuan akhir
+  ///   yang sama tetap konsisten untuk pencarian.
+  /// - Jika `alternatives` kosong, fallback satu rute [DirectionsService.getRoute] (tetap OD sama).
+  /// - Dokumen: [AppConstants.matchingOdCorridorDocRelative] (folder `traka/`).
+  ///
+  /// Sama seperti [getActiveDriversForMap] tetapi menyertakan statistik Directions (untuk dialog fallback).
+  static Future<ActiveDriversMapResult> getActiveDriversForMapResult({
     double? passengerOriginLat,
     double? passengerOriginLng,
     double? passengerDestLat,
@@ -417,40 +460,60 @@ class ActiveDriversService {
     final all = await getActiveDriverRoutes(
       pickupLat: passengerOriginLat,
       pickupLng: passengerOriginLng,
+      matchDestLat: passengerDestLat,
+      matchDestLng: passengerDestLng,
       city: city,
       radiusKm: radiusKm,
       limit: limit,
     );
-    if (all.isEmpty) return [];
+    if (all.isEmpty) {
+      return ActiveDriversMapResult(drivers: const <ActiveDriverRoute>[]);
+    }
 
-    // Jika tidak ada lokasi awal atau tujuan penumpang, kembalikan semua driver
     if (passengerOriginLat == null ||
         passengerOriginLng == null ||
         passengerDestLat == null ||
         passengerDestLng == null) {
-      return all;
+      return ActiveDriversMapResult(drivers: all);
     }
 
     final passengerOrigin = LatLng(passengerOriginLat, passengerOriginLng);
     final passengerDest = LatLng(passengerDestLat, passengerDestLng);
     final filtered = <ActiveDriverRoute>[];
+    var skippedDirectionsEmpty = 0;
+    var skippedDirectionsError = 0;
 
     for (final d in all) {
       try {
-        final alternativeRoutes = await DirectionsService.getAlternativeRoutes(
+        var alternativeRoutes = await DirectionsService.getAlternativeRoutes(
           originLat: d.routeOriginLat,
           originLng: d.routeOriginLng,
           destLat: d.routeDestLat,
           destLng: d.routeDestLng,
         );
 
-        if (alternativeRoutes.isEmpty) continue;
+        if (alternativeRoutes.isEmpty) {
+          final single = await DirectionsService.getRoute(
+            originLat: d.routeOriginLat,
+            originLng: d.routeOriginLng,
+            destLat: d.routeDestLat,
+            destLng: d.routeDestLng,
+          );
+          if (single != null && single.points.length >= 2) {
+            alternativeRoutes = [single];
+          }
+        }
+
+        if (alternativeRoutes.isEmpty) {
+          skippedDirectionsEmpty++;
+          continue;
+        }
 
         final routePolylines = alternativeRoutes.map((r) => r.points).toList();
         final driverDest = LatLng(d.routeDestLat, d.routeDestLng);
         final driverOrigin = LatLng(d.routeOriginLat, d.routeOriginLng);
 
-        // Cross-route: pickup dan dropoff boleh di rute berbeda
+        // Jemput: koridor 10 km. Turun: koridor lebih lebar (±25 km) agar tujuan di samping jalur utama tetap lolos.
         final pickupNearAny = RouteUtils.isPointNearAnyRoute(
           passengerOrigin,
           routePolylines,
@@ -459,12 +522,11 @@ class ActiveDriversService {
         final dropoffNearAny = RouteUtils.isPointNearAnyRoute(
           passengerDest,
           routePolylines,
-          toleranceMeters: RouteUtils.defaultToleranceMeters,
+          toleranceMeters: RouteUtils.passengerDropoffToleranceMeters,
         );
 
         if (!pickupNearAny || !dropoffNearAny) continue;
 
-        // Urutan: pickup harus sebelum dropoff (jarak pickup ke tujuan > jarak dropoff ke tujuan)
         if (!RouteUtils.isPickupBeforeDropoffByDistance(
           passengerOrigin,
           passengerDest,
@@ -473,10 +535,9 @@ class ActiveDriversService {
           continue;
         }
 
-        // Driver belum melewati titik penjemputan, ATAU sudah lewat tapi masih dalam 5 km
         if (onlyDriversBeforePassenger) {
           final driverPos = LatLng(d.driverLat, d.driverLng);
-          const maxMetersPastPickup = 5000.0; // 5 km - driver yang baru lewat masih ditampilkan
+          const maxMetersPastPickup = 5000.0;
           final pickupRouteIdx = RouteUtils.findRouteIndexWithPoint(
             passengerOrigin,
             routePolylines,
@@ -496,7 +557,6 @@ class ActiveDriversService {
               driverOrigin,
             );
           }
-          // Driver sudah lewat pickup tapi masih dalam 10 km → tetap tampilkan
           if (!driverOk) {
             driverOk = RouteUtils.isDriverWithinXMetersPastPickup(
               driverPos,
@@ -508,7 +568,6 @@ class ActiveDriversService {
           if (!driverOk) continue;
         }
 
-        // Maksimal 40 km dari titik penjemputan
         final distToPickup = Geolocator.distanceBetween(
           passengerOriginLat,
           passengerOriginLng,
@@ -519,11 +578,15 @@ class ActiveDriversService {
 
         filtered.add(d);
       } catch (e) {
-        if (kDebugMode) debugPrint('ActiveDriversService.getActiveDriversForMap: Error cek rute untuk driver ${d.driverUid}: $e');
+        skippedDirectionsError++;
+        if (kDebugMode) {
+          debugPrint(
+            'ActiveDriversService.getActiveDriversForMap: Error cek rute untuk driver ${d.driverUid}: $e',
+          );
+        }
       }
     }
 
-    // Urutkan berdasarkan jarak ke titik penjemputan (terdekat dulu)
     filtered.sort((a, b) {
       final distA = Geolocator.distanceBetween(
         passengerOriginLat,
@@ -540,8 +603,31 @@ class ActiveDriversService {
       return distA.compareTo(distB);
     });
 
-    // Batasi maksimal 15 driver di map
-    const maxDriversOnMap = 15;
-    return filtered.take(maxDriversOnMap).toList();
+    final out = filtered.take(AppConstants.maxDriversOnPassengerSearchMap).toList();
+    return ActiveDriversMapResult(
+      drivers: out,
+      routeCandidatesTotal: all.length,
+      skippedDirectionsEmpty: skippedDirectionsEmpty,
+      skippedDirectionsError: skippedDirectionsError,
+    );
+  }
+
+  static Future<List<ActiveDriverRoute>> getActiveDriversForMap({
+    double? passengerOriginLat,
+    double? passengerOriginLng,
+    double? passengerDestLat,
+    double? passengerDestLng,
+    String? city,
+    bool onlyDriversBeforePassenger = true,
+  }) async {
+    final r = await getActiveDriversForMapResult(
+      passengerOriginLat: passengerOriginLat,
+      passengerOriginLng: passengerOriginLng,
+      passengerDestLat: passengerDestLat,
+      passengerDestLng: passengerDestLng,
+      city: city,
+      onlyDriversBeforePassenger: onlyDriversBeforePassenger,
+    );
+    return r.drivers;
   }
 }

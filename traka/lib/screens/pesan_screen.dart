@@ -22,9 +22,19 @@ import '../l10n/app_localizations.dart';
 import '../services/locale_service.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../services/app_config_service.dart';
+import '../services/jarak_kontribusi_schedule_estimate.dart';
 import '../services/order_service.dart';
+import '../services/passenger_first_chat_message.dart';
+import '../services/performance_trace_service.dart';
+import '../services/verification_service.dart';
 import '../services/app_analytics_service.dart';
 import '../models/order_model.dart';
+import '../widgets/estimate_loading_dialog.dart';
+import '../widgets/passenger_duplicate_pending_order_dialog.dart'
+    show
+        PassengerDuplicatePendingChoice,
+        passengerDuplicatePendingChoiceAnalyticsValue,
+        showPassengerDuplicatePendingOrderDialog;
 import '../widgets/shimmer_loading.dart';
 import 'chat_room_penumpang_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -69,12 +79,17 @@ String _formatAlamatKecamatanKabupaten(String alamat) {
 }
 
 class PesanScreen extends StatefulWidget {
+  /// True jika penumpang boleh pesan (profil lengkap + tidak diblokir permintaan admin).
   final bool isVerified;
+  /// Profil verifikasi dasar lengkap (KTP/wajah/HP). Untuk membedakan dialog admin vs lengkapi data.
+  final bool profileIsComplete;
+
   final VoidCallback? onVerificationRequired;
 
   const PesanScreen({
     super.key,
     this.isVerified = false,
+    this.profileIsComplete = true,
     this.onVerificationRequired,
   });
 
@@ -491,18 +506,34 @@ class _PesanScreenState extends State<PesanScreen> {
     );
   }
 
-  void _onPesanJadwal(
+  /// Satu-satunya pintu penumpang untuk sheet jadwal (rekomendasi + hasil Cari rute lain).
+  Future<void> _onPesanJadwal(
     BuildContext context,
     Map<String, dynamic> item,
     String scheduleId,
     String scheduledDate,
     String origin,
     String dest,
-  ) {
+  ) async {
     if (!widget.isVerified) {
-      _showLengkapiVerifikasiDialog();
+      if (!widget.profileIsComplete) {
+        _showLengkapiVerifikasiDialog();
+      } else {
+        _showAdminVerificationComplianceDialog();
+      }
       return;
     }
+
+    final user = FirebaseAuth.instance.currentUser;
+    var hasBlockingTravel = false;
+    if (user != null) {
+      try {
+        final orders = await OrderService.getOrdersForPassenger(user.uid);
+        hasBlockingTravel =
+            OrderService.passengerOrdersContainBlockingTravel(orders);
+      } catch (_) {}
+    }
+    if (!mounted) return;
 
     showModalBottomSheet<void>(
       context: context,
@@ -513,6 +544,7 @@ class _PesanScreenState extends State<PesanScreen> {
         scheduledDate: scheduledDate,
         origin: origin,
         dest: dest,
+        hasBlockingTravelOrder: hasBlockingTravel,
         onCreated: () => Navigator.pop(ctx),
       ),
     );
@@ -538,6 +570,32 @@ class _PesanScreenState extends State<PesanScreen> {
               widget.onVerificationRequired?.call();
             },
             child: const Text('Lengkapi Sekarang'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAdminVerificationComplianceDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Verifikasi dari admin'),
+        content: Text(
+          VerificationService.adminVerificationBlockingHintId,
+          style: const TextStyle(height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Nanti'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              widget.onVerificationRequired?.call();
+            },
+            child: const Text('Ke Profil'),
           ),
         ],
       ),
@@ -756,7 +814,7 @@ class _PesanScreenState extends State<PesanScreen> {
                       Icon(
                         Icons.event_available_outlined,
                         size: 48,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                       const SizedBox(height: 16),
                       Text(
@@ -1501,6 +1559,8 @@ class _PesanJadwalSheet extends StatefulWidget {
   final String scheduledDate;
   final String origin;
   final String dest;
+  /// Travel `agreed`/`picked_up` — nonaktifkan opsi travel di sheet; kirim barang tetap.
+  final bool hasBlockingTravelOrder;
   final VoidCallback onCreated;
 
   const _PesanJadwalSheet({
@@ -1509,6 +1569,7 @@ class _PesanJadwalSheet extends StatefulWidget {
     required this.scheduledDate,
     required this.origin,
     required this.dest,
+    this.hasBlockingTravelOrder = false,
     required this.onCreated,
   });
 
@@ -1546,10 +1607,75 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
   Future<void> _createAndOpenChat({
     required String orderType,
     int? jumlahKerabat,
+    bool bypassDuplicatePendingTravel = false,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     if (_loading) return;
+
+    if (widget.hasBlockingTravelOrder && orderType == OrderModel.typeTravel) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            TrakaL10n.of(context).scheduleTravelBlockedWhileTravelAgreed,
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final driverUidEarly = widget.item['driverUid'] as String? ?? '';
+
+    if (orderType == OrderModel.typeTravel && !bypassDuplicatePendingTravel) {
+      final pendingT = await OrderService.getPassengerPendingTravelWithDriver(
+        user.uid,
+        driverUidEarly,
+      );
+      if (!mounted) return;
+      if (pendingT != null) {
+        final l10n = TrakaL10n.of(context);
+        final choice = await showPassengerDuplicatePendingOrderDialog(
+          context,
+          title: l10n.passengerPendingTravelDuplicateTitle,
+          body: l10n.passengerPendingTravelDuplicateBody,
+        );
+        if (!mounted) return;
+        AppAnalyticsService.logPassengerDuplicatePendingDialog(
+          orderKind: 'travel',
+          choice: passengerDuplicatePendingChoiceAnalyticsValue(choice),
+          surface: 'scheduled_pesan',
+        );
+        if (choice == null ||
+            choice == PassengerDuplicatePendingChoice.cancel) {
+          return;
+        }
+        if (choice == PassengerDuplicatePendingChoice.openExisting) {
+          Navigator.push<void>(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => ChatRoomPenumpangScreen(
+                orderId: pendingT.id,
+                driverUid: driverUidEarly,
+                driverName: (widget.item['driverName'] as String?) ?? 'Driver',
+                driverPhotoUrl: widget.item['photoUrl'] as String?,
+                driverVerified: widget.item['isVerified'] as bool? ?? false,
+              ),
+            ),
+          );
+          return;
+        }
+        if (choice == PassengerDuplicatePendingChoice.forceNew) {
+          await _createAndOpenChat(
+            orderType: orderType,
+            jumlahKerabat: jumlahKerabat,
+            bypassDuplicatePendingTravel: true,
+          );
+        }
+        return;
+      }
+    }
 
     setState(() => _loading = true);
 
@@ -1572,39 +1698,43 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
     } catch (_) {
       passengerAppLocale = LocaleService.current == AppLocale.id ? 'id' : 'en';
     }
-    passengerName ??= user.email ?? 'Penumpang';
+    final passengerNameResolved = passengerName ?? user.email ?? 'Penumpang';
 
-    final driverUid = widget.item['driverUid'] as String? ?? '';
+    final driverUid = driverUidEarly;
     final driverName = (widget.item['driverName'] as String?) ?? 'Driver';
     final driverPhotoUrl = widget.item['photoUrl'] as String?;
     final dateLabel = _formatScheduledDate(widget.scheduledDate);
 
-    final orderId = await OrderService.createOrder(
-      passengerUid: user.uid,
-      driverUid: driverUid,
-      routeJourneyNumber: OrderService.routeJourneyNumberScheduled,
-      passengerName: passengerName,
-      passengerPhotoUrl: passengerPhotoUrl,
-      passengerAppLocale: passengerAppLocale,
-      originText: widget.origin,
-      destText: widget.dest,
-      originLat: null,
-      originLng: null,
-      destLat: null,
-      destLng: null,
-      orderType: orderType,
-      jumlahKerabat: jumlahKerabat,
-      scheduleId: widget.scheduleId,
-      scheduledDate: widget.scheduledDate,
+    final orderId = await PerformanceTraceService.traceOrderSubmit<String?>(
+      () => OrderService.createOrder(
+        passengerUid: user.uid,
+        driverUid: driverUid,
+        routeJourneyNumber: OrderService.routeJourneyNumberScheduled,
+        passengerName: passengerNameResolved,
+        passengerPhotoUrl: passengerPhotoUrl,
+        passengerAppLocale: passengerAppLocale,
+        originText: widget.origin,
+        destText: widget.dest,
+        originLat: null,
+        originLng: null,
+        destLat: null,
+        destLng: null,
+        orderType: orderType,
+        jumlahKerabat: jumlahKerabat,
+        scheduleId: widget.scheduleId,
+        scheduledDate: widget.scheduledDate,
+        bypassDuplicatePendingTravel:
+            orderType == OrderModel.typeTravel && bypassDuplicatePendingTravel,
+      ),
     );
 
     if (!mounted) return;
-    setState(() => _loading = false);
     AppAnalyticsService.logOrderCreated(
       orderType: orderType,
       success: orderId != null,
     );
     if (orderId == null) {
+      setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(TrakaL10n.of(context).failedToCreateOrder),
@@ -1613,6 +1743,22 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
       );
       return;
     }
+
+    setState(() => _loading = false);
+    if (!mounted) return;
+    final l10n = TrakaL10n.of(context);
+    final estimateLines = await runWithEstimateLoading<String>(
+      context,
+      l10n,
+      () => JarakKontribusiScheduleEstimate.chatBlockFromAddressTexts(
+        originText: widget.origin,
+        destText: widget.dest,
+        l10n: l10n,
+        orderType: orderType,
+        jumlahKerabat: jumlahKerabat,
+      ),
+    );
+    if (!mounted) return;
 
     widget.onCreated();
 
@@ -1626,13 +1772,14 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
           'Saya ingin memesan tiket travel untuk ${1 + jumlahKerabat} orang (dengan kerabat).';
     }
 
-    final message =
-        'Halo Pak $driverName,\n\n'
-        '$jenisPesanan\n'
-        'Untuk tanggal $dateLabel\n\n'
-        'Dari: ${widget.origin}\n'
-        'Tujuan: ${widget.dest}\n\n'
-        'Mohon informasi tarif untuk rute ini.';
+    final message = PassengerFirstChatMessage.travel(
+      driverName: driverName,
+      jenisBaris: jenisPesanan,
+      asal: widget.origin,
+      tujuan: widget.dest,
+      tanggalJadwalLabel: dateLabel,
+      jarakKontribusiLines: estimateLines,
+    );
 
     Navigator.push(
       context,
@@ -1647,9 +1794,73 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
         ),
       ),
     );
+    if (orderType == OrderModel.typeTravel && bypassDuplicatePendingTravel) {
+      _showNewSplitOrderThreadSnackJadwal();
+    }
+  }
+
+  void _showNewSplitOrderThreadSnackJadwal() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(TrakaL10n.of(context).passengerNewOrderThreadSnack),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    });
   }
 
   void _showKirimBarangLinkReceiverSheet() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final driverUid = widget.item['driverUid'] as String? ?? '';
+    if (driverUid.isEmpty) return;
+
+    var bypassKbDuplicate = false;
+    final existing =
+        await OrderService.getPassengerPendingKirimBarangWithDriver(
+      user.uid,
+      driverUid,
+    );
+    if (!mounted) return;
+    if (existing != null) {
+      final l10n = TrakaL10n.of(context);
+      final choice = await showPassengerDuplicatePendingOrderDialog(
+        context,
+        title: l10n.passengerPendingKirimBarangDuplicateTitle,
+        body: l10n.passengerPendingKirimBarangDuplicateBody,
+      );
+      if (!mounted) return;
+      AppAnalyticsService.logPassengerDuplicatePendingDialog(
+        orderKind: 'kirim_barang',
+        choice: passengerDuplicatePendingChoiceAnalyticsValue(choice),
+        surface: 'jadwal_kirim_sheet',
+      );
+      if (choice == null || choice == PassengerDuplicatePendingChoice.cancel) {
+        return;
+      }
+      if (choice == PassengerDuplicatePendingChoice.openExisting) {
+        Navigator.push<void>(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => ChatRoomPenumpangScreen(
+              orderId: existing.id,
+              driverUid: driverUid,
+              driverName: (widget.item['driverName'] as String?) ?? 'Driver',
+              driverPhotoUrl: widget.item['photoUrl'] as String?,
+              driverVerified: widget.item['isVerified'] as bool? ?? false,
+            ),
+          ),
+        );
+        return;
+      }
+      if (choice == PassengerDuplicatePendingChoice.forceNew) {
+        bypassKbDuplicate = true;
+      }
+    }
+
     // Step 1: Pilih jenis barang (Dokumen / Kargo)
     final barangData = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -1682,10 +1893,16 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
         barangLebarCm: (barangData['barangLebarCm'] as num?)?.toDouble(),
         barangTinggiCm: (barangData['barangTinggiCm'] as num?)?.toDouble(),
         barangFotoUrl: barangData['barangFotoUrl'] as String?,
+        bypassDuplicatePendingKirimBarang: bypassKbDuplicate,
         onOrderCreated: (orderId, message, [barangFotoUrl]) {
           Navigator.pop(ctx);
           widget.onCreated();
-          _createAndOpenChatWithOrderId(orderId, message, barangFotoUrl);
+          _createAndOpenChatWithOrderId(
+            orderId,
+            message,
+            barangFotoUrl,
+            bypassKbDuplicate,
+          );
         },
         onError: (msg) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1700,7 +1917,12 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
     );
   }
 
-  void _createAndOpenChatWithOrderId(String orderId, String message, [String? barangFotoUrl]) {
+  void _createAndOpenChatWithOrderId(
+    String orderId,
+    String message, [
+    String? barangFotoUrl,
+    bool showBypassSnack = false,
+  ]) {
     Navigator.push(
       context,
       MaterialPageRoute<void>(
@@ -1715,9 +1937,23 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
         ),
       ),
     );
+    if (showBypassSnack) {
+      _showNewSplitOrderThreadSnackJadwal();
+    }
   }
 
   void _showKerabatDialog(int sisaKursi) {
+    if (widget.hasBlockingTravelOrder) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            TrakaL10n.of(context).scheduleTravelBlockedWhileTravelAgreed,
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     if (sisaKursi < 1) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1841,6 +2077,7 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
                     counts.totalPenumpang -
                     (counts.kargoCount * kargoSlot).ceil())
                 .clamp(0, maxPassengers);
+            final travelBlocked = widget.hasBlockingTravelOrder;
             return DraggableScrollableSheet(
           initialChildSize: 0.5,
           minChildSize: 0.3,
@@ -1875,8 +2112,39 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
                     fontStyle: FontStyle.italic,
                   ),
                 ),
+                if (travelBlocked) ...[
+                  SizedBox(height: 12),
+                  Material(
+                    color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: 20,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              TrakaL10n.of(context).scheduleTravelBlockedWhileTravelAgreed,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 SizedBox(height: 24),
                 ListTile(
+                  enabled: !travelBlocked && !_loading,
                   leading: const Icon(Icons.person),
                   title: const Text('Pesan Travel Sendiri'),
                   subtitle: const Text(
@@ -1889,6 +2157,7 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
                         ),
                 ),
                 ListTile(
+                  enabled: !travelBlocked && !_loading,
                   leading: const Icon(Icons.group),
                   title: const Text('Pesan Travel dengan Kerabat'),
                   subtitle: const Text(
@@ -1940,6 +2209,7 @@ class _KirimBarangLinkReceiverSheetJadwal extends StatefulWidget {
   final String? barangFotoUrl;
   final void Function(String orderId, String message, [String? barangFotoUrl]) onOrderCreated;
   final void Function(String message) onError;
+  final bool bypassDuplicatePendingKirimBarang;
 
   const _KirimBarangLinkReceiverSheetJadwal({
     required this.driverUid,
@@ -1956,6 +2226,7 @@ class _KirimBarangLinkReceiverSheetJadwal extends StatefulWidget {
     this.barangLebarCm,
     this.barangTinggiCm,
     this.barangFotoUrl,
+    this.bypassDuplicatePendingKirimBarang = false,
     required this.onOrderCreated,
     required this.onError,
   });
@@ -2045,6 +2316,20 @@ class _KirimBarangLinkReceiverSheetJadwalState
       widget.onError('Gagal memverifikasi penerima. Coba lagi.');
       return;
     }
+    if (!widget.bypassDuplicatePendingKirimBarang) {
+      final pendingKb =
+          await OrderService.getPassengerPendingKirimBarangWithDriver(
+        user.uid,
+        widget.driverUid,
+      );
+      if (!mounted) return;
+      if (pendingKb != null) {
+        widget.onError(
+          TrakaL10n.of(context).passengerPendingKirimBarangDuplicateShort,
+        );
+        return;
+      }
+    }
     setState(() => _loading = true);
     String? passengerName;
     String? passengerPhotoUrl;
@@ -2065,46 +2350,66 @@ class _KirimBarangLinkReceiverSheetJadwalState
     } catch (_) {
       passengerAppLocale = LocaleService.current == AppLocale.id ? 'id' : 'en';
     }
-    passengerName ??= user.email ?? 'Penumpang';
+    final passengerNameResolved = passengerName ?? user.email ?? 'Penumpang';
     final receiverName = (receiver['displayName'] as String?) ?? 'Penerima';
     final receiverPhotoUrl = receiver['photoUrl'] as String?;
-    final orderId = await OrderService.createOrder(
-      passengerUid: user.uid,
-      driverUid: widget.driverUid,
-      routeJourneyNumber: OrderService.routeJourneyNumberScheduled,
-      passengerName: passengerName,
-      passengerPhotoUrl: passengerPhotoUrl,
-      passengerAppLocale: passengerAppLocale,
-      originText: widget.origin,
-      destText: widget.dest,
-      originLat: null,
-      originLng: null,
-      destLat: null,
-      destLng: null,
-      orderType: OrderModel.typeKirimBarang,
-      receiverUid: uid,
-      receiverName: receiverName,
-      receiverPhotoUrl: receiverPhotoUrl,
-      scheduleId: widget.scheduleId,
-      scheduledDate: widget.scheduledDate,
-      barangCategory: widget.barangCategory ?? OrderModel.barangCategoryKargo,
-      barangNama: widget.barangNama,
-      barangBeratKg: widget.barangBeratKg,
-      barangPanjangCm: widget.barangPanjangCm,
-      barangLebarCm: widget.barangLebarCm,
-      barangTinggiCm: widget.barangTinggiCm,
-      barangFotoUrl: widget.barangFotoUrl,
+    final orderId = await PerformanceTraceService.traceOrderSubmit<String?>(
+      () => OrderService.createOrder(
+        passengerUid: user.uid,
+        driverUid: widget.driverUid,
+        routeJourneyNumber: OrderService.routeJourneyNumberScheduled,
+        passengerName: passengerNameResolved,
+        passengerPhotoUrl: passengerPhotoUrl,
+        passengerAppLocale: passengerAppLocale,
+        originText: widget.origin,
+        destText: widget.dest,
+        originLat: null,
+        originLng: null,
+        destLat: null,
+        destLng: null,
+        orderType: OrderModel.typeKirimBarang,
+        receiverUid: uid,
+        receiverName: receiverName,
+        receiverPhotoUrl: receiverPhotoUrl,
+        scheduleId: widget.scheduleId,
+        scheduledDate: widget.scheduledDate,
+        barangCategory: widget.barangCategory ?? OrderModel.barangCategoryKargo,
+        barangNama: widget.barangNama,
+        barangBeratKg: widget.barangBeratKg,
+        barangPanjangCm: widget.barangPanjangCm,
+        barangLebarCm: widget.barangLebarCm,
+        barangTinggiCm: widget.barangTinggiCm,
+        barangFotoUrl: widget.barangFotoUrl,
+        bypassDuplicatePendingKirimBarang:
+            widget.bypassDuplicatePendingKirimBarang,
+      ),
     );
     if (!mounted) return;
-    setState(() => _loading = false);
     AppAnalyticsService.logOrderCreated(
       orderType: OrderModel.typeKirimBarang,
       success: orderId != null,
     );
     if (orderId == null) {
+      setState(() => _loading = false);
       widget.onError(TrakaL10n.of(context).failedToCreateOrder);
       return;
     }
+    setState(() => _loading = false);
+    if (!mounted) return;
+    final l10n = TrakaL10n.of(context);
+    final estimateLines = await runWithEstimateLoading<String>(
+      context,
+      l10n,
+      () => JarakKontribusiScheduleEstimate.chatBlockFromAddressTexts(
+        originText: widget.origin,
+        destText: widget.dest,
+        l10n: l10n,
+        orderType: OrderModel.typeKirimBarang,
+        barangCategory:
+            widget.barangCategory ?? OrderModel.barangCategoryKargo,
+      ),
+    );
+    if (!mounted) return;
     final jenisLabel = widget.barangCategory == OrderModel.barangCategoryDokumen
         ? 'Dokumen (surat, amplop, paket kecil)'
         : 'Kargo';
@@ -2127,14 +2432,16 @@ class _KirimBarangLinkReceiverSheetJadwalState
       }
       barangDetail = '\nBarang: ${parts.join(' • ')}\n';
     }
-    final message =
-        'Halo Pak ${widget.driverName},\n\n'
-        'Saya ingin mengirim barang (terjadwal).\n\n'
-        'Jenis: $jenisLabel$barangDetail\n'
-        'Penerima: $receiverName\n'
-        'Dari: ${widget.origin}\n'
-        'Tujuan: ${widget.dest}\n\n'
-        'Mohon informasi biaya pengiriman untuk rute ini.';
+    final message = PassengerFirstChatMessage.kirimBarang(
+      driverName: widget.driverName,
+      isScheduled: true,
+      jenisLabel: jenisLabel,
+      barangDetailSuffix: barangDetail,
+      receiverName: receiverName,
+      asal: widget.origin,
+      tujuan: widget.dest,
+      jarakKontribusiLines: estimateLines,
+    );
     widget.onOrderCreated(orderId, message, widget.barangFotoUrl);
   }
 
@@ -2344,7 +2651,7 @@ class _BuildJadwalListPage extends StatelessWidget {
   final Map<String, bool> scheduleLoading;
   final Future<void> Function(DateTime) loadSchedules;
   final String Function(DateTime) dateKey;
-  final void Function(
+  final Future<void> Function(
     BuildContext,
     Map<String, dynamic>,
     String,

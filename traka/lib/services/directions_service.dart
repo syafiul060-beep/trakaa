@@ -13,6 +13,8 @@ final Map<String, ({DirectionsResultWithSteps data, DateTime expiredAt})> _route
 final Map<String, ({List<DirectionsResult> results, DateTime expiredAt})> _altRouteCache = {};
 final Map<String, ({List<DirectionsResultWithSteps> results, DateTime expiredAt})> _altRouteWithStepsCache = {};
 const Duration _cacheDuration = Duration(hours: 1);
+/// Cache khusus [getAlternativeRoutes]: OD sama jarang berubah; memperpanjang TTL mengurangi panggilan API.
+const Duration _altRouteCacheDuration = Duration(hours: 2);
 
 /// Parse warnings dari objek route (penutupan jalan, dll).
 List<String> _parseWarnings(Map<String, dynamic> route) {
@@ -31,12 +33,52 @@ String _cacheKey(double oLat, double oLng, double dLat, double dLng, {bool traff
 
 const Duration _trafficCacheDuration = Duration(minutes: 5);
 
+/// Snapshot rute terakhir per OD (tanpa TTL) untuk fallback saat `OVER_QUERY_LIMIT` / error jaringan.
+final Map<String, DirectionsResult> _lastSuccessRouteSnapshot = {};
+final Map<String, DirectionsResultWithSteps> _lastSuccessRouteWithStepsSnapshot = {};
+final Map<String, List<DirectionsResult>> _lastSuccessAltRoutesSnapshot = {};
+final Map<String, List<DirectionsResultWithSteps>>
+    _lastSuccessAltRoutesWithStepsSnapshot = {};
+
+const int _maxSnapshotEntries = 64;
+
+void _trimOldestStringKeyMap<T>(Map<String, T> map) {
+  while (map.length > _maxSnapshotEntries) {
+    map.remove(map.keys.first);
+  }
+}
+
+bool _statusWorthStaleFallback(String? status) {
+  if (status == null) return false;
+  return status == 'OVER_QUERY_LIMIT' ||
+      status == 'OVER_DAILY_LIMIT' ||
+      status == 'UNKNOWN_ERROR';
+}
+
 void _evictExpiredCache() {
   final now = DateTime.now();
   _routeCache.removeWhere((_, v) => v.expiredAt.isBefore(now));
   _routeWithStepsCache.removeWhere((_, v) => v.expiredAt.isBefore(now));
   _altRouteCache.removeWhere((_, v) => v.expiredAt.isBefore(now));
   _altRouteWithStepsCache.removeWhere((_, v) => v.expiredAt.isBefore(now));
+}
+
+/// Hasil fetch ETA/rute singkat (untuk UI: bedakan gagal vs kosong).
+class DirectionsEtaOutcome {
+  const DirectionsEtaOutcome({
+    this.result,
+    this.errorStatus,
+    this.usedStaleCache = false,
+  });
+
+  final DirectionsResult? result;
+  /// Status dari JSON Directions (`ZERO_RESULTS`, `OVER_QUERY_LIMIT`, …), `HTTP_*`, atau `ERROR`.
+  final String? errorStatus;
+
+  /// Rute dari snapshot terakhir saat API gagal (kuota/jaringan) — ETA mungkin tidak akurat.
+  final bool usedStaleCache;
+
+  bool get hasRoute => result != null;
 }
 
 /// Hasil dari Directions API: polyline + jarak + waktu.
@@ -92,6 +134,19 @@ class DirectionsResultWithSteps {
   });
 }
 
+/// Hasil [getRouteWithSteps]: data bisa null; [usedStaleCache] true jika dari snapshot (API/kuota gagal).
+class DirectionsWithStepsOutcome {
+  const DirectionsWithStepsOutcome({
+    this.data,
+    this.usedStaleCache = false,
+  });
+
+  final DirectionsResultWithSteps? data;
+  final bool usedStaleCache;
+
+  bool get hasRoute => data != null;
+}
+
 /// Mendapatkan rute (polyline) dari Google Directions API.
 class DirectionsService {
   static const String _baseUrl =
@@ -105,11 +160,27 @@ class DirectionsService {
     required double destLat,
     required double destLng,
   }) async {
+    final o = await getRouteEta(
+      originLat: originLat,
+      originLng: originLng,
+      destLat: destLat,
+      destLng: destLng,
+    );
+    return o.result;
+  }
+
+  /// Sama seperti [getRoute] tetapi selalu mengembalikan outcome (untuk pesan error + retry di UI).
+  static Future<DirectionsEtaOutcome> getRouteEta({
+    required double originLat,
+    required double originLng,
+    required double destLat,
+    required double destLng,
+  }) async {
     _evictExpiredCache();
     final key = _cacheKey(originLat, originLng, destLat, destLng);
     final cached = _routeCache[key];
     if (cached != null && cached.expiredAt.isAfter(DateTime.now())) {
-      return cached.result;
+      return DirectionsEtaOutcome(result: cached.result, errorStatus: null);
     }
 
     final apiKey = MapsConfig.directionsApiKey;
@@ -132,15 +203,41 @@ class DirectionsService {
         }
         return r;
       });
-      if (response.statusCode != 200) return null;
+      if (response.statusCode != 200) {
+        final stale = _lastSuccessRouteSnapshot[key];
+        if (stale != null) {
+          return DirectionsEtaOutcome(
+            result: stale,
+            errorStatus: 'HTTP_${response.statusCode}',
+            usedStaleCache: true,
+          );
+        }
+        return DirectionsEtaOutcome(result: null, errorStatus: 'HTTP_${response.statusCode}');
+      }
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final status = data['status'] as String?;
-      if (status != 'OK') return null;
+      if (status != 'OK') {
+        if (_statusWorthStaleFallback(status)) {
+          final stale = _lastSuccessRouteSnapshot[key];
+          if (stale != null) {
+            return DirectionsEtaOutcome(
+              result: stale,
+              errorStatus: status,
+              usedStaleCache: true,
+            );
+          }
+        }
+        return DirectionsEtaOutcome(result: null, errorStatus: status ?? 'NOT_OK');
+      }
       final routes = data['routes'] as List<dynamic>?;
-      if (routes == null || routes.isEmpty) return null;
+      if (routes == null || routes.isEmpty) {
+        return const DirectionsEtaOutcome(result: null, errorStatus: 'NO_ROUTES');
+      }
       final route = routes.first as Map<String, dynamic>;
       final points = _extractPolylineFromSteps(route) ?? _extractOverviewPolyline(route);
-      if (points == null || points.isEmpty) return null;
+      if (points == null || points.isEmpty) {
+        return const DirectionsEtaOutcome(result: null, errorStatus: 'NO_POLYLINE');
+      }
 
       double distanceKm = 0;
       String distanceText = '-';
@@ -173,15 +270,25 @@ class DirectionsService {
         warnings: warnings,
       );
       _routeCache[key] = (result: result, expiredAt: DateTime.now().add(_cacheDuration));
-      return result;
+      _lastSuccessRouteSnapshot[key] = result;
+      _trimOldestStringKeyMap(_lastSuccessRouteSnapshot);
+      return DirectionsEtaOutcome(result: result, errorStatus: null);
     } catch (_) {
-      return null;
+      final stale = _lastSuccessRouteSnapshot[key];
+      if (stale != null) {
+        return DirectionsEtaOutcome(
+          result: stale,
+          errorStatus: 'ERROR',
+          usedStaleCache: true,
+        );
+      }
+      return const DirectionsEtaOutcome(result: null, errorStatus: 'ERROR');
     }
   }
 
   /// Ambil rute lengkap dengan steps untuk turn-by-turn.
   /// [trafficAware]: true = ETA berdasarkan lalu lintas (departure_time=now).
-  static Future<DirectionsResultWithSteps?> getRouteWithSteps({
+  static Future<DirectionsWithStepsOutcome> getRouteWithSteps({
     required double originLat,
     required double originLng,
     required double destLat,
@@ -192,7 +299,7 @@ class DirectionsService {
     final key = _cacheKey(originLat, originLng, destLat, destLng, traffic: trafficAware);
     final cached = _routeWithStepsCache[key];
     if (cached != null && cached.expiredAt.isAfter(DateTime.now())) {
-      return cached.data;
+      return DirectionsWithStepsOutcome(data: cached.data, usedStaleCache: false);
     }
 
     final params = <String, String>{
@@ -214,15 +321,33 @@ class DirectionsService {
         }
         return r;
       });
-      if (response.statusCode != 200) return null;
+      if (response.statusCode != 200) {
+        final stale = _lastSuccessRouteWithStepsSnapshot[key];
+        if (stale != null) {
+          return DirectionsWithStepsOutcome(data: stale, usedStaleCache: true);
+        }
+        return const DirectionsWithStepsOutcome(data: null);
+      }
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final status = data['status'] as String?;
-      if (status != 'OK') return null;
+      if (status != 'OK') {
+        if (_statusWorthStaleFallback(status)) {
+          final stale = _lastSuccessRouteWithStepsSnapshot[key];
+          if (stale != null) {
+            return DirectionsWithStepsOutcome(data: stale, usedStaleCache: true);
+          }
+        }
+        return const DirectionsWithStepsOutcome(data: null);
+      }
       final routes = data['routes'] as List<dynamic>?;
-      if (routes == null || routes.isEmpty) return null;
+      if (routes == null || routes.isEmpty) {
+        return const DirectionsWithStepsOutcome(data: null);
+      }
       final route = routes.first as Map<String, dynamic>;
       final points = _extractPolylineFromSteps(route) ?? _extractOverviewPolyline(route);
-      if (points == null || points.isEmpty) return null;
+      if (points == null || points.isEmpty) {
+        return const DirectionsWithStepsOutcome(data: null);
+      }
 
       double distanceKm = 0;
       String distanceText = '-';
@@ -287,9 +412,15 @@ class DirectionsService {
         data: withSteps,
         expiredAt: DateTime.now().add(trafficAware ? _trafficCacheDuration : _cacheDuration),
       );
-      return withSteps;
+      _lastSuccessRouteWithStepsSnapshot[key] = withSteps;
+      _trimOldestStringKeyMap(_lastSuccessRouteWithStepsSnapshot);
+      return DirectionsWithStepsOutcome(data: withSteps, usedStaleCache: false);
     } catch (_) {
-      return null;
+      final stale = _lastSuccessRouteWithStepsSnapshot[key];
+      if (stale != null) {
+        return DirectionsWithStepsOutcome(data: stale, usedStaleCache: true);
+      }
+      return const DirectionsWithStepsOutcome(data: null);
     }
   }
 
@@ -329,10 +460,19 @@ class DirectionsService {
         }
         return r;
       });
-      if (response.statusCode != 200) return [];
+      if (response.statusCode != 200) {
+        final stale = _lastSuccessAltRoutesSnapshot[key];
+        return stale != null ? List<DirectionsResult>.from(stale) : [];
+      }
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final status = data['status'] as String?;
-      if (status != 'OK') return [];
+      if (status != 'OK') {
+        if (_statusWorthStaleFallback(status)) {
+          final stale = _lastSuccessAltRoutesSnapshot[key];
+          if (stale != null) return List<DirectionsResult>.from(stale);
+        }
+        return [];
+      }
       final routes = data['routes'] as List<dynamic>?;
       if (routes == null || routes.isEmpty) return [];
 
@@ -383,12 +523,18 @@ class DirectionsService {
       if (results.isNotEmpty) {
         _altRouteCache[key] = (
           results: results,
-          expiredAt: DateTime.now().add(trafficAware ? _trafficCacheDuration : _cacheDuration),
+          expiredAt: DateTime.now().add(
+            trafficAware ? _trafficCacheDuration : _altRouteCacheDuration,
+          ),
         );
+        _lastSuccessAltRoutesSnapshot[key] =
+            List<DirectionsResult>.from(results);
+        _trimOldestStringKeyMap(_lastSuccessAltRoutesSnapshot);
       }
       return results;
     } catch (_) {
-      return [];
+      final stale = _lastSuccessAltRoutesSnapshot[key];
+      return stale != null ? List<DirectionsResult>.from(stale) : [];
     }
   }
 
@@ -428,10 +574,23 @@ class DirectionsService {
         }
         return r;
       });
-      if (response.statusCode != 200) return [];
+      if (response.statusCode != 200) {
+        final stale = _lastSuccessAltRoutesWithStepsSnapshot[key];
+        return stale != null
+            ? List<DirectionsResultWithSteps>.from(stale)
+            : [];
+      }
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final status = data['status'] as String?;
-      if (status != 'OK') return [];
+      if (status != 'OK') {
+        if (_statusWorthStaleFallback(status)) {
+          final stale = _lastSuccessAltRoutesWithStepsSnapshot[key];
+          if (stale != null) {
+            return List<DirectionsResultWithSteps>.from(stale);
+          }
+        }
+        return [];
+      }
       final routes = data['routes'] as List<dynamic>?;
       if (routes == null || routes.isEmpty) return [];
 
@@ -502,12 +661,20 @@ class DirectionsService {
       if (results.isNotEmpty) {
         _altRouteWithStepsCache[key] = (
           results: results,
-          expiredAt: DateTime.now().add(trafficAware ? _trafficCacheDuration : _cacheDuration),
+          expiredAt: DateTime.now().add(
+            trafficAware ? _trafficCacheDuration : _altRouteCacheDuration,
+          ),
         );
+        _lastSuccessAltRoutesWithStepsSnapshot[key] =
+            List<DirectionsResultWithSteps>.from(results);
+        _trimOldestStringKeyMap(_lastSuccessAltRoutesWithStepsSnapshot);
       }
       return results;
     } catch (_) {
-      return [];
+      final stale = _lastSuccessAltRoutesWithStepsSnapshot[key];
+      return stale != null
+          ? List<DirectionsResultWithSteps>.from(stale)
+          : [];
     }
   }
 

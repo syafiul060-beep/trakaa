@@ -1,32 +1,49 @@
 import { apiBaseUrl, isApiEnabled } from '../config/apiConfig'
 
 /**
- * Ambil daftar semua driver aktif dari API (Redis).
+ * @typedef {'ok'|'disabled'|'error'|'network'} DriverListStatus
+ */
+
+/**
+ * Daftar driver dari API hybrid.
+ * @returns {{ status: DriverListStatus, drivers: object[], httpStatus?: number }}
  */
 export async function getDriverStatusList() {
-  if (!isApiEnabled) return []
+  if (!isApiEnabled) {
+    return { status: 'disabled', drivers: [] }
+  }
   try {
     const res = await fetch(`${apiBaseUrl}/api/driver/status`)
-    if (!res.ok) return []
+    if (!res.ok) {
+      console.error('trakaApi.getDriverStatusList HTTP', res.status)
+      return { status: 'error', drivers: [], httpStatus: res.status }
+    }
     const data = await res.json()
-    return data.drivers || []
+    return { status: 'ok', drivers: data.drivers || [] }
   } catch (err) {
     console.error('trakaApi.getDriverStatusList:', err)
-    return []
+    return { status: 'network', drivers: [] }
   }
 }
 
 /**
- * Ambil status driver tunggal dari API.
+ * Status driver tunggal.
+ * @returns {{ status: DriverListStatus, driver: object|null, httpStatus?: number }}
  */
 export async function getDriverStatus(uid) {
-  if (!isApiEnabled) return null
+  if (!isApiEnabled) {
+    return { status: 'disabled', driver: null }
+  }
   try {
     const res = await fetch(`${apiBaseUrl}/api/driver/${uid}/status`)
-    if (!res.ok) return null
-    return await res.json()
+    if (!res.ok) {
+      console.error('trakaApi.getDriverStatus HTTP', res.status, uid)
+      return { status: 'error', driver: null, httpStatus: res.status }
+    }
+    const driver = await res.json()
+    return { status: 'ok', driver }
   } catch (err) {
     console.error('trakaApi.getDriverStatus:', err)
-    return null
+    return { status: 'network', driver: null }
   }
 }

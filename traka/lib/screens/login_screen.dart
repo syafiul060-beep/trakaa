@@ -27,10 +27,12 @@ import '../services/face_photo_pool_service.dart';
 import '../services/face_validation_service.dart';
 import '../services/verification_log_service.dart';
 import '../services/auth_redirect_state.dart';
+import '../services/performance_trace_service.dart';
 import '../services/biometric_login_service.dart';
 import 'active_liveness_screen.dart';
 import 'forgot_password_screen.dart';
 import 'register_screen.dart';
+import '../widgets/auth_loading_overlay.dart';
 
 class LoginScreen extends StatefulWidget {
   /// Jika tidak null, tampilkan SnackBar "Perangkat sudah digunakan oleh penumpang/driver" setelah halaman terbuka.
@@ -66,6 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(PerformanceTraceService.stopStartupToInteractive());
     AuthRedirectState.setOnLoginScreen(true);
     _requestDeviceId();
     _checkBiometricLogin();
@@ -169,6 +172,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
     setState(() => _isLoading = true);
+    await Future<void>.delayed(Duration.zero);
     AuthRedirectState.setInLoginFlow(true);
     try {
       final result = await FirebaseFunctions.instance
@@ -351,8 +355,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (input.isEmpty) return;
 
-    // Disable tombol segera agar responsif (hindari tap berkali-kali)
+    FocusScope.of(context).unfocus();
+    // Disable tombol + overlay; jeda satu frame agar UI sempat melukis (terasa responsif).
     setState(() => _isLoading = true);
+    await Future<void>.delayed(Duration.zero);
     AuthRedirectState.setInLoginFlow(true);
     try {
       if (_loginWithPhone && _phoneOtpSent) {
@@ -1167,6 +1173,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     final phoneE164 = toE164(phone);
     setState(() => _isLoading = true);
+    await Future<void>.delayed(Duration.zero);
     await FirebaseAuth.instance.verifyPhoneNumber(
       phoneNumber: phoneE164,
       verificationCompleted: (PhoneAuthCredential credential) async {
@@ -1262,6 +1269,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
     setState(() => _isLoading = true);
+    await Future<void>.delayed(Duration.zero);
     try {
       final credential = PhoneAuthProvider.credential(
         verificationId: _phoneVerificationId!,
@@ -1441,16 +1449,23 @@ class _LoginScreenState extends State<LoginScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: colorScheme.surface,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.symmetric(
-            horizontal: context.responsive.horizontalPadding,
-          ),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+      resizeToAvoidBottomInset: true,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Positioned.fill: scroll view dapat tinggi penuh viewport — hindari strip kosong di bawah
+          // saat keyboard / inset berubah (terlihat seperti layar "tidak full").
+          Positioned.fill(
+            child: SafeArea(
+              child: SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: context.responsive.horizontalPadding,
+              ),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
                 SizedBox(height: context.responsive.spacing(16)),
                 // Language – kanan atas
                 Align(
@@ -1751,10 +1766,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
+          ),
+          AuthLoadingOverlay(
+            visible: _isLoading || _biometricLoginLoading,
+          ),
+        ],
       ),
     );
   }

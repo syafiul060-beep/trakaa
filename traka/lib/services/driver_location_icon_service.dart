@@ -1,38 +1,64 @@
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:image/image.dart' as img;
+import 'dart:ui' as ui;
 
-/// Service untuk icon lokasi driver: titik biru (marker di peta).
+import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
+/// Service untuk icon lokasi: titik biru gaya Google Maps (halus, bukan raster [image] bergerigi).
 class DriverLocationIconService {
   DriverLocationIconService._();
 
   static BitmapDescriptor? _cachedBlueDot;
   static int? _cachedSize;
+  /// Naikkan jika format berubah (bust cache).
+  static const int _bitmapVersion = 4;
+  static int? _cachedBitmapVersion;
 
-  /// Titik biru besar untuk posisi driver saat diam (rute dipilih, belum mulai).
-  /// [sizePx] ukuran diameter dalam pixel (default 48).
+  /// Titik biru untuk posisi di peta: cincin putih + isi #4285F4, tepi anti-alias.
+  /// [sizePx] lebar/tinggi bitmap output (device px); lebih kecil = marker lebih kecil di peta.
   static Future<BitmapDescriptor> loadBlueDotDescriptor({
-    int sizePx = 48,
+    int sizePx = 36,
   }) async {
-    if (_cachedBlueDot != null && _cachedSize == sizePx) {
+    if (_cachedBlueDot != null &&
+        _cachedSize == sizePx &&
+        _cachedBitmapVersion == _bitmapVersion) {
       return _cachedBlueDot!;
     }
 
     try {
-      final image = img.Image(width: sizePx, height: sizePx);
-      final center = sizePx ~/ 2;
-      final radius = center - 2;
-      final blue = img.ColorRgba8(66, 133, 244, 255); // #4285F4
+      final d = sizePx.clamp(24, 64);
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      final c = d / 2.0;
+      // Ruang setengah piksel agar anti-alias tidak terpotong di tepi bitmap.
+      final outerR = c - 0.75;
+      final borderW = (d * 0.11).clamp(1.5, 2.75);
+      final innerR = (outerR - borderW).clamp(2.0, outerR - 0.5);
 
-      img.fillCircle(image, x: center, y: center, radius: radius, color: blue);
+      final whitePaint = Paint()
+        ..isAntiAlias = true
+        ..filterQuality = FilterQuality.high
+        ..color = Colors.white
+        ..style = PaintingStyle.fill;
+      final bluePaint = Paint()
+        ..isAntiAlias = true
+        ..filterQuality = FilterQuality.high
+        ..color = const Color(0xFF4285F4)
+        ..style = PaintingStyle.fill;
 
-      final pngBytes = img.encodePng(image);
-      if (pngBytes.isEmpty) {
+      canvas.drawCircle(Offset(c, c), outerR, whitePaint);
+      canvas.drawCircle(Offset(c, c), innerR, bluePaint);
+
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(d, d);
+      final byteData =
+          await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) {
         return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
       }
-
-      final descriptor = BitmapDescriptor.bytes(pngBytes);
+      final descriptor = BitmapDescriptor.bytes(byteData.buffer.asUint8List());
       _cachedBlueDot = descriptor;
       _cachedSize = sizePx;
+      _cachedBitmapVersion = _bitmapVersion;
       return descriptor;
     } catch (_) {
       return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
@@ -42,5 +68,6 @@ class DriverLocationIconService {
   static void clearCache() {
     _cachedBlueDot = null;
     _cachedSize = null;
+    _cachedBitmapVersion = null;
   }
 }

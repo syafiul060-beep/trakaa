@@ -133,8 +133,8 @@ class _RiwayatRuteDetailScreenState extends State<RiwayatRuteDetailScreen> {
           child: Text(
             '(Jarak × tarif per km, tier provinsi. Bayar via Google Play)',
             style: TextStyle(
-              fontSize: 9,
-              color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+              fontSize: 10,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ),
@@ -171,8 +171,8 @@ class _RiwayatRuteDetailScreenState extends State<RiwayatRuteDetailScreen> {
                         ? '(totalPenumpang × (jarak × tarif per km, min Rp 5.000). Bayar via Google Play)'
                         : '(Dihitung saat order selesai: totalPenumpang × (jarak × tarif, min Rp 5.000))',
                     style: TextStyle(
-                      fontSize: 9,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+                      fontSize: 10,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -211,8 +211,8 @@ class _RiwayatRuteDetailScreenState extends State<RiwayatRuteDetailScreen> {
               ? '(totalPenumpang × (jarak × tarif per km, min Rp 5.000). Bayar via Google Play)'
               : '(Dihitung saat order selesai: totalPenumpang × (jarak × tarif, min Rp 5.000))',
           style: TextStyle(
-            fontSize: 9,
-            color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+            fontSize: 10,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
       ),

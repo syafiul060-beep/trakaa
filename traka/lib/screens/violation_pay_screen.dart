@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
+import '../services/app_analytics_service.dart';
 import '../services/payment_context_service.dart';
 import '../services/violation_payment_service.dart';
 import '../widgets/traka_l10n_scope.dart';
@@ -131,6 +132,10 @@ class _ViolationPayScreenState extends State<ViolationPayScreen> {
         }
       }
     } catch (e) {
+      AppAnalyticsService.logPaymentVerifyRejected(
+        flow: 'violation',
+        detail: e.toString(),
+      );
       if (mounted) {
         setState(() {
           _purchasing = false;

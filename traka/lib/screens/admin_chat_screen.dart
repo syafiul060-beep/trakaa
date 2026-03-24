@@ -362,7 +362,7 @@ class _AdminChatScreenState extends State<AdminChatScreen> {
             Icon(
               Icons.chat_bubble_outline,
               size: 56,
-              color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 20),
             Text(

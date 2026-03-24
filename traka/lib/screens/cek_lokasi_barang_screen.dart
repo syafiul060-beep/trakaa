@@ -11,9 +11,9 @@ import '../services/sos_service.dart';
 import '../utils/time_formatter.dart';
 import '../widgets/passenger_track_map_widget.dart';
 
-/// Halaman Lacak Barang: full-screen map dengan driver (icon mobil) + penerima/pengirim.
+/// Halaman Lacak Barang: full-screen map dengan driver (marker + overlay mobil) + penerima/pengirim.
 /// Pengirim lihat: driver + pin penerima (foto profil). Penerima lihat: driver + pin pengirim (foto profil).
-/// Pergerakan halus (semut) dan mengikuti alur jalan (snap-to-road).
+/// Kebijakan ikon: `docs/KEBIJAKAN_ICON_MOBIL_DAN_OVERLAY.md`.
 class CekLokasiBarangScreen extends StatefulWidget {
   const CekLokasiBarangScreen({
     super.key,

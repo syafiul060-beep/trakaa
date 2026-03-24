@@ -21,6 +21,7 @@ class DriverStopsListOverlay extends StatelessWidget {
     required this.onSelectPickup,
     required this.onSelectDropoff,
     this.optimizedStops = const [],
+    this.stackTop = 230,
   });
 
   final List<OrderModel> pickupOrders;
@@ -30,6 +31,8 @@ class DriverStopsListOverlay extends StatelessWidget {
   final void Function(OrderModel order) onSelectDropoff;
   /// Urutan greedy optimal dari RouteOptimizationService (#7).
   final List<({OrderModel order, bool isPickup})> optimizedStops;
+  /// Jarak dari atas Stack (portrait ~230; landscape lebih rendah agar tidak tabrak status bar).
+  final double stackTop;
 
   static String _formatDistance(double meters) {
     if (meters < 1000) return '${meters.round()} m';
@@ -80,7 +83,7 @@ class DriverStopsListOverlay extends StatelessWidget {
     const maxHeight = 380.0;
 
     return Positioned(
-      top: 230,
+      top: stackTop,
       right: 16,
       child: Material(
         elevation: 4,

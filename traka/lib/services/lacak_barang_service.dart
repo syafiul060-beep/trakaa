@@ -7,8 +7,8 @@ import 'app_config_service.dart';
 /// Menentukan tier harga berdasarkan provinsi asal dan tujuan.
 class LacakBarangService {
   /// Tier 1: dalam provinsi (7500)
-  /// Tier 2: beda provinsi (10000)
-  /// Tier 3: lebih dari 1 provinsi (15000)
+  /// Tier 2: beda provinsi, satu pulau (10000)
+  /// Tier 3: beda pulau / lintas pulau (15000)
   static const int tierDalamProvinsi = 1;
   static const int tierBedaProvinsi = 2;
   static const int tierLebihDari1Provinsi = 3;
@@ -28,7 +28,7 @@ class LacakBarangService {
   /// Tentukan tier berdasarkan provinsi asal (pickup) dan tujuan (receiver).
   /// [originLat], [originLng]: titik jemput barang (pengirim/pickup).
   /// [destLat], [destLng]: lokasi penerima.
-  /// Return: (tier, feeRupiah). Tier 1 = sama provinsi, 2 = beda provinsi, 3 = lebih dari 1 provinsi.
+  /// Return: (tier, feeRupiah). Tier 1 = sama provinsi, 2 = beda provinsi (satu pulau), 3 = beda pulau.
   static Future<(int tier, int feeRupiah)> getTierAndFee({
     required double originLat,
     required double originLng,

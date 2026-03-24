@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 /// Kontrol map: toggle satelit/normal + zoom in/out + lalu lintas.
 /// [onThemeToggle]: opsional, jika ada tampilkan tombol tema (mode malam/terang) untuk driver.
 /// [trafficEnabled] + [onToggleTraffic]: layer kemacetan (seperti Grab).
+/// [onToggleHeading] + [headingFollowEnabled] + [headingTooltip]: opsional — penumpang: north-up vs ikut bearing.
 class MapTypeZoomControls extends StatelessWidget {
   const MapTypeZoomControls({
     super.key,
@@ -19,6 +20,20 @@ class MapTypeZoomControls extends StatelessWidget {
     this.onThemeToggle,
     this.trafficEnabled = false,
     this.onToggleTraffic,
+    this.onToggleHeading,
+    this.headingFollowEnabled = false,
+    this.headingTooltip,
+    this.showPickupDropoffShortcuts = false,
+    this.onPickupShortcutTap,
+    this.onDropoffShortcutTap,
+    this.pickupShortcutEnabled = false,
+    this.dropoffShortcutEnabled = false,
+    this.pickupShortcutTooltip,
+    this.dropoffShortcutTooltip,
+    this.showRouteInfoShortcut = false,
+    this.onRouteInfoTap,
+    this.routeInfoOperBadge = false,
+    this.routeInfoTooltip,
   });
 
   final MapType mapType;
@@ -29,6 +44,22 @@ class MapTypeZoomControls extends StatelessWidget {
   final VoidCallback? onThemeToggle;
   final bool trafficEnabled;
   final VoidCallback? onToggleTraffic;
+  final VoidCallback? onToggleHeading;
+  final bool headingFollowEnabled;
+  final String? headingTooltip;
+  /// Saat driver aktif: tombol kuning (jemput) & hijau (antar) di bawah zoom ±.
+  final bool showPickupDropoffShortcuts;
+  final VoidCallback? onPickupShortcutTap;
+  final VoidCallback? onDropoffShortcutTap;
+  final bool pickupShortcutEnabled;
+  final bool dropoffShortcutEnabled;
+  final String? pickupShortcutTooltip;
+  final String? dropoffShortcutTooltip;
+  /// Di bawah tombol pengantaran (atau di bawah zoom jika shortcut stop tidak tampil).
+  final bool showRouteInfoShortcut;
+  final VoidCallback? onRouteInfoTap;
+  final bool routeInfoOperBadge;
+  final String? routeInfoTooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +117,32 @@ class MapTypeZoomControls extends StatelessWidget {
               ),
             ),
           ),
+          if (onToggleHeading != null) ...[
+            const SizedBox(height: 8),
+            Tooltip(
+              message: headingTooltip ?? '',
+              child: Material(
+                elevation: 4,
+                borderRadius: BorderRadius.circular(4),
+                color: colorScheme.surface,
+                child: InkWell(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    onToggleHeading!();
+                  },
+                  borderRadius: BorderRadius.circular(4),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Icon(
+                      headingFollowEnabled ? Icons.navigation : Icons.explore_outlined,
+                      size: 20,
+                      color: headingFollowEnabled ? AppTheme.primary : colorScheme.onSurface.withValues(alpha: 0.75),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
           if (onToggleTraffic != null) ...[
             const SizedBox(height: 8),
             Material(
@@ -169,7 +226,163 @@ class MapTypeZoomControls extends StatelessWidget {
               ),
             ],
           ),
+          if (showPickupDropoffShortcuts &&
+              (onPickupShortcutTap != null || onDropoffShortcutTap != null)) ...[
+            const SizedBox(height: 8),
+            if (onPickupShortcutTap != null)
+              _MapStopShortcutChip(
+                tooltip: pickupShortcutTooltip ?? 'Penjemputan',
+                icon: Icons.person_pin_circle,
+                accentColor: const Color(0xFFF9A825),
+                enabled: pickupShortcutEnabled,
+                onTap: onPickupShortcutTap!,
+              ),
+            if (onPickupShortcutTap != null && onDropoffShortcutTap != null)
+              const SizedBox(height: 8),
+            if (onDropoffShortcutTap != null)
+              _MapStopShortcutChip(
+                tooltip: dropoffShortcutTooltip ?? 'Pengantaran',
+                icon: Icons.flag,
+                accentColor: const Color(0xFF2E7D32),
+                enabled: dropoffShortcutEnabled,
+                onTap: onDropoffShortcutTap!,
+              ),
+          ],
+          if (showRouteInfoShortcut && onRouteInfoTap != null) ...[
+            const SizedBox(height: 8),
+            _MapRouteInfoChip(
+              tooltip: routeInfoTooltip ?? 'Informasi rute',
+              onTap: onRouteInfoTap!,
+              operBadge: routeInfoOperBadge,
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _MapRouteInfoChip extends StatelessWidget {
+  const _MapRouteInfoChip({
+    required this.tooltip,
+    required this.onTap,
+    this.operBadge = false,
+  });
+
+  final String tooltip;
+  final VoidCallback onTap;
+  final bool operBadge;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final primary = AppTheme.primary;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        elevation: 4,
+        borderRadius: BorderRadius.circular(4),
+        color: colorScheme.surface,
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onTap();
+          },
+          borderRadius: BorderRadius.circular(4),
+          child: Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: operBadge
+                    ? primary.withValues(alpha: 0.9)
+                    : primary.withValues(alpha: 0.55),
+                width: operBadge ? 2 : 1.5,
+              ),
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                Icon(Icons.info_outline, size: 20, color: primary),
+                if (operBadge)
+                  Positioned(
+                    top: -2,
+                    right: -2,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Colors.orange,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MapStopShortcutChip extends StatelessWidget {
+  const _MapStopShortcutChip({
+    required this.tooltip,
+    required this.icon,
+    required this.accentColor,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final Color accentColor;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        elevation: 4,
+        borderRadius: BorderRadius.circular(4),
+        color: colorScheme.surface,
+        child: InkWell(
+          onTap: enabled
+              ? () {
+                  HapticFeedback.lightImpact();
+                  onTap();
+                }
+              : null,
+          borderRadius: BorderRadius.circular(4),
+          child: Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: enabled
+                    ? accentColor.withValues(alpha: 0.85)
+                    : colorScheme.outline.withValues(alpha: 0.35),
+                width: 2,
+              ),
+            ),
+            child: Icon(
+              icon,
+              size: 20,
+              color: enabled
+                  ? accentColor
+                  : colorScheme.onSurface.withValues(alpha: 0.35),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -14,7 +14,8 @@ class AppTheme {
   static const Color error = Color(0xFFB00020);
   static const Color onPrimary = Color(0xFFFFFFFF);
   static const Color onSurface = Color(0xFF1E293B);
-  static const Color onSurfaceVariant = Color(0xFF64748B);
+  /// Sekunder: lebih gelap dari slate-500 agar teks kecil tetap terbaca di background terang (#F8FAFC).
+  static const Color onSurfaceVariant = Color(0xFF475569);
   static const Color outline = Color(0xFFE2E8F0);
 
   // ——— Radius & spacing
@@ -262,7 +263,11 @@ class AppTheme {
       chipTheme: ChipThemeData(
         backgroundColor: outline.withValues(alpha: 0.3),
         selectedColor: primaryLight.withValues(alpha: 0.3),
-        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        labelStyle: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+          color: onSurfaceVariant,
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusXs),
@@ -273,6 +278,13 @@ class AppTheme {
       dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusLg),
+        ),
+        alignment: Alignment.center,
+        actionsPadding: const EdgeInsets.fromLTRB(
+          spacingMd,
+          0,
+          spacingMd,
+          spacingMd,
         ),
         titleTextStyle: const TextStyle(
           fontSize: 18,
@@ -291,13 +303,18 @@ class AppTheme {
         showDragHandle: true,
       ),
 
-      // SnackBar
+      // SnackBar — teks mengikuti onInverseSurface (bukan putih keras) agar kontras aman di M3
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusSm),
         ),
-        contentTextStyle: const TextStyle(fontSize: 14, color: Colors.white),
+        backgroundColor: colorScheme.inverseSurface,
+        contentTextStyle: TextStyle(
+          fontSize: 14,
+          color: colorScheme.onInverseSurface,
+        ),
+        actionTextColor: colorScheme.inversePrimary,
       ),
 
       // FloatingActionButton
@@ -452,12 +469,23 @@ class AppTheme {
       chipTheme: ChipThemeData(
         backgroundColor: outlineDark.withValues(alpha: 0.2),
         selectedColor: primaryLight.withValues(alpha: 0.2),
-        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        labelStyle: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+          color: onSurfaceVariantDark,
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusXs)),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: surfaceDark,
+        alignment: Alignment.center,
+        actionsPadding: const EdgeInsets.fromLTRB(
+          spacingMd,
+          0,
+          spacingMd,
+          spacingMd,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusLg)),
         titleTextStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: onSurfaceDark),
         contentTextStyle: const TextStyle(fontSize: 14, color: onSurfaceDark),
@@ -472,7 +500,12 @@ class AppTheme {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusSm)),
-        contentTextStyle: const TextStyle(fontSize: 14, color: Colors.white),
+        backgroundColor: colorScheme.inverseSurface,
+        contentTextStyle: TextStyle(
+          fontSize: 14,
+          color: colorScheme.onInverseSurface,
+        ),
+        actionTextColor: colorScheme.inversePrimary,
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
         backgroundColor: primaryLight,

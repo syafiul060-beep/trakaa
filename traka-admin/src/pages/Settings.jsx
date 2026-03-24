@@ -362,13 +362,13 @@ export default function Settings() {
       }
     }
     if (list.includes(uid)) {
-      setMessage('User sudah ada di daftar.')
+      setMessage('Pengguna sudah ada di daftar.')
       setMessageType('error')
       return
     }
     setList([...list, uid])
     setInput('')
-    setMessage('User ditambahkan. Klik Simpan untuk menyimpan.')
+    setMessage('Pengguna ditambahkan. Klik Simpan untuk menyimpan.')
     setMessageType('success')
   }
 
@@ -378,7 +378,7 @@ export default function Settings() {
     setLacakExemptUserUids(newList)
     try {
       await setDoc(doc(db, 'app_config', 'lacak_exempt_users'), { userUids: newList }, { merge: true })
-      setMessage('User dihapus dari daftar.')
+      setMessage('Pengguna dihapus dari daftar.')
       setMessageType('success')
     } catch (err) {
       setMessage('Gagal menyimpan: ' + err.message)
@@ -393,7 +393,7 @@ export default function Settings() {
     setFakeGpsAllowedUserUids(newList)
     try {
       await setDoc(doc(db, 'app_config', 'fake_gps_allowed_users'), { userUids: newList }, { merge: true })
-      setMessage('User dihapus dari daftar.')
+      setMessage('Pengguna dihapus dari daftar.')
       setMessageType('success')
     } catch (err) {
       setMessage('Gagal menyimpan: ' + err.message)
@@ -426,9 +426,9 @@ export default function Settings() {
       <div className="space-y-4">
         <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide">Sistem</h2>
         <div className="space-y-4">
-      <SettingsCard title="Maintenance Mode" icon="🔧">
+      <SettingsCard title="Mode pemeliharaan" icon="🔧">
         <p className="text-sm text-gray-600 mb-4">
-          Saat aktif, semua user akan melihat layar &quot;Sedang Maintenance&quot; dan tidak bisa menggunakan aplikasi.
+          Saat aktif, semua pengguna akan melihat layar pemeliharaan dan tidak bisa menggunakan aplikasi.
         </p>
         <div className="flex items-center gap-3 mb-4">
           <input
@@ -439,7 +439,7 @@ export default function Settings() {
             className="rounded border-gray-300 text-orange-500 focus:ring-orange-500 h-5 w-5"
           />
           <label htmlFor="maintenanceEnabled" className="text-sm font-medium text-gray-700">
-            Aktifkan maintenance mode
+            Aktifkan mode pemeliharaan
           </label>
         </div>
         <InputField
@@ -453,7 +453,7 @@ export default function Settings() {
 
       <SettingsCard title="Versi Minimum Aplikasi" icon="📱">
         <p className="text-sm text-gray-600 mb-4">
-          User dengan versi app di bawah nilai ini akan diminta update wajib sebelum menggunakan aplikasi.
+          Pengguna dengan versi app di bawah nilai ini akan diminta update wajib sebelum menggunakan aplikasi.
         </p>
         <InputField
           label="Versi Minimum (contoh: 1.0.5)"
@@ -494,7 +494,7 @@ export default function Settings() {
         </div>
       </SettingsCard>
 
-      <SettingsCard title="Lacak Barang – Fee per Order" icon="📦">
+      <SettingsCard title="Lacak Barang – biaya per pesanan" icon="📦">
         <p className="text-sm text-gray-600 mb-4">
           Bayar pengirim/penerima untuk fitur Lacak Barang. Tier berdasarkan jarak (dalam provinsi / beda provinsi / lintas provinsi).
         </p>
@@ -505,7 +505,7 @@ export default function Settings() {
             min={10000}
             value={lacakBarangDalamProvinsiRupiah}
             onChange={(e) => setLacakBarangDalamProvinsiRupiah(Number(e.target.value))}
-            hint="Fee Lacak Barang"
+            hint="Biaya Lacak Barang"
           />
           <InputField
             label="Beda provinsi (Rp)"
@@ -737,7 +737,7 @@ export default function Settings() {
       {/* Penumpang Bebas Lacak Driver & Barang */}
       <SettingsCard title="Penumpang Bebas Lacak Driver & Barang" icon="📍">
         <p className="text-sm text-gray-600 mb-4">
-          User dalam daftar ini tidak perlu bayar Lacak Driver dan Lacak Barang. Untuk penumpang, pengirim, atau penerima. Tambah dengan UID atau No. telepon.
+          Pengguna dalam daftar ini tidak perlu bayar Lacak Driver dan Lacak Barang. Untuk penumpang, pengirim, atau penerima. Tambah dengan UID atau No. telepon.
         </p>
         <div className="flex gap-2 mb-4">
           <input
@@ -782,7 +782,7 @@ export default function Settings() {
       {/* Pengguna Diizinkan Fake GPS */}
       <SettingsCard title="Pengguna Diizinkan Fake GPS" icon="🎯">
         <p className="text-sm text-gray-600 mb-4">
-          User dalam daftar ini boleh pakai fake GPS/lokasi palsu (untuk testing atau demo). Tambah dengan UID atau No. telepon.
+          Pengguna dalam daftar ini boleh pakai fake GPS/lokasi palsu (untuk testing atau demo). Tambah dengan UID atau No. telepon.
         </p>
         <div className="flex gap-2 mb-4">
           <input

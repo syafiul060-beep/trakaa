@@ -138,12 +138,13 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
       if (kDebugMode) debugPrint('[Traka AutoConfirm] Cek penjemputan: ${orders.length} order, driver @ ($driverLat, $driverLng)');
 
       for (final order in orders) {
-        final passLat = order.passengerLat;
-        final passLng = order.passengerLng;
-        if (passLat == null || passLng == null) {
+        final passCoords = order.coordsForDriverPickupProximity;
+        if (passCoords == null) {
           if (kDebugMode) debugPrint('[Traka AutoConfirm] Order ${order.id}: skip - lokasi penumpang belum ada');
           continue;
         }
+        final passLat = passCoords.$1;
+        final passLng = passCoords.$2;
 
         final distM = Geolocator.distanceBetween(
           driverLat,
@@ -208,7 +209,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text(
-                    'Penumpang dikonfirmasi dijemput secara otomatis. Notifikasi telah dikirim ke penumpang dan driver.',
+                    'Penumpang (travel) dikonfirmasi dijemput otomatis. Notifikasi dikirim ke penumpang.',
                   ),
                   backgroundColor: Colors.green,
                   behavior: SnackBarBehavior.floating,
@@ -248,12 +249,12 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
       if (kDebugMode) debugPrint('[Traka AutoComplete] Driver: cek ${orders.length} order picked_up, driver @ ($driverLat, $driverLng)');
 
       for (final order in orders) {
-        final passLat = order.passengerLat;
-        final passLng = order.passengerLng;
-        if (passLat == null || passLng == null) {
+        final passCoords = order.coordsForDriverPickupProximity;
+        if (passCoords == null) {
           if (kDebugMode) debugPrint('[Traka AutoComplete] Driver order ${order.id}: skip - lokasi penumpang belum ada');
           continue;
         }
+        final (passLat, passLng) = passCoords;
 
         final distM = Geolocator.distanceBetween(
           driverLat,
@@ -1079,9 +1080,19 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                         Icon(Icons.info_outline, size: 20, color: Colors.orange.shade800),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            'Tunjukkan barcode ke penumpang untuk di-scan saat penjemputan. Penumpang scan barcode Anda. Jika tidak scan, akan terkonfirmasi otomatis (15 menit berdekatan atau 1 km) dan dikenakan denda Rp $feeStr.',
-                            style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Tunjukkan barcode ke penumpang untuk di-scan saat penjemputan. Penumpang scan barcode Anda. Jika tidak scan, akan terkonfirmasi otomatis (15 menit berdekatan atau 1 km) dan dikenakan denda Rp $feeStr.',
+                                style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                TrakaL10n.of(context).pickupOperationalDriverNavigateLive,
+                                style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -1494,7 +1505,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
             '(Jarak × tarif per km, tier provinsi. Bayar via Google Play)',
             style: TextStyle(
               fontSize: 10,
-              color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ),
@@ -1532,7 +1543,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                         : '(Dihitung saat order selesai: totalPenumpang × (jarak × tarif, min Rp 5.000))',
                     style: TextStyle(
                       fontSize: 10,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -1572,7 +1583,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
               : '(Dihitung saat order selesai: totalPenumpang × (jarak × tarif, min Rp 5.000))',
           style: TextStyle(
             fontSize: 10,
-            color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
       ),
@@ -2103,6 +2114,8 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
               child: StyledGoogleMapBuilder(
                 builder: (style, _) => GoogleMap(
                   buildingsEnabled: true,
+                  indoorViewEnabled: true,
+                  mapToolbarEnabled: false,
                   initialCameraPosition: CameraPosition(
                     target: driverPosition != null
                         ? LatLng(
@@ -2334,6 +2347,8 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                 child: StyledGoogleMapBuilder(
                   builder: (style, _) => GoogleMap(
                     buildingsEnabled: true,
+                    indoorViewEnabled: true,
+                    mapToolbarEnabled: false,
                     initialCameraPosition: CameraPosition(
                       target: driverPosition != null
                           ? LatLng(

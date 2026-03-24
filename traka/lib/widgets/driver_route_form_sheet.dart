@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../config/province_island.dart';
 import '../services/destination_autocomplete_service.dart';
 import '../services/geocoding_service.dart' show GeocodingService, Location, Placemark;
 import '../theme/responsive.dart';
 import '../utils/placemark_formatter.dart';
 import 'traka_l10n_scope.dart';
 
-/// Bottom sheet form: asal (auto), tujuan (autocomplete + Pilih di Map), tombol Rute Perjalanan.
-/// Menggunakan peta utama beranda (bukan maps kecil) seperti form penumpang.
+/// Bottom sheet form: asal (auto), tujuan (autocomplete), tombol Rute Perjalanan.
+/// Peta utama tetap dipakai untuk animasi kamera saat memilih dari autocomplete.
 class DriverRouteFormSheet extends StatefulWidget {
   final String originText;
   final String? currentProvinsi;
@@ -20,8 +21,6 @@ class DriverRouteFormSheet extends StatefulWidget {
   final String? initialDest;
   final String? initialOrigin;
   final GoogleMapController? mapController;
-  final ValueNotifier<bool> formDestMapModeNotifier;
-  final ValueNotifier<LatLng?> formDestMapTapNotifier;
   final ValueNotifier<LatLng?> formDestPreviewNotifier;
   final void Function(
     double originLat,
@@ -32,6 +31,9 @@ class DriverRouteFormSheet extends StatefulWidget {
     String destText,
   )
       onRouteRequest;
+
+  /// Penjelasan singkat sesuai jenis rute (dalam provinsi / antar provinsi / seluruh Indonesia).
+  final String? routeScopeSubtitle;
 
   const DriverRouteFormSheet({
     super.key,
@@ -45,10 +47,9 @@ class DriverRouteFormSheet extends StatefulWidget {
     this.initialDest,
     this.initialOrigin,
     this.mapController,
-    required this.formDestMapModeNotifier,
-    required this.formDestMapTapNotifier,
     required this.formDestPreviewNotifier,
     required this.onRouteRequest,
+    this.routeScopeSubtitle,
   });
 
   @override
@@ -66,78 +67,12 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
   bool _loadingRoute = false;
   double? _selectedDestLat;
   double? _selectedDestLng;
-  bool _isMapSelectionMode = false;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.formDestMapTapNotifier.addListener(_onMainMapTapped);
-  }
 
   @override
   void dispose() {
-    widget.formDestMapTapNotifier.removeListener(_onMainMapTapped);
-    widget.formDestMapModeNotifier.value = false;
     widget.formDestPreviewNotifier.value = null;
     _destController.dispose();
     super.dispose();
-  }
-
-  void _onMainMapTapped() {
-    final pos = widget.formDestMapTapNotifier.value;
-    if (pos != null && mounted) {
-      widget.formDestMapTapNotifier.value = null;
-      _onSheetMapTapped(pos);
-    }
-  }
-
-  /// Tap di peta utama untuk pilih lokasi tujuan
-  Future<void> _onSheetMapTapped(LatLng position) async {
-    setState(() {
-      _selectedDestLat = position.latitude;
-      _selectedDestLng = position.longitude;
-      _destController.text = 'Memuat alamat...';
-    });
-    widget.formDestPreviewNotifier.value = position;
-    if (mounted) {
-      widget.mapController?.animateCamera(
-        CameraUpdate.newLatLngZoom(position, 15),
-      );
-    }
-    await _reverseGeocodeDest(position);
-  }
-
-  Future<void> _reverseGeocodeDest(LatLng position) async {
-    try {
-      final placemarks = await GeocodingService.placemarkFromCoordinates(
-        position.latitude,
-        position.longitude,
-      );
-      if (placemarks.isNotEmpty) {
-        final displayText = PlacemarkFormatter.formatDetail(placemarks.first);
-        if (mounted) {
-          setState(() {
-            _destController.text = displayText;
-            _showAutocomplete = false;
-            _autocompleteResults = [];
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            _destController.text =
-                '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
-          });
-        }
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _destController.text =
-              '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
-        });
-      }
-    }
   }
 
   Future<void> _onDestinationChanged(String value) async {
@@ -153,7 +88,7 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
       return;
     }
     if (widget.driverLat == null || widget.driverLng == null) return;
-    await Future.delayed(const Duration(milliseconds: 150));
+    await Future.delayed(const Duration(milliseconds: 80));
     if (_destController.text != value) return;
 
     try {
@@ -181,6 +116,9 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
                 widget.provincesInIsland.isNotEmpty
             ? widget.provincesInIsland
             : null,
+        filterSameProvinceAs: widget.sameProvinceOnly
+            ? widget.currentProvinsi
+            : null,
         maxLocations: 20,
         maxCandidates: widget.sameIslandOnly ? 25 : 10,
         maxDisplayCount: 10,
@@ -206,16 +144,6 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
             ),
           );
         }
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _autocompleteKey.currentContext != null) {
-            Scrollable.ensureVisible(
-              _autocompleteKey.currentContext!,
-              alignment: 0.5,
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOut,
-            );
-          }
-        });
       }
     } catch (_) {
       if (mounted && _destController.text == value) {
@@ -310,6 +238,41 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
         return;
       }
     }
+    if (widget.sameIslandOnly && (widget.currentProvinsi ?? '').isNotEmpty) {
+      try {
+        final pList = await GeocodingService.placemarkFromCoordinates(
+          destLat,
+          destLng,
+        );
+        if (pList.isNotEmpty) {
+          final destCanon = ProvinceIsland.resolveProvinceCanonical(
+            pList.first.administrativeArea,
+          );
+          final originCanon = ProvinceIsland.resolveProvinceCanonical(
+            widget.currentProvinsi,
+          );
+          if (destCanon != null &&
+              originCanon != null &&
+              destCanon == originCanon) {
+            if (mounted) {
+              setState(() => _loadingRoute = false);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Untuk rute antar provinsi, pilih tujuan di provinsi lain '
+                    '(masih di pulau yang sama).',
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+            return;
+          }
+        }
+      } catch (_) {
+        // Tetap lanjut jika reverse geocode gagal
+      }
+    }
     final lat = widget.driverLat!;
     final lng = widget.driverLng!;
     setState(() => _loadingRoute = true);
@@ -347,7 +310,28 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
                   'Rute Perjalanan',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 16),
+                if (widget.routeScopeSubtitle != null &&
+                    widget.routeScopeSubtitle!.trim().isNotEmpty) ...[
+                  SizedBox(height: context.responsive.spacing(8)),
+                  Text(
+                    widget.routeScopeSubtitle!.trim(),
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.35,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+                SizedBox(height: context.responsive.spacing(8)),
+                Text(
+                  TrakaL10n.of(context).driverRoutePassengerMatchingHint,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                SizedBox(height: context.responsive.spacing(16)),
                 // Form 1: Asal (auto)
                 Text(
                   'Dari (lokasi driver)',
@@ -377,7 +361,7 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                // Form 2: Tujuan (ketik + autocomplete + Pilih di Map, seperti penumpang)
+                // Form 2: Tujuan (ketik + autocomplete)
                 Text(
                   'Tujuan',
                   style: TextStyle(
@@ -386,18 +370,50 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                if (!_isMapSelectionMode &&
-                    _showAutocomplete &&
-                    _autocompleteResults.isNotEmpty)
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeOut,
+                TextField(
+                  controller: _destController,
+                  scrollPadding: const EdgeInsets.only(bottom: 160),
+                  decoration: InputDecoration(
+                    hintText:
+                        'Stasiun, Mall, Bandara, Rumah Sakit, Perumahan, Terminal, Pelabuhan, Alun-alun',
+                    hintStyle: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    suffixIcon: _destController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close, size: 22),
+                            tooltip: 'Hapus tujuan',
+                            onPressed: () {
+                              _destController.clear();
+                              setState(() {
+                                _autocompleteResults = [];
+                                _autocompleteLocations = [];
+                                _showAutocomplete = false;
+                                _selectedDestLat = null;
+                                _selectedDestLng = null;
+                              });
+                              widget.formDestPreviewNotifier.value = null;
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: (value) {
+                    setState(() {});
+                    _onDestinationChanged(value);
+                  },
+                  style: const TextStyle(fontSize: 14),
+                ),
+                if (_showAutocomplete && _autocompleteResults.isNotEmpty)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      top: context.responsive.spacing(8),
+                    ),
                     child: Container(
                       key: _autocompleteKey,
-                      margin: const EdgeInsets.only(bottom: 8),
-                      height: MediaQuery.of(context).viewInsets.bottom > 0
-                          ? 180
-                          : 260,
+                      height: 200,
                       decoration: BoxDecoration(
                         color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(8),
@@ -417,6 +433,7 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
                       clipBehavior: Clip.antiAlias,
                       child: ListView.separated(
                         padding: const EdgeInsets.symmetric(vertical: 4),
+                        physics: const ClampingScrollPhysics(),
                         itemCount: _autocompleteResults.length,
                         separatorBuilder: (_, __) => Divider(
                           height: 1,
@@ -445,110 +462,6 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
                           );
                         },
                       ),
-                    ),
-                  ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _destController,
-                        decoration: InputDecoration(
-                          hintText: _isMapSelectionMode
-                              ? 'Tap di map untuk pilih lokasi'
-                              : 'Stasiun, Mall, Bandara, Rumah Sakit, Perumahan, Terminal, Pelabuhan, Alun-alun',
-                          hintStyle: TextStyle(
-                            color: _isMapSelectionMode
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                            fontWeight: _isMapSelectionMode
-                                ? FontWeight.w500
-                                : FontWeight.normal,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          suffixIcon: _destController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.close, size: 20),
-                                  onPressed: () {
-                                    _destController.clear();
-                                    setState(() {
-                                      _autocompleteResults = [];
-                                      _autocompleteLocations = [];
-                                      _showAutocomplete = false;
-                                      _selectedDestLat = null;
-                                      _selectedDestLng = null;
-                                      _isMapSelectionMode = false;
-                                    });
-                                    widget.formDestMapModeNotifier.value =
-                                        false;
-                                    widget.formDestPreviewNotifier.value = null;
-                                  },
-                                )
-                              : null,
-                        ),
-                        enabled: !_isMapSelectionMode,
-                        onChanged: (value) {
-                          setState(() {});
-                          _onDestinationChanged(value);
-                        },
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: Icon(
-                        _isMapSelectionMode
-                            ? Icons.check_circle
-                            : Icons.location_on,
-                      ),
-                      color: _isMapSelectionMode
-                          ? Colors.blue.shade700
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                      tooltip: _isMapSelectionMode
-                          ? 'Selesai pilih lokasi'
-                          : 'Pilih di Map',
-                      onPressed: () {
-                        setState(() {
-                          _isMapSelectionMode = !_isMapSelectionMode;
-                        });
-                        widget.formDestMapModeNotifier.value =
-                            _isMapSelectionMode;
-                      },
-                      style: IconButton.styleFrom(
-                        backgroundColor: _isMapSelectionMode
-                            ? Theme.of(
-                                context,
-                              ).colorScheme.primary.withValues(alpha: 0.1)
-                            : null,
-                      ),
-                    ),
-                  ],
-                ),
-                if (_isMapSelectionMode)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Tap di peta utama (bagian atas) untuk memilih lokasi tujuan',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                 const SizedBox(height: 24),

@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:io' show HttpException;
+
+import 'services/performance_trace_service.dart';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_performance/firebase_performance.dart';
+import 'package:flutter/foundation.dart' show Listenable, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -40,6 +43,7 @@ import 'services/biometric_lock_service.dart';
 import 'services/car_icon_service.dart';
 import 'widgets/biometric_lifecycle_handler.dart';
 import 'widgets/biometric_lock_overlay.dart';
+import 'config/traka_api_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -70,16 +74,24 @@ void main() async {
     }
   }
 
+  if (kDebugMode) {
+    debugPrint(
+      '[Traka] Backend hybrid: aktif=${TrakaApiConfig.isApiEnabled} '
+      '(TRAKA_USE_HYBRID + URL). Pinning=${TrakaApiConfig.isCertificatePinningEnabled}',
+    );
+  }
+
+  await ThemeService.init();
+  await LocaleService.init();
+  // Harus sebelum Firestore.settings — cacheSize mengikuti deteksi RAM / preferensi lite.
+  await LiteModeService.init();
+
   // Firestore cache: 100 MB standar, 50 MB saat mode lite (HP RAM < 3 GB)
   final firestore = FirebaseFirestore.instance;
   firestore.settings = Settings(
     persistenceEnabled: true,
     cacheSizeBytes: LiteModeService.firestoreCacheSizeBytes,
   );
-
-  await ThemeService.init();
-  await LocaleService.init();
-  await LiteModeService.init();
   await TileLayerService.ensureInitialized();
   // Preload dark map style agar siap saat user pakai mode gelap
   await MapStyleService.loadDarkStyle();
@@ -96,6 +108,8 @@ void main() async {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
     return true;
   };
+
+  unawaited(PerformanceTraceService.startStartupToInteractive());
 
   runApp(
     MultiProvider(
@@ -248,20 +262,24 @@ class _ErrorApp extends StatelessWidget {
 class TrakaApp extends StatelessWidget {
   const TrakaApp({super.key});
 
+  /// Satu listener untuk tema + locale — hindari nested [ValueListenableBuilder]
+  /// yang memicu dua kali rebuild beruntun (risiko assertion `_dependents.isEmpty`).
+  static final Listenable _themeAndLocale = Listenable.merge([
+    ThemeService.themeModeNotifier,
+    LocaleService.localeNotifier,
+  ]);
+
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: ThemeService.themeModeNotifier,
-      builder: (_, themeMode, __) {
-        return ValueListenableBuilder<AppLocale>(
-          valueListenable: LocaleService.localeNotifier,
-          builder: (_, appLocale, __) {
-            return MaterialApp(
-              navigatorKey: appNavigatorKey,
-              title: 'Traka Travel Kalimantan',
-              debugShowCheckedModeBanner: false,
-              supportedLocales: const [Locale('id', 'ID'), Locale('en')],
-              locale: LocaleService.materialLocale,
+    return AnimatedBuilder(
+      animation: _themeAndLocale,
+      builder: (context, _) {
+        return MaterialApp(
+          navigatorKey: appNavigatorKey,
+          title: 'Traka Travel Kalimantan',
+          debugShowCheckedModeBanner: false,
+          supportedLocales: const [Locale('id', 'ID'), Locale('en')],
+          locale: LocaleService.materialLocale,
           localizationsDelegates: const [
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
@@ -275,56 +293,57 @@ class TrakaApp extends StatelessWidget {
           },
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
-          themeMode: themeMode,
+          themeMode: ThemeService.themeModeNotifier.value,
           builder: (context, child) {
-        final media = MediaQuery.of(context);
-        final shortestSide = media.size.shortestSide;
-        // Ukuran font tidak mengikuti pengaturan HP pengguna; hanya sesuaikan layar kecil.
-        final scale = shortestSide < 340
-            ? 0.88
-            : shortestSide < 380
-                ? 0.92
-                : shortestSide < 420
-                    ? 0.96
-                    : 1.0;
-        return MediaQuery(
-          data: media.copyWith(
-            textScaler: TextScaler.linear(scale),
-          ),
-          child: ValueListenableBuilder<bool>(
-            valueListenable: FakeGpsOverlayService.fakeGpsDetected,
-            builder: (context, showFakeGpsOverlay, _) {
-              return Stack(
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+            final media = MediaQuery.of(context);
+            final shortestSide = media.size.shortestSide;
+            // Ukuran font tidak mengikuti pengaturan HP pengguna; hanya sesuaikan layar kecil.
+            final scale = shortestSide < 340
+                ? 0.88
+                : shortestSide < 380
+                    ? 0.92
+                    : shortestSide < 420
+                        ? 0.96
+                        : 1.0;
+            return MediaQuery(
+              data: media.copyWith(
+                textScaler: TextScaler.linear(scale),
+              ),
+              child: ValueListenableBuilder<bool>(
+                valueListenable: FakeGpsOverlayService.fakeGpsDetected,
+                builder: (context, showFakeGpsOverlay, _) {
+                  return Stack(
                     children: [
-                      const OfflineBanner(),
-                      Expanded(
-                        child: TrakaL10n(
-                          data: AppLocalizations(locale: LocaleService.current),
-                          child: child!,
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const OfflineBanner(),
+                          Expanded(
+                            child: TrakaL10n(
+                              key: ValueKey<AppLocale>(LocaleService.current),
+                              data: AppLocalizations(
+                                locale: LocaleService.current,
+                              ),
+                              child: child!,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (showFakeGpsOverlay)
+                        const Positioned.fill(
+                          child: FakeGpsOverlay(),
                         ),
+                      const Positioned.fill(
+                        child: BiometricLockOverlay(),
                       ),
                     ],
-                  ),
-                  if (showFakeGpsOverlay)
-                    const Positioned.fill(
-                      child: FakeGpsOverlay(),
-                    ),
-                  const Positioned.fill(
-                    child: BiometricLockOverlay(),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
+                  );
+                },
+              ),
+            );
+          },
           home: const SplashScreenWrapper(),
           routes: {'/login': (context) => const LoginScreen()},
-        );
-          },
         );
       },
     );

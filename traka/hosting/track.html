@@ -3,151 +3,417 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lacak Perjalanan - Traka</title>
+  <meta name="description" content="Lacak perjalanan atau kirim barang Traka — tautan aman untuk keluarga.">
+  <meta name="theme-color" content="#f97316">
+  <title>Lacak — Traka</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="assets/track-family.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    #map { width: 100%; height: 100vh; }
-    #info {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      background: #fff;
-      padding: 16px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-      z-index: 1000;
-    }
-    #info h1 { font-size: 18px; margin-bottom: 8px; }
-    #info p { font-size: 14px; color: #666; }
-    #info.completed { background: #f5f5f5; }
-    #loading, #error { padding: 24px; text-align: center; }
-    #error { color: #c62828; }
-    .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-  </style>
 </head>
 <body>
-  <div id="info" style="display:none;">
-    <h1>Lacak Perjalanan Traka</h1>
-    <p id="info-text"></p>
+  <div id="screen-loading" class="screen-center screen-center--dark">
+    <div class="spinner" aria-hidden="true"></div>
+    <p>Memuat lacak…</p>
   </div>
-  <div id="loading">
-    <div class="spinner"></div>
-    <p>Memuat...</p>
-  </div>
-  <div id="error" style="display:none;"></div>
-  <div id="map" style="display:none;"></div>
 
-  <!-- Load Firebase config dari firebase-config.js (copy dari firebase-config.example.js, JANGAN commit!) -->
+  <div id="screen-error" class="screen-center screen-center--dark" style="display:none;">
+    <div class="error-card">
+      <h2 id="error-title">Tautan tidak bisa dipakai</h2>
+      <p id="error-text"></p>
+      <div class="btn-row">
+        <a class="btn btn--primary" href="profil.html">Tentang Traka</a>
+        <a class="btn btn--ghost" href="https://play.google.com/store/apps/details?id=id.traka.app" rel="noopener noreferrer" target="_blank">Google Play</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-completed" class="screen-center screen-center--dark" style="display:none;">
+    <div class="completed-card">
+      <h2 id="completed-title">Perjalanan selesai</h2>
+      <p id="completed-text"></p>
+      <div class="btn-row">
+        <a class="btn btn--primary" href="profil.html">Tentang Traka</a>
+        <a class="btn btn--ghost" href="https://play.google.com/store/apps/details?id=id.traka.app" rel="noopener noreferrer" target="_blank">Google Play</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-live" class="track-shell" style="display:none;">
+    <header class="track-header" id="track-header">
+      <div class="track-brand">
+        <span class="track-brand-mark" aria-hidden="true">T</span>
+        <span class="track-brand-name">Traka</span>
+      </div>
+      <h1 id="page-title">Lacak perjalanan</h1>
+      <p id="status-pill" class="status-pill status-pill--wait" role="status"></p>
+      <p id="route-line" class="route-line"></p>
+      <p id="privacy-note" class="privacy-note"></p>
+      <p id="last-updated" class="last-updated" aria-live="polite"></p>
+    </header>
+    <div id="map-legend" class="track-legend" style="display:none;" aria-label="Keterangan titik di peta">
+      <span class="track-legend__item"><span class="track-legend__dot track-legend__dot--p" aria-hidden="true"></span>Pengirim</span>
+      <span class="track-legend__item"><span class="track-legend__dot track-legend__dot--r" aria-hidden="true"></span>Penerima</span>
+      <span class="track-legend__item"><span class="track-legend__dot track-legend__dot--d" aria-hidden="true"></span>Driver</span>
+    </div>
+    <div class="map-wrap">
+      <div id="map" role="application" aria-label="Peta posisi"></div>
+    </div>
+    <footer class="track-footer">
+      <a href="profil.html">Tentang Traka</a>
+      ·
+      <a href="legal/privacy.html">Privasi</a>
+      ·
+      <a href="https://play.google.com/store/apps/details?id=id.traka.app" rel="noopener noreferrer" target="_blank">Google Play</a>
+    </footer>
+  </div>
+
   <script src="firebase-config.js"></script>
   <script>
-    if (!window.FIREBASE_CONFIG || !window.FIREBASE_CONFIG.apiKey) {
-      document.getElementById('loading').innerHTML = '<p style="color:#c62828;">Firebase config belum di-set. Copy firebase-config.example.js ke firebase-config.js.</p>';
-    } else {
-    const firebaseConfig = window.FIREBASE_CONFIG;
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+    (function () {
+      function hide(el) { if (el) el.style.display = 'none'; }
+      function show(el, disp) { if (el) el.style.display = disp || 'block'; }
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('t');
+      function formatFirestoreTime(ts) {
+        if (!ts) return '';
+        var d;
+        if (typeof ts.toDate === 'function') d = ts.toDate();
+        else if (ts.seconds != null) d = new Date(ts.seconds * 1000);
+        else return '';
+        return d.toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
+      }
 
-    if (!token) {
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('error').style.display = 'block';
-      document.getElementById('error').textContent = 'Link tidak valid. Token tidak ditemukan.';
-    } else {
-      db.collection('track_share_links').doc(token).get()
-        .then(function(doc) {
-          document.getElementById('loading').style.display = 'none';
-          if (!doc.exists) {
-            document.getElementById('error').style.display = 'block';
-            document.getElementById('error').textContent = 'Link tidak valid atau sudah kadaluarsa.';
-            return;
-          }
-          const data = doc.data();
-          const status = data.status || '';
-          const orderNumber = data.orderNumber || '';
+      function makeLetterPin(letter, bg) {
+        return L.divIcon({
+          className: 'leaflet-letter-pin-wrap',
+          html: '<div class="leaflet-letter-pin" style="background:' + bg + '">' + letter + '</div>',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+      }
 
-          if (status === 'completed' || status === 'cancelled') {
-            document.getElementById('info').style.display = 'block';
-            document.getElementById('info').classList.add('completed');
-            document.getElementById('info-text').textContent = 'Perjalanan sudah sampai tujuan. Link ini tidak lagi aktif.';
-            document.getElementById('error').style.display = 'block';
-            document.getElementById('error').textContent = 'Link tidak berlaku setelah perjalanan selesai.';
-            document.getElementById('error').style.color = '#666';
-            return;
-          }
+      function orderStatusLabel(status, isKirimBarang) {
+        switch (status) {
+          case 'picked_up':
+            return isKirimBarang ? 'Driver sedang mengantar barang' : 'Dalam perjalanan';
+          case 'agreed':
+            return isKirimBarang ? 'Menunggu jemput / pengiriman' : 'Driver menuju lokasi Anda';
+          case 'pending_agreement':
+            return 'Menunggu konfirmasi driver';
+          case 'pending_receiver':
+            return 'Menunggu penerima';
+          default:
+            return 'Memuat status…';
+        }
+      }
 
-          const driverUid = data.driverUid;
-          if (!driverUid) {
-            document.getElementById('error').style.display = 'block';
-            document.getElementById('error').textContent = 'Data driver tidak valid.';
-            return;
-          }
+      function setStatusPill(el, status, isKirimBarang) {
+        if (!el) return;
+        var text = orderStatusLabel(status, isKirimBarang);
+        el.textContent = text;
+        el.className = 'status-pill';
+        if (status === 'picked_up') el.classList.add('status-pill--live');
+        else if (status === 'agreed' || status === 'pending_agreement' || status === 'pending_receiver')
+          el.classList.add('status-pill--wait');
+        else el.classList.add('status-pill--wait');
+      }
 
-          const orderType = data.orderType || 'travel';
-          const isKirimBarang = orderType === 'kirim_barang';
+      function showErrorScreen(title, message) {
+        hide(document.getElementById('screen-loading'));
+        hide(document.getElementById('screen-live'));
+        hide(document.getElementById('screen-completed'));
+        var se = document.getElementById('screen-error');
+        show(se, 'flex');
+        document.getElementById('error-title').textContent = title || 'Terjadi masalah';
+        document.getElementById('error-text').textContent = message || '';
+      }
 
-          document.getElementById('info').style.display = 'block';
-          document.getElementById('info').querySelector('h1').textContent = isKirimBarang ? 'Lacak Kirim Barang Traka' : 'Lacak Perjalanan Traka';
-          document.getElementById('info-text').textContent = (data.originText || 'Asal') + ' → ' + (data.destText || 'Tujuan') + (orderNumber ? ' (#' + orderNumber + ')' : '');
-          document.getElementById('map').style.display = 'block';
+      function showCompletedScreen(isCancelled, isKirimBarang) {
+        isKirimBarang = !!isKirimBarang;
+        hide(document.getElementById('screen-loading'));
+        hide(document.getElementById('screen-live'));
+        hide(document.getElementById('screen-error'));
+        var sc = document.getElementById('screen-completed');
+        show(sc, 'flex');
+        if (isCancelled) {
+          document.getElementById('completed-title').textContent = isKirimBarang
+            ? 'Pengiriman dibatalkan'
+            : 'Perjalanan dibatalkan';
+          document.getElementById('completed-text').textContent = isKirimBarang
+            ? 'Pesanan kirim barang ini tidak jadi dijalankan. Tautan lacak tidak lagi aktif. Hubungi pengirim/penerima atau gunakan aplikasi Traka.'
+            : 'Pesanan ini tidak jadi berjalan. Tautan lacak tidak lagi aktif. Jika ada pertanyaan, hubungi keluarga yang membagikan tautan atau gunakan aplikasi Traka.';
+        } else {
+          document.getElementById('completed-title').textContent = isKirimBarang
+            ? 'Pengiriman selesai'
+            : 'Perjalanan selesai';
+          document.getElementById('completed-text').textContent = isKirimBarang
+            ? 'Barang sudah sampai atau pengiriman ditutup. Posisi driver tidak lagi ditampilkan. Terima kasih sudah memantau lewat Traka — unduh aplikasi untuk kirim barang atau travel berikutnya.'
+            : 'Terima kasih sudah memantau lewat Traka. Posisi driver tidak lagi ditampilkan setelah sampai tujuan. Unduh Traka untuk memesan travel atau kirim barang.';
+        }
+      }
 
-          let map = L.map('map').setView([-6.2, 106.8], 14);
+      function isFinishedStatus(s) {
+        return s === 'completed' || s === 'cancelled';
+      }
+
+      if (!window.FIREBASE_CONFIG || !window.FIREBASE_CONFIG.apiKey) {
+        hide(document.getElementById('screen-loading'));
+        showErrorScreen(
+          'Konfigurasi belum siap',
+          'Firebase config belum di-set. Salin firebase-config.example.js ke firebase-config.js di hosting.'
+        );
+        return;
+      }
+
+      firebase.initializeApp(window.FIREBASE_CONFIG);
+      var db = firebase.firestore();
+      var auth = firebase.auth();
+
+      var urlParams = new URLSearchParams(window.location.search);
+      var token = urlParams.get('t');
+
+      if (!token) {
+        hide(document.getElementById('screen-loading'));
+        showErrorScreen('Tautan tidak valid', 'Alamat tidak berisi kode lacak. Minta tautan lengkap dari keluarga Anda.');
+        return;
+      }
+
+      var map = null;
+      var driverMarker = null;
+      var passengerMarker = null;
+      var receiverMarker = null;
+      var unsubDriver = null;
+      var unsubToken = null;
+
+      function tearDownLive() {
+        if (unsubDriver) {
+          unsubDriver();
+          unsubDriver = null;
+        }
+        if (unsubToken) {
+          unsubToken();
+          unsubToken = null;
+        }
+        if (map) {
+          map.remove();
+          map = null;
+        }
+        driverMarker = passengerMarker = receiverMarker = null;
+      }
+
+      function fitTrackBounds() {
+        if (!map) return;
+        var pts = [];
+        if (passengerMarker) pts.push(passengerMarker.getLatLng());
+        if (receiverMarker) pts.push(receiverMarker.getLatLng());
+        if (driverMarker) pts.push(driverMarker.getLatLng());
+        if (pts.length === 0) return;
+        if (pts.length === 1) {
+          map.setView(pts[0], 15);
+          return;
+        }
+        var b = L.latLngBounds(pts[0], pts[0]);
+        for (var i = 1; i < pts.length; i++) b.extend(pts[i]);
+        map.fitBounds(b, { padding: [40, 40], maxZoom: 15 });
+      }
+
+      function applyShareDoc(data) {
+        var status = data.status || '';
+        var orderNumber = data.orderNumber || '';
+        var orderType = data.orderType || 'travel';
+        var isKirimBarang = orderType === 'kirim_barang';
+
+        if (isFinishedStatus(status)) {
+          tearDownLive();
+          showCompletedScreen(status === 'cancelled', isKirimBarang);
+          return;
+        }
+
+        var driverUid = data.driverUid;
+        if (!driverUid) {
+          tearDownLive();
+          showErrorScreen('Data tidak lengkap', 'Tautan ini tidak memiliki informasi driver yang valid.');
+          return;
+        }
+
+        hide(document.getElementById('screen-loading'));
+        hide(document.getElementById('screen-error'));
+        hide(document.getElementById('screen-completed'));
+        show(document.getElementById('screen-live'), 'flex');
+
+        document.title = isKirimBarang ? 'Lacak kirim barang — Traka' : 'Lacak perjalanan — Traka';
+        document.getElementById('page-title').textContent = isKirimBarang
+          ? 'Lacak kirim barang'
+          : 'Lacak perjalanan';
+        setStatusPill(document.getElementById('status-pill'), status, isKirimBarang);
+
+        var privacyEl = document.getElementById('privacy-note');
+        privacyEl.textContent = isKirimBarang
+          ? 'Hanya yang punya tautan ini yang melihat ringkasan rute, titik pengirim & penerima, dan posisi driver. Jangan sebar ke publik.'
+          : 'Hanya orang yang punya tautan ini yang bisa melihat ringkasan rute dan posisi. Jangan bagikan ke publik.';
+
+        var legendEl = document.getElementById('map-legend');
+        if (isKirimBarang) {
+          show(legendEl, 'flex');
+        } else {
+          hide(legendEl);
+        }
+
+        var routeEl = document.getElementById('route-line');
+        var origin = data.originText || 'Asal';
+        var dest = data.destText || 'Tujuan';
+        routeEl.innerHTML =
+          origin + ' → ' + dest +
+          (orderNumber ? ' <span class="order-num">(#' + String(orderNumber).replace(/</g, '') + ')</span>' : '');
+
+        var mapEl = document.getElementById('map');
+        if (!map) {
+          map = L.map(mapEl).setView([-6.2, 106.8], 14);
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap'
           }).addTo(map);
+        }
 
-          let driverMarker = null;
-          let passengerMarker = null;
-          let receiverMarker = null;
+        var ShipperIcon = makeLetterPin('P', '#2563eb');
+        var ReceiverIcon = makeLetterPin('R', '#16a34a');
 
-          if (isKirimBarang) {
-            const pLat = data.passengerLat;
-            const pLng = data.passengerLng;
-            const rLat = data.receiverLat;
-            const rLng = data.receiverLng;
-            if (pLat != null && pLng != null) {
-              passengerMarker = L.marker([pLat, pLng]).addTo(map);
-              passengerMarker.bindPopup((data.passengerName || 'Pengirim') + '<br>' + (data.originText || ''));
-            }
-            if (rLat != null && rLng != null) {
-              receiverMarker = L.marker([rLat, rLng]).addTo(map);
-              receiverMarker.bindPopup((data.receiverName || 'Penerima') + '<br>' + (data.destText || ''));
+        if (isKirimBarang) {
+          var pLat = data.passengerLat;
+          var pLng = data.passengerLng;
+          var rLat = data.receiverLat;
+          var rLng = data.receiverLng;
+          if (pLat != null && pLng != null) {
+            if (!passengerMarker) {
+              passengerMarker = L.marker([pLat, pLng], { icon: ShipperIcon }).addTo(map);
+              passengerMarker.bindPopup(
+                '<strong>Pengirim</strong><br>' +
+                (data.passengerName || 'Pengirim') + '<br>' + (data.originText || '')
+              );
+            } else {
+              passengerMarker.setLatLng([pLat, pLng]);
             }
           }
-
-          db.collection('driver_status').doc(driverUid).onSnapshot(function(snap) {
-            if (!snap.exists) return;
-            const d = snap.data();
-            const lat = d.latitude;
-            const lng = d.longitude;
-            if (lat == null || lng == null) return;
-
-            const pos = [lat, lng];
-            if (!driverMarker) {
-              driverMarker = L.marker(pos).addTo(map);
-              driverMarker.bindPopup('Driver');
-              map.setView(pos, 15);
+          if (rLat != null && rLng != null) {
+            if (!receiverMarker) {
+              receiverMarker = L.marker([rLat, rLng], { icon: ReceiverIcon }).addTo(map);
+              receiverMarker.bindPopup(
+                '<strong>Penerima</strong><br>' +
+                (data.receiverName || 'Penerima') + '<br>' + (data.destText || '')
+              );
             } else {
-              driverMarker.setLatLng(pos);
+              receiverMarker.setLatLng([rLat, rLng]);
             }
-          }, function(err) {
-            console.error(err);
+          }
+          fitTrackBounds();
+        }
+
+        function driverPinHtml() {
+          return '<div class="leaflet-driver-pin" aria-hidden="true"></div>';
+        }
+
+        var DriverIcon = L.divIcon({
+          className: 'leaflet-driver-icon-wrap',
+          html: driverPinHtml(),
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+
+        function bindDriverSnapshot() {
+          if (unsubDriver) unsubDriver();
+          unsubDriver = db.collection('driver_status').doc(driverUid).onSnapshot(
+            function (snap) {
+              var luEl = document.getElementById('last-updated');
+              if (!snap.exists) {
+                if (luEl) luEl.textContent = 'Posisi driver belum tersedia.';
+                return;
+              }
+              var d = snap.data();
+              var lat = d.latitude;
+              var lng = d.longitude;
+              var updatedStr = formatFirestoreTime(d.lastUpdated);
+              if (lat == null || lng == null) {
+                if (luEl) luEl.textContent = updatedStr ? 'Koordinat belum ada · pembaruan ' + updatedStr : 'Menunggu posisi…';
+                return;
+              }
+              var pos = [lat, lng];
+              if (!driverMarker) {
+                driverMarker = L.marker(pos, { icon: DriverIcon }).addTo(map);
+                driverMarker.bindPopup(
+                  isKirimBarang
+                    ? '<strong>Driver</strong><br>Mengantar kiriman'
+                    : '<strong>Driver</strong><br>Perjalanan'
+                );
+                fitTrackBounds();
+              } else {
+                driverMarker.setLatLng(pos);
+              }
+              if (luEl) {
+                luEl.textContent = updatedStr
+                  ? 'Posisi diperbarui: ' + updatedStr
+                  : 'Posisi driver ditampilkan di peta.';
+              }
+            },
+            function (err) {
+              console.error(err);
+              var luEl = document.getElementById('last-updated');
+              if (luEl) {
+                luEl.textContent =
+                  'Tidak bisa memuat posisi (izin atau koneksi). Pastikan login anonim aktif di Firebase untuk halaman lacak.';
+              }
+            }
+          );
+        }
+
+        auth.signInAnonymously().then(function () {
+          bindDriverSnapshot();
+          setTimeout(function () {
+            if (map) {
+              map.invalidateSize();
+              fitTrackBounds();
+            }
+          }, 120);
+        }).catch(function (e) {
+          console.error(e);
+          bindDriverSnapshot();
+          document.getElementById('last-updated').textContent =
+            'Login anonim gagal — aktifkan Anonymous di Firebase Authentication agar keluarga bisa melihat posisi.';
+        });
+      }
+
+      db.collection('track_share_links').doc(token).get()
+        .then(function (doc) {
+          hide(document.getElementById('screen-loading'));
+          if (!doc.exists) {
+            showErrorScreen('Tautan tidak berlaku', 'Kode lacak salah, kedaluwarsa, atau sudah dihapus. Minta tautan baru dari keluarga Anda.');
+            return;
+          }
+          applyShareDoc(doc.data());
+
+          if (unsubToken) unsubToken();
+          unsubToken = db.collection('track_share_links').doc(token).onSnapshot(function (snap) {
+            if (!snap.exists) {
+              tearDownLive();
+              showErrorScreen('Tautan tidak berlaku', 'Data lacak tidak lagi tersedia.');
+              return;
+            }
+            var d = snap.data();
+            var kb = (d.orderType || 'travel') === 'kirim_barang';
+            if (isFinishedStatus(d.status || '')) {
+              tearDownLive();
+              showCompletedScreen((d.status || '') === 'cancelled', kb);
+            } else {
+              setStatusPill(document.getElementById('status-pill'), d.status || '', kb);
+            }
           });
         })
-        .catch(function(err) {
-          document.getElementById('loading').style.display = 'none';
-          document.getElementById('error').style.display = 'block';
-          document.getElementById('error').textContent = 'Gagal memuat: ' + (err.message || 'Koneksi error');
+        .catch(function (err) {
+          hide(document.getElementById('screen-loading'));
+          showErrorScreen('Gagal memuat', err.message || 'Periksa koneksi internet Anda.');
         });
-    }
-    }
+    })();
   </script>
 </body>
 </html>

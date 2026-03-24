@@ -343,20 +343,40 @@ class _ScanBarcodePenumpangScreenState
               ),
             ),
           Positioned(
-            left: 24,
-            right: 24,
-            bottom: 32,
-            child: Text(
-              'Arahkan kamera ke barcode driver (penjemputan atau saat sampai tujuan)',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                shadows: [
-                  Shadow(color: Colors.black, blurRadius: 4),
-                  Shadow(color: Colors.black, offset: Offset(1, 1)),
-                ],
-              ),
+            left: 16,
+            right: 16,
+            bottom: 28,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Travel: PICKUP (jemput) → COMPLETE (tujuan).',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    shadows: [
+                      Shadow(color: Colors.black.withValues(alpha: 0.85), blurRadius: 4),
+                      Shadow(color: Colors.black.withValues(alpha: 0.85), offset: Offset(1, 1)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Kirim barang: pengirim scan PICKUP; penerima scan saat terima.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.95),
+                    fontSize: 12,
+                    height: 1.3,
+                    shadows: [
+                      Shadow(color: Colors.black.withValues(alpha: 0.85), blurRadius: 4),
+                      Shadow(color: Colors.black.withValues(alpha: 0.85), offset: Offset(1, 1)),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ],

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '../services/driver_earnings_pdf_service.dart';
 import '../theme/app_theme.dart';
@@ -145,11 +146,55 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
       );
       final monthName = _monthNames[_selectedMonth - 1];
       final filename = 'laporan_pendapatan_${_selectedYear}_${_selectedMonth.toString().padLeft(2, '0')}_$monthName.pdf';
-      await DriverEarningsPdfService.sharePdf(doc, name: filename);
+      final file = await DriverEarningsPdfService.savePdfToFile(doc, name: filename);
+      if (!mounted) return;
+      final l10n = TrakaL10n.of(context);
+      await showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (ctx) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(l10n.pdfReportReadyTitle, style: Theme.of(ctx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                Text(l10n.pdfReportReadyHint, style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () async {
+                    Navigator.of(ctx).pop();
+                    final r = await DriverEarningsPdfService.openPdfFile(file);
+                    if (!mounted) return;
+                    if (r.type != ResultType.done) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(l10n.failedToOpenPdf(r.message))),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.open_in_new),
+                  label: Text(l10n.viewPdf),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    Navigator.of(ctx).pop();
+                    await DriverEarningsPdfService.sharePdfFile(file);
+                  },
+                  icon: const Icon(Icons.share),
+                  label: Text(l10n.share),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal membuat PDF: $e')),
+          SnackBar(content: Text(TrakaL10n.of(context).failedToCreatePdf(e))),
         );
       }
     } finally {
@@ -400,7 +445,8 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<int>(
-                        value: _selectedMonth,
+                        key: ValueKey<int>(_selectedMonth),
+                        initialValue: _selectedMonth,
                         decoration: InputDecoration(labelText: 'Bulan', border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm))),
                         items: List.generate(12, (i) => DropdownMenuItem(value: i + 1, child: Text(_monthNames[i]))),
                         onChanged: (v) {
@@ -414,7 +460,8 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: DropdownButtonFormField<int>(
-                        value: _selectedYear,
+                        key: ValueKey<int>(_selectedYear),
+                        initialValue: _selectedYear,
                         decoration: InputDecoration(labelText: 'Tahun', border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm))),
                         items: List.generate(5, (i) {
                           final y = DateTime.now().year - 2 + i;
@@ -436,7 +483,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
                   child: FilledButton.icon(
                     onPressed: (_loadingPdf || totalEarningsMonth <= 0) ? null : _downloadPdf,
                     icon: _loadingPdf ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.picture_as_pdf),
-                    label: Text(_loadingPdf ? 'Membuat PDF...' : 'Unduh Laporan PDF'),
+                    label: Text(_loadingPdf ? TrakaL10n.of(context).driverEarningsPdfMaking : TrakaL10n.of(context).driverEarningsPdfButtonLabel),
                   ),
                 ),
                 if (totalEarningsMonth <= 0)

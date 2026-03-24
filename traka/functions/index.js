@@ -2,6 +2,7 @@ const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
 const { verifyProductPurchase } = require("./lib/verifyGooglePlay.js");
+const billingValidation = require("./lib/billingValidation.js");
 
 // Load .env untuk development lokal (emulator). Production pakai env var dari Cloud Console.
 try {
@@ -123,6 +124,192 @@ async function sendFcmWithCollapse(basePayload, { collapseKey, tag } = {}) {
   }
 }
 
+/** FCM: admin meminta verifikasi dokumen / data tambahan. */
+async function sendAdminVerificationRequestFcm(uid, after) {
+  try {
+    const userSnap = await admin.firestore().collection("users").doc(uid).get();
+    if (!userSnap.exists) return;
+    const fcmToken = userSnap.data()?.fcmToken;
+    if (!fcmToken) {
+      console.warn("sendAdminVerificationRequestFcm: fcmToken kosong uid=" + uid);
+      return;
+    }
+    const rawMsg = (after?.adminVerificationMessage || "").trim();
+    const body = rawMsg.length > 120
+      ? rawMsg.slice(0, 117) + "..."
+      : (rawMsg || "Buka aplikasi → Profil untuk melengkapi verifikasi.");
+    const title = "Permintaan verifikasi";
+    const payload = {
+      notification: { title, body },
+      data: {
+        type: "admin_verification",
+        title,
+        body,
+        click_action: "FLUTTER_NOTIFICATION_CLICK",
+      },
+      token: fcmToken,
+      android: {
+        priority: "high",
+        notification: {
+          channelId: "traka_verification_channel",
+          priority: "high",
+        },
+      },
+    };
+    await sendFcmWithCollapse(payload, {
+      collapseKey: `admin_verification_${uid}`,
+      tag: `admin_verification_${uid}`,
+    });
+  } catch (e) {
+    console.error("sendAdminVerificationRequestFcm error:", e);
+  }
+}
+
+/** Escape minimal untuk isi email HTML. */
+function escapeHtmlForEmail(s) {
+  return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+}
+
+/**
+ * Email alert ke GMAIL_EMAIL — saluran utama untuk admin yang hanya pakai traka-admin (web),
+ * karena panel web tidak mengisi fcmToken (tidak ada FCM web di project ini).
+ * Tidak throw — gagal email hanya di-log.
+ */
+async function sendAdminInboundEmail({ title, body, meta = {} }) {
+  const gmailEmail = process.env.GMAIL_EMAIL;
+  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+  if (!gmailEmail || !gmailAppPassword) {
+    console.warn(
+        "sendAdminInboundEmail: GMAIL_EMAIL / GMAIL_APP_PASSWORD kosong, skip email",
+    );
+    return;
+  }
+  try {
+    const { email: fromEmail, transporter } = getEmailConfig();
+    const metaStr = JSON.stringify(meta);
+    const text = `${title}\n\n${body}\n\n---\nTraka Admin (web). Buka panel Pengguna.\nMeta: ${metaStr}`;
+    const html = `
+<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;line-height:1.5;color:#333;max-width:560px;margin:0 auto;padding:16px">
+  <p style="margin:0 0 8px 0"><strong>${escapeHtmlForEmail(title)}</strong></p>
+  <p style="margin:0 0 16px 0;white-space:pre-wrap">${escapeHtmlForEmail(body)}</p>
+  <p style="color:#666;font-size:12px;margin:0">
+    Panel admin hanya di web — notifikasi ini dikirim ke email operasional.
+    Buka <strong>traka-admin → Pengguna</strong> untuk detail.
+  </p>
+  <p style="color:#999;font-size:11px;margin-top:12px">Meta: ${escapeHtmlForEmail(metaStr)}</p>
+</body></html>`.trim();
+    await transporter.sendMail({
+      from: `"Traka Admin" <${fromEmail}>`,
+      to: gmailEmail,
+      subject: `[Traka] ${title}`,
+      text,
+      html,
+    });
+    console.log("sendAdminInboundEmail OK to", gmailEmail);
+  } catch (e) {
+    console.error("sendAdminInboundEmail error:", e);
+  }
+}
+
+/**
+ * Simpan ke Firestore untuk halaman Notifikasi di traka-admin (baca riwayat + detail).
+ */
+async function persistAdminNotification({ title, body, data = {} }) {
+  try {
+    const uid = data.userIdSubject ? String(data.userIdSubject) : "";
+    let userLabel = "";
+    let userEmail = "";
+    if (uid) {
+      const uSnap = await admin.firestore().collection("users").doc(uid).get();
+      if (uSnap.exists) {
+        const d = uSnap.data();
+        userLabel = String(d.displayName || d.email || uid).slice(0, 200);
+        userEmail = d.email ? String(d.email) : "";
+      }
+    }
+    await admin.firestore().collection("admin_notifications").add({
+      type: String(data.type || "admin_inbound").slice(0, 120),
+      eventType: String(data.eventType || "").slice(0, 120),
+      title: String(title || "").slice(0, 300),
+      body: String(body || "").slice(0, 4000),
+      userId: uid || null,
+      userLabel: userLabel || null,
+      userEmail: userEmail || null,
+      metaJson: JSON.stringify(data),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      readAt: null,
+    });
+  } catch (e) {
+    console.error("persistAdminNotification error:", e);
+  }
+}
+
+/**
+ * Beri tahu admin: (1) email ke GMAIL_EMAIL selalu jika SMTP diset — utama untuk admin web;
+ * (2) FCM opsional ke users role=admin yang kebetulan punya fcmToken (mis. uji di app).
+ */
+async function notifyAdminsFcm({ title, body, data = {} }) {
+  try {
+    await persistAdminNotification({ title, body, data });
+    await sendAdminInboundEmail({
+      title,
+      body,
+      meta: data,
+    });
+
+    const snap = await admin.firestore()
+        .collection("users")
+        .where("role", "==", "admin")
+        .get();
+    if (snap.empty) {
+      console.warn("notifyAdminsFcm: tidak ada dokumen users dengan role=admin (FCM dilewati)");
+      return;
+    }
+    const baseData = {
+      type: data.type || "admin_inbound",
+      click_action: "FLUTTER_NOTIFICATION_CLICK",
+      ...data,
+    };
+    let sent = 0;
+    for (const doc of snap.docs) {
+      const token = doc.data()?.fcmToken;
+      if (!token || typeof token !== "string" || !token.trim()) continue;
+      const payload = {
+        notification: { title, body },
+        data: {
+          ...baseData,
+          title,
+          body,
+        },
+        token: token.trim(),
+        android: {
+          priority: "high",
+          notification: {
+            channelId: "traka_verification_channel",
+            priority: "high",
+          },
+        },
+      };
+      const subj = (data.userIdSubject || "").toString();
+      const ev = (data.eventType || "alert").toString();
+      await sendFcmWithCollapse(payload, {
+        collapseKey: `admin_inbound_${ev}_${subj}_${doc.id}`,
+        tag: `admin_inbound_${ev}_${subj}`,
+      });
+      sent++;
+    }
+    if (sent === 0) {
+      console.warn("notifyAdminsFcm: tidak ada admin dengan fcmToken (email sudah dikirim jika SMTP OK)");
+    }
+  } catch (e) {
+    console.error("notifyAdminsFcm error:", e);
+  }
+}
+
 /** Kirim FCM notifikasi pengingat bayar (kontribusi driver / pelanggaran). */
 async function sendPaymentReminderFcm(uid, type) {
   try {
@@ -157,7 +344,7 @@ async function sendPaymentReminderFcm(uid, type) {
 // DEPRECATED (Tahap 2 Phone Auth): Daftar pakai Phone OTP, bukan email.
 // Callable: app memanggil ini untuk minta kode verifikasi (bypass Firestore rules)
 // Admin SDK menulis ke Firestore, lalu trigger sendVerificationCode kirim email
-exports.requestVerificationCode = callableWarm.onCall(async (data, context) => {
+exports.requestVerificationCode = callableWarm.onCall(async (data, _context) => {
   const email = data?.email;
   if (!email || typeof email !== "string") {
     throw new functions.https.HttpsError("invalid-argument", "Email wajib diisi.");
@@ -578,7 +765,7 @@ exports.verifyAndUpdateProfileEmail = callable.onCall(async (data, context) => {
 
 // DEPRECATED (Tahap 2 Phone Auth): Phone Auth tidak pakai password, lupa sandi tidak relevan.
 // --- Lupa kata sandi: kirim kode OTP ke email (hanya untuk email yang sudah terdaftar) ---
-exports.requestForgotPasswordCode = callable.onCall(async (data, context) => {
+exports.requestForgotPasswordCode = callable.onCall(async (data, _context) => {
   const email = data?.email;
   if (!email || typeof email !== "string") {
     throw new functions.https.HttpsError("invalid-argument", "Email wajib diisi.");
@@ -787,7 +974,7 @@ exports.verifyLoginVerificationCode = callableWarm.onCall(async (data, context) 
 
 // DEPRECATED (Tahap 2 Phone Auth): Phone Auth tidak pakai password.
 // --- Lupa kata sandi: verifikasi OTP email, kembalikan custom token untuk sign in ---
-exports.verifyForgotPasswordOtpAndGetToken = callable.onCall(async (data, context) => {
+exports.verifyForgotPasswordOtpAndGetToken = callable.onCall(async (data, _context) => {
   const email = data?.email;
   const code = data?.code;
   if (!email || typeof email !== "string" || !code || typeof code !== "string") {
@@ -1050,35 +1237,44 @@ exports.onChatMessageCreated = functions.firestore
       const fcmToken = recipientSnap.data()?.fcmToken;
       if (!fcmToken) return null;
 
+      const notifBody = notificationText.slice(0, 150);
       const dataPayload = {
         type: "chat",
-        orderId,
-        messageType: messageType,
-        senderName: senderName,
+        orderId: String(orderId),
+        messageType: String(messageType || ""),
+        senderName: String(senderName),
+        title: String(senderName),
+        body: String(notifBody),
       };
       if (recipientUid === passengerUid) {
-        dataPayload.driverUid = driverUid;
-        dataPayload.driverName = driverName;
+        dataPayload.driverUid = String(driverUid);
+        dataPayload.driverName = String(driverName);
       }
-      const payload = {
-        notification: {
-          title: senderName,
-          body: notificationText.slice(0, 150),
-        },
-        data: dataPayload,
-        token: fcmToken,
-        android: {
-          priority: "high",
-          notification: {
-            channelId: "traka_chat",
-            priority: "high",
-          },
-        },
-      };
+      // Android: data-only + priority high agar onBackgroundMessage jalan & payload tap ke chat utuh.
+      // iOS: APNS alert (sama seperti panggilan suara).
       try {
-        await sendFcmWithCollapse(payload, {
-          collapseKey: `chat_${orderId}`,
-          tag: `chat_${orderId}`,
+        await admin.messaging().send({
+          token: fcmToken,
+          data: dataPayload,
+          android: {
+            priority: "high",
+            ttl: 86400000,
+            collapseKey: `chat_${orderId}`,
+          },
+          apns: {
+            headers: {
+              "apns-priority": "10",
+            },
+            payload: {
+              aps: {
+                alert: {
+                  title: senderName,
+                  body: notifBody,
+                },
+                sound: "default",
+              },
+            },
+          },
         });
       } catch (e) {
         console.error("FCM send error:", e);
@@ -1095,8 +1291,6 @@ exports.onOrderUpdatedScan = functions.firestore
       const orderId = context.params.orderId;
       const before = change.before.data();
       const after = change.after.data();
-      const orderRef = change.after.ref;
-
       // Audit log: catat scan untuk investigasi dan monitoring
       const pickupScannedBefore = before.passengerScannedPickupAt != null;
       const pickupScannedAfter = after.passengerScannedPickupAt != null;
@@ -1185,6 +1379,51 @@ exports.onOrderUpdatedScan = functions.firestore
           });
         } catch (e) {
           console.error("scan_audit_log (driver_pickup) error:", e);
+        }
+      }
+
+      // Audit: konfirmasi otomatis travel (tanpa scan barcode) — support & forensik
+      const autoPickupBefore = before.autoConfirmPickup === true;
+      const autoPickupAfter = after.autoConfirmPickup === true;
+      const autoCompleteBefore = before.autoConfirmComplete === true;
+      const autoCompleteAfter = after.autoConfirmComplete === true;
+      if (!autoPickupBefore && autoPickupAfter) {
+        try {
+          await admin.firestore().collection("scan_audit_log").add({
+            orderId,
+            scanType: "auto_confirm_pickup",
+            scannedBy: "system",
+            passengerUid: after.passengerUid || null,
+            driverUid: after.driverUid || null,
+            pickupLat: after.pickupLat ?? null,
+            pickupLng: after.pickupLng ?? null,
+            driverViolationFee: after.driverViolationFee ?? null,
+            orderType: after.orderType || "travel",
+            status: after.status || "",
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          console.error("scan_audit_log (auto_confirm_pickup) error:", e);
+        }
+      }
+      if (!autoCompleteBefore && autoCompleteAfter) {
+        try {
+          await admin.firestore().collection("scan_audit_log").add({
+            orderId,
+            scanType: "auto_confirm_complete",
+            scannedBy: "system",
+            passengerUid: after.passengerUid || null,
+            driverUid: after.driverUid || null,
+            dropLat: after.dropLat ?? null,
+            dropLng: after.dropLng ?? null,
+            tripDistanceKm: after.tripDistanceKm ?? null,
+            passengerViolationFee: after.passengerViolationFee ?? null,
+            orderType: after.orderType || "travel",
+            status: after.status || "",
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          console.error("scan_audit_log (auto_confirm_complete) error:", e);
         }
       }
 
@@ -1433,6 +1672,63 @@ exports.onUserPaymentDuesUpdate = functions.firestore
       if (afterTravel > beforeTravel || afterBarang > beforeBarang) {
         await sendPaymentReminderFcm(uid, "kontribusi");
       }
+
+      // Permintaan verifikasi dari admin → notifikasi push (collapse per user).
+      const ap = after?.adminVerificationPendingAt;
+      if (ap) {
+        const bp = before?.adminVerificationPendingAt;
+        const msgBefore = (before?.adminVerificationMessage || "").trim();
+        const msgAfter = (after?.adminVerificationMessage || "").trim();
+        const pendingNew = !bp && ap;
+        let tsChanged = false;
+        if (bp && ap && bp.toMillis && ap.toMillis) {
+          tsChanged = bp.toMillis() !== ap.toMillis();
+        }
+        const msgChanged = msgBefore !== msgAfter && msgAfter.length > 0;
+        if (pendingNew || tsChanged || msgChanged) {
+          await sendAdminVerificationRequestFcm(uid, after);
+        }
+      }
+
+      // --- Notifikasi ke admin: pengguna tap "Sudah kirim data" (permintaan verifikasi admin) ---
+      const beforeSub = before?.adminVerificationUserSubmittedAt;
+      const afterSub = after?.adminVerificationUserSubmittedAt;
+      if (!beforeSub && afterSub) {
+        const name = (after?.displayName || after?.email || uid).toString().slice(0, 120);
+        await notifyAdminsFcm({
+          title: "Konfirmasi kirim data",
+          body: `${name} mengonfirmasi sudah mengirim data yang diminta.`,
+          data: {
+            type: "admin_user_submitted_verification",
+            eventType: "verification_submitted",
+            userIdSubject: uid,
+          },
+        });
+      }
+
+      // --- Notifikasi ke admin: driver kirim / ganti foto STNK (minta ubah kendaraan) ---
+      const role = after?.role;
+      const beforeVc = before?.vehicleChangeRequestAt;
+      const afterVc = after?.vehicleChangeRequestAt;
+      const beforeStnk = (before?.vehicleChangeRequestStnkUrl || "").toString();
+      const afterStnk = (after?.vehicleChangeRequestStnkUrl || "").toString();
+      if (role === "driver" && afterVc) {
+        const isNewRequest = !beforeVc;
+        const stnkReplaced = beforeVc && beforeStnk !== afterStnk && afterStnk.length > 0;
+        if (isNewRequest || stnkReplaced) {
+          const name = (after?.displayName || after?.email || uid).toString().slice(0, 120);
+          await notifyAdminsFcm({
+            title: "Permintaan ubah kendaraan",
+            body: `${name} mengirim foto STNK (minta ubah data kendaraan).`,
+            data: {
+              type: "admin_vehicle_stnk_request",
+              eventType: "vehicle_change_request",
+              userIdSubject: uid,
+            },
+          });
+        }
+      }
+
       return null;
     });
 
@@ -1475,26 +1771,56 @@ exports.verifyContributionPayment = callable.onCall(async (data, context) => {
       .where("driverUid", "==", driverUid)
       .get();
   let unpaidTravel = 0;
-  const batch = admin.firestore().batch();
+  const routeRefsToMarkPaid = [];
   for (const doc of unpaidRouteSessions.docs) {
     const d = doc.data();
     if (d.contributionPaidAt == null && (d.contributionRupiah || 0) > 0) {
       unpaidTravel += (d.contributionRupiah || 0);
-      batch.update(doc.ref, { contributionPaidAt: admin.firestore.FieldValue.serverTimestamp() });
+      routeRefsToMarkPaid.push(doc.ref);
     }
   }
-  const hasRouteUpdates = unpaidRouteSessions.docs.some((doc) => {
-    const d = doc.data();
-    return d.contributionPaidAt == null && (d.contributionRupiah || 0) > 0;
-  });
-  if (hasRouteUpdates) await batch.commit();
 
   const unpaidBarang = Math.max(0,
       totalBarangContributionRupiah - (current?.contributionBarangPaidUpToRupiah ?? 0));
-  let amountRupiah = unpaidTravel + unpaidBarang + Math.round(outstandingViolationFee);
-  if (amountRupiah === 0) {
-    const match = (productId || "").match(/traka_driver_dues_(\d+)/);
-    amountRupiah = match ? parseInt(match[1], 10) : 7500;
+  const amountOwed = unpaidTravel + unpaidBarang + Math.round(outstandingViolationFee);
+
+  const purchaseAmount = billingValidation.parseDriverDuesAmountRupiah(productId);
+  if (purchaseAmount == null || purchaseAmount <= 0) {
+    throw new functions.https.HttpsError(
+        "invalid-argument",
+        "ID produk kontribusi tidak dikenal.",
+    );
+  }
+
+  if (amountOwed <= 0) {
+    throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Tidak ada kewajiban pembayaran.",
+    );
+  }
+
+  if (amountOwed > billingValidation.MAX_DRIVER_DUES_SINGLE_PURCHASE_RUPIAH) {
+    throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Total kewajiban melebihi batas pembayaran tunggal. Hubungi admin.",
+    );
+  }
+
+  if (purchaseAmount < amountOwed) {
+    throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Nominal produk tidak mencukupi total kewajiban saat ini.",
+    );
+  }
+
+  const amountRupiah = amountOwed;
+
+  if (routeRefsToMarkPaid.length > 0) {
+    const batch = admin.firestore().batch();
+    for (const ref of routeRefsToMarkPaid) {
+      batch.update(ref, { contributionPaidAt: admin.firestore.FieldValue.serverTimestamp() });
+    }
+    await batch.commit();
   }
 
   const paidAt = admin.firestore.FieldValue.serverTimestamp();
@@ -1545,7 +1871,7 @@ exports.verifyContributionPayment = callable.onCall(async (data, context) => {
 // --- Rute selesai: saat route_session dibuat dengan kontribusi > 0, kirim FCM pengingat bayar ---
 exports.onRouteSessionCreated = functions.firestore
     .document("route_sessions/{sessionId}")
-    .onCreate(async (snap, context) => {
+    .onCreate(async (snap, _context) => {
       const d = snap.data();
       const contributionRupiah = (d?.contributionRupiah || 0);
       const driverUid = d?.driverUid || "";
@@ -1711,7 +2037,7 @@ exports.onDriverTransferCreated = functions.firestore
 // --- Oper Driver: saat driver kedua scan transfer → kontribusi driver pertama (totalTravelContributionRupiah)
 exports.onDriverTransferScanned = functions.firestore
     .document("driver_transfers/{transferId}")
-    .onUpdate(async (change, context) => {
+    .onUpdate(async (change, _context) => {
       const before = change.before.data();
       const after = change.after.data();
       const statusBefore = before?.status || "";
@@ -1854,9 +2180,18 @@ exports.verifyPassengerTrackPayment = callable.onCall(async (data, context) => {
     throw new functions.https.HttpsError("failed-precondition", "Pembayaran tidak valid.");
   }
 
+  const feeExpected = await billingValidation.getLacakDriverFeeRupiah(admin.firestore());
+  const productIdExpected = billingValidation.expectedLacakDriverProductId(feeExpected);
+  if (productId !== productIdExpected) {
+    throw new functions.https.HttpsError(
+        "failed-precondition",
+        `Produk tidak sesuai tarif saat ini (harus: ${productIdExpected}).`,
+    );
+  }
+
   // Parse amount dari productId (traka_lacak_driver_3000 → 3000) untuk Riwayat Pembayaran
   const lacakDriverMatch = productId.match(/traka_lacak_driver_(\d+)/);
-  const amountRupiah = lacakDriverMatch ? parseInt(lacakDriverMatch[1], 10) : 3000;
+  const amountRupiah = lacakDriverMatch ? parseInt(lacakDriverMatch[1], 10) : feeExpected;
 
   await orderRef.update({
     passengerTrackDriverPaidAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1914,9 +2249,34 @@ exports.verifyLacakBarangPayment = callable.onCall(async (data, context) => {
     throw new functions.https.HttpsError("failed-precondition", "Pembayaran tidak valid.");
   }
 
-  // Parse amount dari productId (traka_lacak_barang_10k → 10000) untuk Riwayat Pembayaran
-  const lacakBarangMatch = productId.match(/traka_lacak_barang_(\d+)k/);
-  const amountRupiah = lacakBarangMatch ? parseInt(lacakBarangMatch[1], 10) * 1000 : 10000;
+  const paidParsed = billingValidation.parseLacakBarangAmountRupiah(productId);
+  if (paidParsed == null) {
+    throw new functions.https.HttpsError(
+        "invalid-argument",
+        "ID produk lacak barang tidak dikenal.",
+    );
+  }
+
+  const rawExpected = orderData?.lacakBarangIapFeeRupiah;
+  const expectedNum = rawExpected != null ? Number(rawExpected) : NaN;
+  if (Number.isFinite(expectedNum) && expectedNum > 0) {
+    if (paidParsed !== Math.round(expectedNum)) {
+      throw new functions.https.HttpsError(
+          "failed-precondition",
+          "Produk tidak sesuai biaya lacak untuk pesanan ini.",
+      );
+    }
+  } else {
+    const allowed = await billingValidation.getLacakBarangTierFeesRupiah(admin.firestore());
+    if (!allowed.includes(paidParsed)) {
+      throw new functions.https.HttpsError(
+          "failed-precondition",
+          "Produk lacak barang tidak valid untuk tarif saat ini.",
+      );
+    }
+  }
+
+  const amountRupiah = paidParsed;
 
   const updateData = {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1969,6 +2329,14 @@ exports.verifyViolationPayment = callable.onCall(async (data, context) => {
     throw new functions.https.HttpsError("failed-precondition", "Pembayaran tidak valid.");
   }
 
+  const skuAmount = billingValidation.parseViolationFeeAmountRupiah(productId);
+  if (skuAmount == null || skuAmount <= 0) {
+    throw new functions.https.HttpsError(
+        "invalid-argument",
+        "ID produk pelanggaran tidak dikenal.",
+    );
+  }
+
   // Ambil satu violation record penumpang yang belum dibayar (tertua)
   const violationSnap = await admin.firestore()
       .collection("violation_records")
@@ -1987,7 +2355,14 @@ exports.verifyViolationPayment = callable.onCall(async (data, context) => {
   }
 
   const firstViolation = violationSnap.docs[0];
-  const violationAmount = (firstViolation.data()?.amount ?? 5000);
+  const violationAmount = Math.round(firstViolation.data()?.amount ?? 5000);
+  if (skuAmount < violationAmount) {
+    throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Nominal produk tidak mencukupi denda pelanggaran ini.",
+    );
+  }
+
   const deductAmount = Math.min(violationAmount, outstandingFee);
 
   const batch = admin.firestore().batch();
@@ -2258,22 +2633,42 @@ exports.onVoiceCallRinging = functions.firestore
       if (!fcmToken) return null;
 
       const orderId = context.params.orderId;
-      const payload = {
-        notification: {
-          title: "Panggilan suara masuk",
-          body: `${callerName} memanggil Anda. Buka aplikasi untuk menerima.`,
-        },
-        data: { type: "voice_call", orderId, callerName, callerUid },
-        token: fcmToken,
-        android: {
-          priority: "high",
-          notification: { channelId: "traka_chat", priority: "high" },
-        },
-      };
+      const title = "Panggilan suara masuk";
+      const body = `${callerName} memanggil Anda. Buka aplikasi untuk menerima.`;
+      // Android: data-only + priority high agar onBackgroundMessage jalan & app bisa
+      // tampilkan notifikasi lokal (fullScreenIntent). Pesan "notification" saja sering
+      // tertunda saat Doze/layar mati lalu baru muncul saat buka layar.
+      // iOS: APNS alert agar tetap ada banner saat app tidak aktif.
       try {
-        await sendFcmWithCollapse(payload, {
-          collapseKey: `voice_${orderId}`,
-          tag: `voice_${orderId}`,
+        await admin.messaging().send({
+          token: fcmToken,
+          data: {
+            type: "voice_call",
+            orderId: String(orderId),
+            callerName: String(callerName),
+            callerUid: String(callerUid),
+            title,
+            body,
+          },
+          android: {
+            priority: "high",
+            ttl: 86400000,
+            collapseKey: `voice_${orderId}`,
+          },
+          apns: {
+            headers: {
+              "apns-priority": "10",
+            },
+            payload: {
+              aps: {
+                alert: {
+                  title,
+                  body,
+                },
+                sound: "default",
+              },
+            },
+          },
         });
       } catch (e) {
         console.error("FCM onVoiceCallRinging error:", e);
@@ -2293,8 +2688,6 @@ exports.onVoiceCallEnded = functions.firestore
       const orderId = context.params.orderId;
       const db = admin.firestore();
       const callerUid = after?.callerUid || "";
-      const calleeUid = after?.calleeUid || "";
-      const callerName = (after?.callerName || "Pemanggil").trim();
       const connectedAt = after?.connectedAt;
       const endedAt = after?.endedAt;
 

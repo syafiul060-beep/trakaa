@@ -21,10 +21,17 @@ class PenumpangRouteFormSheet extends StatefulWidget {
     required this.originLng,
     this.initialDest,
     this.mapController,
-    required this.formDestMapModeNotifier,
-    required this.formDestMapTapNotifier,
     required this.onSearch,
+    this.sheetTitle,
+    this.primaryButtonLabel,
+    this.primaryButtonIcon,
   });
+
+  /// Judul sheet (default: pencarian tujuan di beranda).
+  final String? sheetTitle;
+  /// Label tombol utama (default: Cari).
+  final String? primaryButtonLabel;
+  final IconData? primaryButtonIcon;
 
   final String originText;
   final String? currentKabupaten;
@@ -34,8 +41,6 @@ class PenumpangRouteFormSheet extends StatefulWidget {
   final double? originLng;
   final String? initialDest;
   final GoogleMapController? mapController;
-  final ValueNotifier<bool> formDestMapModeNotifier;
-  final ValueNotifier<LatLng?> formDestMapTapNotifier;
   final void Function(String destText, double destLat, double destLng) onSearch;
 
   @override
@@ -50,64 +55,13 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
   List<Placemark> _autocompleteResults = [];
   List<Location> _autocompleteLocations = [];
   bool _showAutocomplete = false;
-  bool _isMapSelectionMode = false;
   double? _selectedDestLat;
   double? _selectedDestLng;
 
   @override
-  void initState() {
-    super.initState();
-    widget.formDestMapTapNotifier.addListener(_onMapTapFromMain);
-  }
-
-  @override
   void dispose() {
-    widget.formDestMapTapNotifier.removeListener(_onMapTapFromMain);
-    widget.formDestMapModeNotifier.value = false;
     _destController.dispose();
     super.dispose();
-  }
-
-  void _onMapTapFromMain() {
-    final pos = widget.formDestMapTapNotifier.value;
-    if (pos != null && mounted) {
-      widget.formDestMapTapNotifier.value = null;
-      _onSheetMapTapped(pos);
-    }
-  }
-
-  Future<void> _onSheetMapTapped(LatLng position) async {
-    setState(() {
-      _selectedDestLat = position.latitude;
-      _selectedDestLng = position.longitude;
-      _destController.text = 'Memuat alamat...';
-    });
-    try {
-      final placemarks = await GeocodingService.placemarkFromCoordinates(
-        position.latitude,
-        position.longitude,
-      );
-      if (placemarks.isNotEmpty && mounted) {
-        setState(() {
-          _destController.text =
-              PlacemarkFormatter.formatDetail(placemarks.first);
-          _showAutocomplete = false;
-          _autocompleteResults = [];
-        });
-      } else if (mounted) {
-        setState(() {
-          _destController.text =
-              '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _destController.text =
-              '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
-        });
-      }
-    }
   }
 
   Future<void> _onDestinationChanged(String value) async {
@@ -122,7 +76,7 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
       return;
     }
 
-    await Future.delayed(const Duration(milliseconds: 100));
+    await Future.delayed(const Duration(milliseconds: 50));
     if (_destController.text != value || value.trim().isEmpty) return;
 
     try {
@@ -160,18 +114,6 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
           _autocompleteLocations = locations;
           _showAutocomplete = placemarks.isNotEmpty;
         });
-        if (placemarks.isNotEmpty) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && _autocompleteKey.currentContext != null) {
-              Scrollable.ensureVisible(
-                _autocompleteKey.currentContext!,
-                alignment: 0.5,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
-              );
-            }
-          });
-        }
         if (locations.isNotEmpty && widget.mapController != null && mounted) {
           widget.mapController!.animateCamera(
             CameraUpdate.newLatLngZoom(
@@ -298,9 +240,19 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Cari Tujuan Perjalanan',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                Text(
+                  widget.sheetTitle ?? 'Cari Tujuan Perjalanan',
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  TrakaL10n.of(context).passengerRouteMatchExplanationShort,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -335,7 +287,7 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                       color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 4),
-                if (_destController.text.trim().isEmpty && !_isMapSelectionMode)
+                if (_destController.text.trim().isEmpty)
                   FutureBuilder<List<RecentDestination>>(
                     future: RecentDestinationService.getList(),
                     builder: (context, snap) {
@@ -387,23 +339,55 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                       );
                     },
                   ),
-                if (!_isMapSelectionMode &&
-                    _showAutocomplete &&
-                    _autocompleteResults.isNotEmpty)
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeOut,
+                TextField(
+                  controller: _destController,
+                  autofocus: true,
+                  scrollPadding: const EdgeInsets.only(bottom: 160),
+                  decoration: InputDecoration(
+                    hintText:
+                        'Stasiun, Mall, Bandara, Rumah Sakit, Perumahan, Terminal, Pelabuhan, Alun-alun',
+                    hintStyle: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    suffixIcon: _destController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close, size: 22),
+                            tooltip: 'Hapus tujuan',
+                            onPressed: () {
+                              _destController.clear();
+                              setState(() {
+                                _autocompleteResults = [];
+                                _autocompleteLocations = [];
+                                _showAutocomplete = false;
+                                _selectedDestLat = null;
+                                _selectedDestLng = null;
+                              });
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: (value) {
+                    setState(() {});
+                    _onDestinationChanged(value);
+                  },
+                  textInputAction: TextInputAction.search,
+                  style: const TextStyle(fontSize: 14),
+                ),
+                if (_showAutocomplete && _autocompleteResults.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
                     child: Container(
                       key: _autocompleteKey,
-                      margin: const EdgeInsets.only(bottom: 8),
-                      height: MediaQuery.of(context).viewInsets.bottom > 0
-                          ? 180
-                          : 260,
+                      height: 200,
                       decoration: BoxDecoration(
                         color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                            color: Theme.of(context).colorScheme.outline),
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
                         boxShadow: [
                           BoxShadow(
                             color: Theme.of(context)
@@ -418,10 +402,12 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                       clipBehavior: Clip.antiAlias,
                       child: ListView.separated(
                         padding: const EdgeInsets.symmetric(vertical: 4),
+                        physics: const ClampingScrollPhysics(),
                         itemCount: _autocompleteResults.length,
                         separatorBuilder: (_, __) => Divider(
-                            height: 1,
-                            color: Theme.of(context).colorScheme.outline),
+                          height: 1,
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
                         itemBuilder: (context, index) {
                           final p = _autocompleteResults[index];
                           return ListTile(
@@ -447,114 +433,14 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                       ),
                     ),
                   ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _destController,
-                        autofocus: true,
-                        decoration: InputDecoration(
-                          hintText: _isMapSelectionMode
-                              ? 'Tap di map untuk pilih lokasi'
-                              : 'Stasiun, Mall, Bandara, Rumah Sakit, Perumahan, Terminal, Pelabuhan, Alun-alun',
-                          hintStyle: TextStyle(
-                            color: _isMapSelectionMode
-                                ? AppTheme.primary
-                                : Theme.of(context).colorScheme.onSurfaceVariant,
-                            fontWeight: _isMapSelectionMode
-                                ? FontWeight.w500
-                                : FontWeight.normal,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          suffixIcon: _destController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.close, size: 20),
-                                  onPressed: () {
-                                    _destController.clear();
-                                    setState(() {
-                                      _autocompleteResults = [];
-                                      _autocompleteLocations = [];
-                                      _showAutocomplete = false;
-                                      _selectedDestLat = null;
-                                      _selectedDestLng = null;
-                                      _isMapSelectionMode = false;
-                                    });
-                                    widget.formDestMapModeNotifier.value =
-                                        false;
-                                  },
-                                )
-                              : null,
-                        ),
-                        enabled: !_isMapSelectionMode,
-                        onChanged: (value) {
-                          setState(() {});
-                          _onDestinationChanged(value);
-                        },
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: Icon(
-                        _isMapSelectionMode
-                            ? Icons.check_circle
-                            : Icons.location_on,
-                      ),
-                      color: _isMapSelectionMode
-                          ? AppTheme.primary
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                      tooltip: _isMapSelectionMode
-                          ? 'Selesai pilih lokasi'
-                          : 'Pilih di Map',
-                      onPressed: () {
-                        setState(() {
-                          _isMapSelectionMode = !_isMapSelectionMode;
-                        });
-                        widget.formDestMapModeNotifier.value =
-                            _isMapSelectionMode;
-                      },
-                      style: IconButton.styleFrom(
-                        backgroundColor: _isMapSelectionMode
-                            ? AppTheme.primary.withValues(alpha: 0.1)
-                            : null,
-                      ),
-                    ),
-                  ],
-                ),
-                if (_isMapSelectionMode)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 16,
-                          color: AppTheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Tap di peta untuk memilih lokasi tujuan',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.primary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
                   onPressed: () {
                     HapticFeedback.mediumImpact();
                     _requestSearch();
                   },
-                  icon: const Icon(Icons.search, size: 20),
-                  label: const Text('Cari'),
+                  icon: Icon(widget.primaryButtonIcon ?? Icons.search, size: 20),
+                  label: Text(widget.primaryButtonLabel ?? 'Cari'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primary,
                     foregroundColor: AppTheme.onPrimary,

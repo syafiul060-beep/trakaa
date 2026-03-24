@@ -2,6 +2,8 @@
 
 Panduan singkat membuat dan mengubah harga produk Traka di Google Play Console.
 
+**Checklist operasional + validasi server (Tahap 1–4):** [BILLING_TAHAP_1_4.md](./BILLING_TAHAP_1_4.md).
+
 ---
 
 ## 1. Buka Halaman Produk
@@ -29,11 +31,17 @@ Panduan singkat membuat dan mengubah harga produk Traka di Google Play Console.
 | | `traka_driver_dues_10000` | `traka-driver-dues-10000` | Rp 10.000 | Total kewajiban ≤ Rp 10.000 |
 | | `traka_driver_dues_12500` | `traka-driver-dues-12500` | Rp 12.500 | Total kewajiban ≤ Rp 12.500 |
 | | `traka_driver_dues_15000` | `traka-driver-dues-15000` | Rp 15.000 | Total kewajiban ≤ Rp 15.000 |
+| | `traka_driver_dues_17500` | `traka-driver-dues-17500` | Rp 17.500 | Total kewajiban ≤ Rp 17.500 |
 | | `traka_driver_dues_20000` | `traka-driver-dues-20000` | Rp 20.000 | Total kewajiban ≤ Rp 20.000 |
 | | `traka_driver_dues_25000` | `traka-driver-dues-25000` | Rp 25.000 | Total kewajiban ≤ Rp 25.000 |
 | | `traka_driver_dues_30000` | `traka-driver-dues-30000` | Rp 30.000 | Total kewajiban ≤ Rp 30.000 |
 | | `traka_driver_dues_40000` | `traka-driver-dues-40000` | Rp 40.000 | Total kewajiban ≤ Rp 40.000 |
 | | `traka_driver_dues_50000` | `traka-driver-dues-50000` | Rp 50.000 | Total kewajiban ≤ Rp 50.000 |
+| | `traka_driver_dues_60000` | `traka-driver-dues-60000` | Rp 60.000 | Total kewajiban ≤ Rp 60.000 |
+| | `traka_driver_dues_75000` | `traka-driver-dues-75000` | Rp 75.000 | Total kewajiban ≤ Rp 75.000 |
+| | `traka_driver_dues_100000` | `traka-driver-dues-100000` | Rp 100.000 | Total kewajiban ≤ Rp 100.000 |
+| | `traka_driver_dues_150000` | `traka-driver-dues-150000` | Rp 150.000 | Total kewajiban ≤ Rp 150.000 |
+| | `traka_driver_dues_200000` | `traka-driver-dues-200000` | Rp 200.000 | Total kewajiban ≤ Rp 200.000 |
 
 **Kontribusi gabungan** = travel + kirim barang + pelanggaran. App pilih produk dengan nominal terdekat (bulat ke atas) sesuai total kewajiban driver.
 

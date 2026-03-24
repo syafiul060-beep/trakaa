@@ -1,13 +1,13 @@
 /**
- * Filter chat untuk mencegah pengguna mengarahkan/diarahkan ke luar aplikasi Traka.
- * Digunakan di Cloud Function onChatMessageCreated (server-side backup).
+ * Filter chat: cegah arahan keluar app Traka.
+ * Dipakai di onChatMessageCreated (server-side backup).
  */
 
 const BLOCKED_PATTERNS = [
   // Nomor HP Indonesia
-  /08[\d\s\-]{8,15}/,
-  /\+62[\d\s\-]{8,15}/,
-  /\b62[\d\s\-]{9,15}/,
+  /08[\d\s-]{8,15}/,
+  /\+62[\d\s-]{8,15}/,
+  /\b62[\d\s-]{9,15}/,
   /0\d{9,12}/,
   // Link WhatsApp
   /wa\.me/i,
@@ -45,7 +45,7 @@ const BLOCKED_PATTERNS = [
 /**
  * Cek apakah teks mengandung konten yang diblokir.
  * @param {string} text
- * @returns {boolean}
+ * @return {boolean}
  */
 function containsBlockedContent(text) {
   if (!text || typeof text !== "string") return false;
@@ -54,4 +54,4 @@ function containsBlockedContent(text) {
   return BLOCKED_PATTERNS.some((re) => re.test(normalized));
 }
 
-module.exports = { containsBlockedContent };
+module.exports = {containsBlockedContent};

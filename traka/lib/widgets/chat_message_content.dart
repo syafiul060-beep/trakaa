@@ -15,6 +15,8 @@ class ChatMessageContent extends StatelessWidget {
     required this.isAudioPlaying,
     required this.onToggleAudioPlayback,
     required this.onOpenFullScreenImage,
+    /// UID driver pesanan; untuk chip "Kesepakatan harga" di atas gelembung pesan driver.
+    this.driverUid = '',
   });
 
   final ChatMessageModel msg;
@@ -24,6 +26,14 @@ class ChatMessageContent extends StatelessWidget {
   final bool isAudioPlaying;
   final Future<void> Function(ChatMessageModel msg) onToggleAudioPlayback;
   final void Function(String url) onOpenFullScreenImage;
+  final String driverUid;
+
+  /// Pesan teks otomatis dari driver (5 baris, baris terakhir "Ongkosnya Rp …").
+  static bool isDriverKesepakatanHargaText(String text) {
+    final lines = text.split('\n');
+    if (lines.length < 5) return false;
+    return lines[4].trim().startsWith('Ongkosnya Rp ');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,8 +58,56 @@ class ChatMessageContent extends StatelessWidget {
     return const SizedBox.shrink();
   }
 
+  bool _shouldShowKesepakatanChip() {
+    if (driverUid.isEmpty) return false;
+    if (msg.senderUid != driverUid) return false;
+    return isDriverKesepakatanHargaText(msg.text);
+  }
+
+  Widget _buildKesepakatanChip(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final Color bg = isMe
+        ? Colors.white.withValues(alpha: 0.22)
+        : colorScheme.primary.withValues(alpha: 0.12);
+    final Color fg = isMe
+        ? Colors.white.withValues(alpha: 0.95)
+        : colorScheme.primary;
+    final Color border = isMe
+        ? Colors.white.withValues(alpha: 0.35)
+        : colorScheme.primary.withValues(alpha: 0.28);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.handshake_outlined, size: 16, color: fg),
+            const SizedBox(width: 6),
+            Text(
+              'Kesepakatan harga',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: fg,
+                letterSpacing: 0.15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildTextRow(BuildContext context) {
-    return Row(
+    final showChip = _shouldShowKesepakatanChip();
+    final row = Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.end,
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -61,6 +119,16 @@ class ChatMessageContent extends StatelessWidget {
           const SizedBox(width: 6),
           _buildStatusIcon(context, msg.status),
         ],
+      ],
+    );
+    if (!showChip) return row;
+    return Column(
+      crossAxisAlignment:
+          isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildKesepakatanChip(context),
+        row,
       ],
     );
   }
@@ -137,7 +205,24 @@ class ChatMessageContent extends StatelessWidget {
     );
   }
 
-  /// Teks pesan: "Tujuan" / "Tujuan: " biru tebal; baris tarif/biaya & "Ongkosnya Rp ..." hijau tebal.
+  /// Prefiks biru tebal (urutan: lebih panjang dulu agar tidak tertukar).
+  static const List<String> _blueLabelPrefixes = [
+    '👤 Penerima: ',
+    '📋 Jenis: ',
+    '📍 Tujuan: ',
+    '📍 Dari: ',
+    '📍 Tujuan ',
+    '📍 Dari ',
+    'Tujuan: ',
+    'Dari: ',
+    'Untuk pesan ',
+    'Tujuan ',
+    'Dari ',
+    '🚐 ',
+  ];
+
+  /// Teks pesan: label rute/jenis biru tebal; baris permintaan ongkos & "Ongkosnya Rp ..." hijau tebal.
+  /// Pesan kesepakatan driver (5 baris, baris terakhir "Ongkosnya Rp") dapat jarak antar blok + nama tebal.
   Widget _buildTextContent(BuildContext context, String text) {
     final baseColor =
         isMe ? Colors.white : Theme.of(context).colorScheme.onSurface;
@@ -158,11 +243,47 @@ class ChatMessageContent extends StatelessWidget {
       fontWeight: FontWeight.bold,
     );
     final baseStyle = TextStyle(fontSize: 15, color: baseColor);
+    final nameStyle = baseStyle.copyWith(fontWeight: FontWeight.w600);
+
     final lines = text.split('\n');
+    final looksLikeKesepakatanHarga =
+        isDriverKesepakatanHargaText(text) &&
+            (driverUid.isEmpty || msg.senderUid == driverUid);
+
+    bool isTarifRequestLine(String t) {
+      if (t == 'Mohon informasi tarif untuk rute ini.' ||
+          t == 'Mohon informasi biaya pengiriman untuk rute ini.' ||
+          t == 'Mohon informasi ongkos untuk rute ini.') {
+        return true;
+      }
+      if (t.startsWith('💰')) return true;
+      return false;
+    }
+
+    Widget wrapKesepakatan(Widget child, int index) {
+      if (!looksLikeKesepakatanHarga) return child;
+      if (index == 0) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: child,
+        );
+      }
+      if (index == 1) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: child,
+        );
+      }
+      if (index == 3) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: child,
+        );
+      }
+      return child;
+    }
+
     final widgets = <Widget>[];
-    final isTarifLine = (String t) =>
-        t == 'Mohon informasi tarif untuk rute ini.' ||
-        t == 'Mohon informasi biaya pengiriman untuk rute ini.';
     for (int i = 0; i < lines.length; i++) {
       final line = lines[i];
       final trimmed = line.trim();
@@ -170,28 +291,44 @@ class ChatMessageContent extends StatelessWidget {
         if (line.isNotEmpty) widgets.add(Text(line, style: baseStyle));
         continue;
       }
-      if (isTarifLine(trimmed) || trimmed.startsWith('Ongkosnya Rp ')) {
+      if (isTarifRequestLine(trimmed) ||
+          trimmed.startsWith('Ongkosnya Rp ')) {
         widgets.add(Text(trimmed, style: greenBold));
         continue;
       }
-      if (trimmed.startsWith('Tujuan: ') || trimmed.startsWith('Tujuan ')) {
-        final prefix =
-            trimmed.startsWith('Tujuan: ') ? 'Tujuan: ' : 'Tujuan ';
-        final rest = trimmed.substring(prefix.length);
+      String? bluePrefix;
+      for (final p in _blueLabelPrefixes) {
+        if (trimmed.startsWith(p)) {
+          bluePrefix = p;
+          break;
+        }
+      }
+      if (bluePrefix != null) {
+        final rest = trimmed.substring(bluePrefix.length);
         widgets.add(
-          RichText(
-            text: TextSpan(
-              style: baseStyle,
-              children: [
-                TextSpan(text: prefix, style: blueBold),
-                if (rest.isNotEmpty) TextSpan(text: rest, style: baseStyle),
-              ],
+          wrapKesepakatan(
+            RichText(
+              text: TextSpan(
+                style: baseStyle,
+                children: [
+                  TextSpan(text: bluePrefix, style: blueBold),
+                  if (rest.isNotEmpty) TextSpan(text: rest, style: baseStyle),
+                ],
+              ),
             ),
+            i,
           ),
         );
         continue;
       }
-      widgets.add(Text(line, style: baseStyle));
+      final style =
+          looksLikeKesepakatanHarga && i == 0 ? nameStyle : baseStyle;
+      widgets.add(
+        wrapKesepakatan(
+          Text(line, style: style),
+          i,
+        ),
+      );
     }
     if (widgets.length == 1) return widgets.single;
     return Column(

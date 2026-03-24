@@ -189,6 +189,9 @@ class OrderModel {
   /// Waktu penumpang bayar Lacak Driver (Rp 3000) untuk order ini.
   final DateTime? passengerTrackDriverPaidAt;
 
+  /// Nominal IAP lacak barang (Rp) dihitung saat create order; dipakai backend untuk cocokkan SKU.
+  final int? lacakBarangIapFeeRupiah;
+
   /// Waktu pengirim bayar Lacak Barang (kirim barang).
   final DateTime? passengerLacakBarangPaidAt;
 
@@ -297,6 +300,7 @@ class OrderModel {
     this.passengerLiveLng,
     this.passengerLiveUpdatedAt,
     this.passengerTrackDriverPaidAt,
+    this.lacakBarangIapFeeRupiah,
     this.passengerLacakBarangPaidAt,
     this.receiverLacakBarangPaidAt,
     this.autoConfirmPickup = false,
@@ -391,6 +395,7 @@ class OrderModel {
       passengerLiveLng: (d['passengerLiveLng'] as num?)?.toDouble(),
       passengerLiveUpdatedAt: (d['passengerLiveUpdatedAt'] as Timestamp?)?.toDate(),
       passengerTrackDriverPaidAt: (d['passengerTrackDriverPaidAt'] as Timestamp?)?.toDate(),
+      lacakBarangIapFeeRupiah: (d['lacakBarangIapFeeRupiah'] as num?)?.toInt(),
       passengerLacakBarangPaidAt: (d['passengerLacakBarangPaidAt'] as Timestamp?)?.toDate(),
       receiverLacakBarangPaidAt: (d['receiverLacakBarangPaidAt'] as Timestamp?)?.toDate(),
       autoConfirmPickup: (d['autoConfirmPickup'] as bool?) ?? false,
@@ -489,6 +494,26 @@ class OrderModel {
   bool get canPassengerAgree => driverAgreed && !passengerAgreed;
   bool get hasPassengerLocation => passengerLat != null && passengerLng != null;
 
+  /// Titik penumpang untuk jarak driver↔penumpang saat jemput (auto-confirm & validasi server):
+  /// utamakan **live** jika masih segar (≤5 menit), lalu `passengerLat`/`Lng`, lalu live tanpa syarat waktu.
+  (double, double)? get coordsForDriverPickupProximity {
+    final now = DateTime.now();
+    if (passengerLiveLat != null &&
+        passengerLiveLng != null &&
+        passengerLiveUpdatedAt != null) {
+      if (now.difference(passengerLiveUpdatedAt!).inSeconds <= 300) {
+        return (passengerLiveLat!, passengerLiveLng!);
+      }
+    }
+    if (passengerLat != null && passengerLng != null) {
+      return (passengerLat!, passengerLng!);
+    }
+    if (passengerLiveLat != null && passengerLiveLng != null) {
+      return (passengerLiveLat!, passengerLiveLng!);
+    }
+    return null;
+  }
+
   /// Apakah sudah ada yang klik batalkan (driver, penumpang, atau admin).
   bool get isCancelled =>
       driverCancelled || passengerCancelled || adminCancelled;
@@ -523,4 +548,36 @@ class OrderModel {
 
   /// Penumpang memakai bahasa Inggris (turis). Driver tampilkan badge.
   bool get isPassengerEnglish => passengerAppLocale == 'en';
+
+  /// Ada pesan belum dibaca driver: pesan terakhir dari pihak lain setelah [driverLastReadAt].
+  /// Jika [lastMessageSenderUid] null (data lama), tidak dianggap unread — hindari false positive
+  /// saat `null != uid` selalu true.
+  bool hasUnreadChatForDriver(String driverUid) {
+    if (lastMessageAt == null) return false;
+    final readAt = driverLastReadAt;
+    if (readAt != null && !lastMessageAt!.isAfter(readAt)) return false;
+    final sender = lastMessageSenderUid;
+    if (sender == null) return false;
+    return sender != driverUid;
+  }
+
+  /// Unread untuk penumpang/pengirim (bukan penerima).
+  bool hasUnreadChatForPassenger(String passengerUid) {
+    if (lastMessageAt == null) return false;
+    final readAt = passengerLastReadAt;
+    if (readAt != null && !lastMessageAt!.isAfter(readAt)) return false;
+    final sender = lastMessageSenderUid;
+    if (sender == null) return false;
+    return sender != passengerUid;
+  }
+
+  /// Unread untuk penerima (kirim barang).
+  bool hasUnreadChatForReceiver(String receiverUid) {
+    if (lastMessageAt == null) return false;
+    final readAt = receiverLastReadAt;
+    if (readAt != null && !lastMessageAt!.isAfter(readAt)) return false;
+    final sender = lastMessageSenderUid;
+    if (sender == null) return false;
+    return sender != receiverUid;
+  }
 }

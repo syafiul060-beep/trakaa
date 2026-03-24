@@ -33,8 +33,9 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
   @override
   void initState() {
     super.initState();
-    Timer(const Duration(milliseconds: 400), () {
-      if (mounted) _checkAuthAndRequestPermissions();
+    // Langsung setelah frame pertama — tanpa jeda tambahan agar transisi ke login/home terasa lebih cepat.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_checkAuthAndRequestPermissions());
     });
   }
 
@@ -113,6 +114,7 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
       if (!mounted) return;
       if (!userDoc.exists) {
         await FirebaseAuth.instance.signOut();
+        if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(
             builder: (_) => const AppUpdateWrapper(child: LoginScreen()),
@@ -216,6 +218,7 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
       } else {
         VoiceCallIncomingService.stop();
         await FirebaseAuth.instance.signOut();
+        if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(
             builder: (_) => const AppUpdateWrapper(child: LoginScreen()),
@@ -381,43 +384,67 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
   void _showConnectionErrorAndRetry() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (routeCtx) => Scaffold(
-          body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.wifi_off, size: 64, color: Colors.orange.shade700),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Gagal memuat data',
-                    style: TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Cek koneksi internet Anda dan coba lagi.',
-                    style: TextStyle(fontSize: 14),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: () {
-                      Navigator.of(routeCtx).pushReplacement(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const SplashScreenWrapper(),
+        builder: (routeCtx) {
+          final cs = Theme.of(routeCtx).colorScheme;
+          final textTheme = Theme.of(routeCtx).textTheme;
+          return Scaffold(
+            backgroundColor: cs.surface,
+            body: SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(22),
+                        decoration: BoxDecoration(
+                          color: cs.tertiaryContainer,
+                          shape: BoxShape.circle,
                         ),
-                      );
-                    },
-                    child: const Text('Coba Lagi'),
+                        child: Icon(
+                          Icons.signal_wifi_off_rounded,
+                          size: 56,
+                          color: cs.onTertiaryContainer,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Gagal memuat data',
+                        style: textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: cs.onSurface,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Cek koneksi internet Anda dan coba lagi.',
+                        style: textTheme.bodyLarge?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          height: 1.4,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 28),
+                      FilledButton(
+                        onPressed: () {
+                          Navigator.of(routeCtx).pushReplacement(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const SplashScreenWrapper(),
+                            ),
+                          );
+                        },
+                        child: const Text('Coba Lagi'),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }

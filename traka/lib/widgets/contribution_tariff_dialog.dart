@@ -4,28 +4,32 @@ import '../services/app_config_service.dart';
 import 'traka_l10n_scope.dart';
 
 /// Dialog yang menampilkan jenis tarif kontribusi dan contoh perhitungan.
+/// Penjelasan tier selaras dengan [LacakBarangService] & rumus di OrderService.
 Future<void> showContributionTariffDialog(BuildContext context) async {
   final min = await AppConfigService.getMinKontribusiTravelRupiah();
   final t1 = await AppConfigService.getTarifKontribusiTravelPerKm(1);
   final t2 = await AppConfigService.getTarifKontribusiTravelPerKm(2);
   final t3 = await AppConfigService.getTarifKontribusiTravelPerKm(3);
   final maxRute = await AppConfigService.getMaxKontribusiTravelPerRuteRupiah();
-  final b1 = await AppConfigService.getTarifBarangPerKm(1);
-  final b2 = await AppConfigService.getTarifBarangPerKm(2);
-  final b3 = await AppConfigService.getTarifBarangPerKm(3);
+  final b1 = await AppConfigService.getTarifBarangPerKmWithCategory(1, null);
+  final b2 = await AppConfigService.getTarifBarangPerKmWithCategory(2, null);
+  final b3 = await AppConfigService.getTarifBarangPerKmWithCategory(3, null);
+  final d1 = await AppConfigService.getTarifBarangPerKmWithCategory(1, 'dokumen');
+  final d2 = await AppConfigService.getTarifBarangPerKmWithCategory(2, 'dokumen');
+  final d3 = await AppConfigService.getTarifBarangPerKmWithCategory(3, 'dokumen');
 
-  final fmt = (int n) =>
+  String fmt(int n) =>
       n.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
 
-  // Contoh travel
+  // Contoh travel (tier 1)
   const contohTravelKm = 52;
   final byDistance = (contohTravelKm * t1).round();
   final baseTravel = byDistance > min ? byDistance : min;
+
   // Contoh barang
   const contohBarangKm = 30;
   final contribB1 = contohBarangKm * b1;
-  final contribB2 = contohBarangKm * b2;
-  final contribB3 = contohBarangKm * b3;
+  final contribD1 = contohBarangKm * d1;
 
   if (!context.mounted) return;
   final l10n = TrakaL10n.of(context);
@@ -45,56 +49,82 @@ Future<void> showContributionTariffDialog(BuildContext context) async {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Kontribusi dibayar per rute. Tarif tergantung jarak dan kategori rute.',
+              l10n.contributionTariffDialogIntro,
               style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
             ),
-            const SizedBox(height: 16),
-            _sectionHeader(ctx, '1. Travel (antar kota)', Icons.directions_car),
-            const SizedBox(height: 6),
+            const SizedBox(height: 14),
             Text(
-              'Kategori jarak:',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Theme.of(ctx).colorScheme.onSurface),
+              l10n.contributionTariffTierTableTitle,
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Theme.of(ctx).colorScheme.onSurface),
             ),
-            const SizedBox(height: 2),
-            Text('• Dalam provinsi = 1 provinsi (mis. Bandung–Cirebon)', style: _bodyStyle(ctx)),
-            Text('• Antar provinsi = 2 provinsi (mis. Bandung–Jakarta)', style: _bodyStyle(ctx)),
-            Text('• Lintas pulau = 3+ provinsi (mis. Jawa–Sumatera)', style: _bodyStyle(ctx)),
+            const SizedBox(height: 6),
+            Text('• ${l10n.contributionTariffTier1Desc}', style: _bodyStyle(ctx)),
+            Text('• ${l10n.contributionTariffTier2Desc}', style: _bodyStyle(ctx)),
+            Text('• ${l10n.contributionTariffTier3Desc}', style: _bodyStyle(ctx)),
             const SizedBox(height: 6),
             Text(
-              'Rumus: (Jarak km × tarif/km) × jumlah penumpang. Min Rp ${fmt(min)}, max Rp ${maxRute != null ? fmt(maxRute) : "—"} per rute.',
+              l10n.contributionTariffSameProvinceNote,
+              style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 14),
+            _sectionHeader(ctx, l10n.contributionTariffTravelSectionTitle, Icons.directions_car),
+            const SizedBox(height: 6),
+            Text(
+              l10n.contributionTariffTravelRates(fmt(t1), fmt(t2), fmt(t3), fmt(min)),
               style: _bodyStyle(ctx),
             ),
             const SizedBox(height: 4),
-            Text(
-              'Tarif per km: dalam provinsi Rp ${fmt(t1)}, antar provinsi Rp ${fmt(t2)}, lintas pulau Rp ${fmt(t3)}.',
-              style: _bodyStyle(ctx),
-            ),
-            const SizedBox(height: 10),
-            _exampleBox(ctx, 'Contoh A: $contohTravelKm km dalam provinsi (Rp ${fmt(t1)}/km)', [
-              'Dasar: $contohTravelKm × ${fmt(t1)} = Rp ${fmt(byDistance)} → min Rp ${fmt(min)} = Rp ${fmt(baseTravel)}',
-              '1 penumpang: 1 × Rp ${fmt(baseTravel)} = Rp ${fmt(baseTravel)}',
-              '4 penumpang (1 + 3 kerabat): 4 × Rp ${fmt(baseTravel)} = Rp ${fmt(4 * baseTravel)}',
+            Text(l10n.contributionTariffTravelFormula, style: _bodyStyle(ctx)),
+            const SizedBox(height: 4),
+            if (maxRute != null)
+              Text(
+                l10n.contributionTariffTravelCapPerRoute(fmt(maxRute)),
+                style: _bodyStyle(ctx),
+              ),
+            const SizedBox(height: 8),
+            _exampleBox(ctx, l10n.contributionTariffTravelExampleTitle(contohTravelKm, fmt(t1)), [
+              l10n.contributionTariffExTravelBase(
+                '$contohTravelKm',
+                fmt(t1),
+                fmt(byDistance),
+                fmt(min),
+                fmt(baseTravel),
+              ),
+              l10n.contributionTariffExTravelOnePax(fmt(baseTravel)),
+              l10n.contributionTariffExTravelFourPax(fmt(4 * baseTravel)),
             ]),
             const SizedBox(height: 16),
-            _sectionHeader(ctx, l10n.contributionTariffBarangLabel, Icons.inventory_2_outlined),
+            _sectionHeader(ctx, l10n.contributionTariffBarangSectionTitle, Icons.inventory_2_outlined),
             const SizedBox(height: 6),
+            Text(l10n.contributionTariffBarangRates(fmt(b1), fmt(b2), fmt(b3)), style: _bodyStyle(ctx)),
+            const SizedBox(height: 4),
+            Text(l10n.contributionTariffBarangDokumenRates(fmt(d1), fmt(d2), fmt(d3)), style: _bodyStyle(ctx)),
+            const SizedBox(height: 4),
+            Text(l10n.contributionTariffBarangFormula, style: _bodyStyle(ctx)),
+            const SizedBox(height: 8),
+            _exampleBox(ctx, l10n.contributionTariffExampleBarang(contohBarangKm), [
+              l10n.contributionTariffExBarangTier(
+                l10n.contributionTariffExBarangTier1,
+                '$contohBarangKm',
+                fmt(b1),
+                fmt(contribB1),
+              ),
+              l10n.contributionTariffExBarangTier(
+                l10n.contributionTariffExBarangTier1Doc,
+                '$contohBarangKm',
+                fmt(d1),
+                fmt(contribD1),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            Text(l10n.contributionTariffViolationNote, style: _bodyStyle(ctx)),
+            const SizedBox(height: 8),
             Text(
-              l10n.contributionTariffBarangRates(fmt(b1), fmt(b2), fmt(b3)),
-              style: _bodyStyle(ctx),
+              l10n.contributionTariffGeocodingNote,
+              style: TextStyle(fontSize: 10, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 10),
-            _exampleBox(ctx, 'Contoh: $contohBarangKm km kirim barang', [
-              'Dalam provinsi: $contohBarangKm × Rp ${fmt(b1)}/km = Rp ${fmt(contribB1)}',
-              'Antar provinsi: $contohBarangKm × Rp ${fmt(b2)}/km = Rp ${fmt(contribB2)}',
-              'Lintas pulau: $contohBarangKm × Rp ${fmt(b3)}/km = Rp ${fmt(contribB3)}',
-            ]),
-            const SizedBox(height: 16),
-            _sectionHeader(ctx, '3. Pembayaran via Google Play', Icons.payment),
-            const SizedBox(height: 6),
-            Text(
-              'Pilih nominal terdekat: Rp 5.000, Rp 7.500, Rp 10.000, Rp 12.500, Rp 15.000, Rp 20.000, Rp 25.000, Rp 30.000, Rp 40.000, Rp 50.000.',
-              style: _bodyStyle(ctx),
-            ),
+            Text(l10n.contributionTariffGooglePlayNominals, style: _bodyStyle(ctx)),
             const SizedBox(height: 12),
             Text(
               l10n.contributionTariffAdminNote,
@@ -121,12 +151,14 @@ Widget _sectionHeader(BuildContext ctx, String title, IconData icon) {
     children: [
       Icon(icon, size: 18, color: Theme.of(ctx).colorScheme.primary),
       const SizedBox(width: 6),
-      Text(
-        title,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-          color: Theme.of(ctx).colorScheme.onSurface,
+      Expanded(
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: Theme.of(ctx).colorScheme.onSurface,
+          ),
         ),
       ),
     ],

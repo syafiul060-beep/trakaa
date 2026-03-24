@@ -9,9 +9,8 @@ class ChatBadgeService extends ChangeNotifier {
   final Set<String> _optimisticReadOrderIds = {};
 
   void markAsReadOptimistic(String orderId) {
-    if (_optimisticReadOrderIds.add(orderId)) {
-      notifyListeners();
-    }
+    _optimisticReadOrderIds.add(orderId);
+    notifyListeners();
   }
 
   bool isOptimisticRead(String orderId) => _optimisticReadOrderIds.contains(orderId);

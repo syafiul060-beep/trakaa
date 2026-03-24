@@ -339,18 +339,18 @@ class DriverWorkToggleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final enabled = isDriverWorking || !routeSelected;
+    // Tap selalu aktif: saat rute sudah dipilih, parent memanggil _onStartButtonTap (sama seperti "Mulai Rute ini").
     return Positioned(
       top: 56,
       left: 16,
       child: Tooltip(
         message: isDriverWorking && hasActiveOrder
-            ? 'Masih ada penumpang/barang yang belum selesai. Selesaikan semua pesanan terlebih dahulu.'
+            ? TrakaL10n.of(context).driverFinishWorkBlockedTooltip
             : '',
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: enabled ? onTap : null,
+            onTap: onTap,
             borderRadius: BorderRadius.circular(24),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -591,6 +591,10 @@ class DriverStartRouteButton extends StatelessWidget {
 
 /// Overlay icon mobil tetap di bawah tengah (head unit style).
 /// Dipakai di driver screen dan Lacak Driver/Barang.
+///
+/// **Bukan** marker peta penumpang: hijau/merah di sini = bergerak vs berhenti
+/// (lihat `docs/KEBIJAKAN_ICON_MOBIL_DAN_OVERLAY.md`). Aset diselaraskan dengan
+/// folder premium saja.
 class CarOverlayWidget extends StatelessWidget {
   const CarOverlayWidget({
     super.key,
@@ -601,21 +605,36 @@ class CarOverlayWidget extends StatelessWidget {
 
   /// Bearing dalam derajat (0 = utara, 90 = timur).
   final double bearing;
-  /// Merah = diam, hijau = bergerak.
+  /// Hijau = bergerak, merah = berhenti (bukan "kursi penuh").
   final bool isMoving;
   /// Ukuran px. Driver: 56, Lacak: 62.
   final double size;
 
+  static const String _premiumMoving = 'assets/images/traka_car_icons_premium/car_green.png';
+  static const String _premiumIdle = 'assets/images/traka_car_icons_premium/car_red.png';
+
   @override
   Widget build(BuildContext context) {
-    return Transform.rotate(
-      angle: ((bearing + 180) % 360) * math.pi / 180,
-      child: Image.asset(
-        isMoving ? 'assets/images/car_hijau.png' : 'assets/images/car_merah.png',
-        width: size,
-        height: size,
-        fit: BoxFit.contain,
-      ),
+    final primary = isMoving ? _premiumMoving : _premiumIdle;
+    final b = ((bearing % 360) + 360) % 360;
+    // Premium PNG: depan mobil = bawah gambar → +180°.
+    final rotationRad = ((b + 180) % 360) * math.pi / 180;
+    return Image.asset(
+      primary,
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (frame == null) return child;
+        return Transform.rotate(angle: rotationRad, child: child);
+      },
+      errorBuilder: (context, error, stackTrace) {
+        final color = isMoving ? const Color(0xFF43A047) : const Color(0xFFE53935);
+        return Transform.rotate(
+          angle: rotationRad,
+          child: Icon(Icons.directions_car, size: size * 0.85, color: color),
+        );
+      },
     );
   }
 }

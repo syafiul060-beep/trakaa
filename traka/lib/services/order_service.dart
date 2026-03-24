@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' show asin, cos, sqrt;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,10 +9,16 @@ import 'package:uuid/uuid.dart';
 
 import 'app_config_service.dart';
 import 'driver_schedule_service.dart';
+import 'ferry_distance_service.dart';
 import 'lacak_barang_service.dart';
 import 'order_number_service.dart';
 import 'chat_service.dart';
+import 'traka_api_service.dart';
+import 'verification_service.dart';
 
+import '../config/traka_api_config.dart';
+
+import '../models/jarak_kontribusi_preview.dart';
 import '../models/order_model.dart';
 import '../utils/app_logger.dart' show log, logError;
 import '../utils/phone_utils.dart';
@@ -35,6 +42,87 @@ class OrderService {
 
   /// Nilai routeJourneyNumber untuk pesanan terjadwal (dari Pesan nanti).
   static const String routeJourneyNumberScheduled = 'scheduled';
+
+  /// **Satu definisi** untuk blokir beranda penumpang (cari driver baru).
+  /// Hanya [OrderModel.typeTravel]. Blokir **setelah** kesepakatan harga: [statusAgreed] / [statusPickedUp].
+  /// [statusPendingAgreement] (chat / pesan otomatis pertama, belum sepakat harga) **tidak** memblokir.
+  /// Selesai ([statusCompleted]) / batal ([statusCancelled]) → tidak blokir.
+  static bool isTravelOrderBlockingPassengerHomeMap(OrderModel order) {
+    if (order.orderType != OrderModel.typeTravel) return false;
+    final s = order.status;
+    if (s == statusCompleted || s == statusCancelled) return false;
+    return s == statusAgreed || s == statusPickedUp;
+  }
+
+  /// True jika ada minimal satu travel yang memblokir peta beranda penumpang.
+  static bool passengerOrdersContainBlockingTravel(Iterable<OrderModel> orders) {
+    for (final o in orders) {
+      if (isTravelOrderBlockingPassengerHomeMap(o)) return true;
+    }
+    return false;
+  }
+
+  /// Status travel yang dianggap "berjalan" untuk notifikasi jarak / UX (bukan blokir beranda).
+  static bool isTravelOrderInProgressForNotifications(OrderModel order) {
+    if (order.orderType != OrderModel.typeTravel) return false;
+    return order.status == statusAgreed || order.status == statusPickedUp;
+  }
+
+  /// `agreed` atau `picked_up` — **semua** [OrderModel.orderType] (travel + kirim barang).
+  /// Dipakai notifikasi jarak driver, filter stream lokasi, dll.
+  static bool isOrderAgreedOrPickedUp(OrderModel order) {
+    final s = order.status;
+    return s == statusAgreed || s == statusPickedUp;
+  }
+
+  /// UID driver yang punya travel `agreed`/`picked_up` (untuk kunci hapus chat travel pending dengan driver lain).
+  static Set<String> travelAgreedDriverUidsFromOrders(Iterable<OrderModel> orders) {
+    final s = <String>{};
+    for (final o in orders) {
+      if (o.orderType == OrderModel.typeTravel &&
+          (o.status == statusAgreed || o.status == statusPickedUp)) {
+        s.add(o.driverUid);
+      }
+    }
+    return s;
+  }
+
+  /// Travel `pending_agreement` dengan driver **bukan** yang sudah ada kesepakatan — tidak boleh dihapus dari list Pesan.
+  /// [Kirim barang] tidak pernah terkunci oleh aturan ini.
+  static bool isPassengerTravelPendingLockedOtherDriver(
+    OrderModel order,
+    Set<String> travelAgreedDriverUids,
+  ) {
+    if (order.isKirimBarang) return false;
+    if (order.orderType != OrderModel.typeTravel) return false;
+    if (order.status == statusAgreed || order.status == statusPickedUp) return false;
+    if (order.status == statusCompleted || order.status == statusCancelled) return false;
+    if (travelAgreedDriverUids.isEmpty) return false;
+    return !travelAgreedDriverUids.contains(order.driverUid);
+  }
+
+  /// Untuk validasi server: UID driver travel yang sudah `agreed`/`picked_up` milik penumpang.
+  static Future<Set<String>> getTravelAgreedDriverUidsForPassenger(String passengerUid) async {
+    try {
+      final q = await FirebaseFirestore.instance
+          .collection(_collectionOrders)
+          .where(_fieldPassengerUid, isEqualTo: passengerUid)
+          .where(_fieldStatus, whereIn: [statusAgreed, statusPickedUp])
+          .get();
+      final set = <String>{};
+      for (final doc in q.docs) {
+        final d = doc.data();
+        if ((d['orderType'] as String?) == OrderModel.typeTravel) {
+          final du = d[_fieldDriverUid] as String?;
+          if (du != null) set.add(du);
+        }
+      }
+      return set;
+    } catch (e, st) {
+      logError('OrderService.getTravelAgreedDriverUidsForPassenger', e, st);
+      return {};
+    }
+  }
 
   /// Cari user (penerima) by email atau no. telepon. Return {uid, displayName, photoUrl} atau null.
   /// Phone Auth: phoneNumber primary. Email opsional.
@@ -153,6 +241,29 @@ class OrderService {
     double lng2,
   ) {
     return _haversineKm(lat1, lng1, lat2, lng2) * 1000;
+  }
+
+  /// Jarak lurus (km), estimasi ferry (km), dan jarak yang dipakai untuk tarif/kontribusi (setelah kurangi ferry).
+  static Future<({double km, double ferryKm, double effectiveKm})> _travelKmFerryEffective(
+    double pickLat,
+    double pickLng,
+    double dropLat,
+    double dropLng,
+  ) async {
+    final km = _haversineKm(pickLat, pickLng, dropLat, dropLng);
+    double ferry = 0;
+    final est = await FerryDistanceService.getEstimatedFerryKm(
+      originLat: pickLat,
+      originLng: pickLng,
+      destLat: dropLat,
+      destLng: dropLng,
+    );
+    if (est != null && est > 0) {
+      ferry = est.toDouble();
+      if (ferry > km) ferry = km;
+    }
+    final effectiveKm = (km - ferry).clamp(0.0, double.infinity);
+    return (km: km, ferryKm: ferry, effectiveKm: effectiveKm);
   }
 
   /// Cek apakah lokasi scan (scanLat, scanLng) berada di area tujuan (destLat, destLng) sesuai level.
@@ -327,10 +438,24 @@ class OrderService {
     double? barangLebarCm,
     double? barangTinggiCm,
     String? barangFotoUrl,
+    bool bypassDuplicatePendingKirimBarang = false,
+    bool bypassDuplicatePendingTravel = false,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
     if (user.uid != passengerUid) return null;
+
+    try {
+      final uDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(passengerUid)
+          .get();
+      final ud = uDoc.data();
+      if (ud != null &&
+          VerificationService.isAdminVerificationBlockingFeatures(ud)) {
+        return null;
+      }
+    } catch (_) {}
 
     final isScheduled =
         (scheduleId?.isNotEmpty ?? false) &&
@@ -385,6 +510,58 @@ class OrderService {
     if (barangLebarCm != null && barangLebarCm! > 0) data['barangLebarCm'] = barangLebarCm;
     if (barangTinggiCm != null && barangTinggiCm! > 0) data['barangTinggiCm'] = barangTinggiCm;
     if (barangFotoUrl != null && barangFotoUrl!.trim().isNotEmpty) data['barangFotoUrl'] = barangFotoUrl!.trim();
+    if (orderType == OrderModel.typeKirimBarang &&
+        originLat != null &&
+        originLng != null &&
+        destLat != null &&
+        destLng != null) {
+      try {
+        final (_, fee) = await LacakBarangService.getTierAndFee(
+          originLat: originLat,
+          originLng: originLng,
+          destLat: destLat,
+          destLng: destLng,
+        );
+        data['lacakBarangIapFeeRupiah'] = fee;
+      } catch (e, st) {
+        logError('createOrder lacakBarangIapFeeRupiah', e, st);
+      }
+    }
+    if (TrakaApiConfig.shouldCreateOrderViaApi) {
+      final apiBody = Map<String, dynamic>.from(data)
+        ..remove('createdAt')
+        ..remove('updatedAt')
+        ..['bypassDuplicatePendingKirimBarang'] =
+            bypassDuplicatePendingKirimBarang
+        ..['bypassDuplicatePendingTravel'] = bypassDuplicatePendingTravel;
+      final r = await TrakaApiService.createPassengerOrderViaApi(apiBody);
+      if (r.orderId != null) {
+        return r.orderId;
+      }
+      if (!r.fallBackToFirestore) {
+        return null;
+      }
+    }
+    if (orderType == OrderModel.typeKirimBarang && !bypassDuplicatePendingKirimBarang) {
+      final dup =
+          await getPassengerPendingKirimBarangWithDriver(passengerUid, driverUid);
+      if (dup != null) {
+        log(
+          'OrderService.createOrder: blocked duplicate pending kirim_barang (existing ${dup.id})',
+        );
+        return null;
+      }
+    }
+    if (orderType == OrderModel.typeTravel && !bypassDuplicatePendingTravel) {
+      final dupT =
+          await getPassengerPendingTravelWithDriver(passengerUid, driverUid);
+      if (dupT != null) {
+        log(
+          'OrderService.createOrder: blocked duplicate pending travel (existing ${dupT.id})',
+        );
+        return null;
+      }
+    }
     final ref = await FirebaseFirestore.instance
         .collection(_collectionOrders)
         .add(data);
@@ -502,7 +679,11 @@ class OrderService {
               ? [statusPickedUp]
               : [statusAgreed, statusPickedUp]);
 
-      final snap = await query.get();
+      // Tanpa timeout, get() bisa menggantung lama (jaringan lemah) → FutureBuilder spinner tak berujung.
+      final snap = await query.get().timeout(
+        const Duration(seconds: 25),
+        onTimeout: () => throw TimeoutException('orders scheduleId query'),
+      );
       final list = <OrderModel>[];
       for (final doc in snap.docs) {
         final o = OrderModel.fromFirestore(doc);
@@ -685,26 +866,37 @@ class OrderService {
   }
 
   /// Penumpang klik kesepakatan → set passengerAgreed = true.
-  /// Mengembalikan (success, driverBarcodePickupPayload?) — payload untuk driver tunjukkan ke penumpang (scan penjemputan).
-  static Future<(bool, String?)> setPassengerAgreed(
+  /// Mengembalikan (success, driverBarcodePickupPayload?, kirimPesanChat) — payload untuk driver tunjukkan ke penumpang (scan penjemputan).
+  /// [kirimPesanChat] false jika pesanan sudah dalam status agreed (idempoten / duplikat tap); jangan kirim pesan «sudah setuju» lagi.
+  static Future<(bool, String?, bool)> setPassengerAgreed(
     String orderId, {
     required double passengerLat,
     required double passengerLng,
     required String passengerLocationText,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return (false, null);
+    if (user == null) return (false, null, false);
 
     final ref = FirebaseFirestore.instance
         .collection(_collectionOrders)
         .doc(orderId);
     final doc = await ref.get();
-    if (!doc.exists) return (false, null);
+    if (!doc.exists) return (false, null, false);
     final data = doc.data();
     if (data == null || (data[_fieldPassengerUid] as String?) != user.uid)
-      return (false, null);
+      return (false, null, false);
 
     final driverAgreed = (data['driverAgreed'] as bool?) ?? false;
+    final passengerAgreedAlready = (data['passengerAgreed'] as bool?) ?? false;
+    final currentStatus = (data[_fieldStatus] as String?) ?? '';
+
+    if (driverAgreed &&
+        passengerAgreedAlready &&
+        currentStatus == statusAgreed) {
+      final existingPayload =
+          data['driverBarcodePickupPayload'] as String?;
+      return (true, existingPayload, false);
+    }
     final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
     final now = FieldValue.serverTimestamp();
     bool willBecomeAgreed = false;
@@ -742,7 +934,7 @@ class OrderService {
           });
     }
 
-    return (true, willBecomeAgreed ? barcodePayload : null);
+    return (true, willBecomeAgreed ? barcodePayload : null, true);
   }
 
   /// Penumpang membatalkan kesepakatan → reset ke pending_agreement agar driver bisa kirim kesepakatan baru.
@@ -772,8 +964,8 @@ class OrderService {
     return true;
   }
 
-  /// Update lokasi penumpang di order (untuk live tracking saat driver menuju jemput).
-  /// Hanya berlaku jika order status agreed dan penumpang belum dijemput.
+  /// Update lokasi penumpang di order (cadangan jika live tidak ada: chat ~30 dtk, ≥50 m).
+  /// Travel: saat **agreed** (belum dijemput) **atau** **picked_up** (perjalanan) — bukan setelah selesai.
   static Future<bool> updatePassengerLocation(
     String orderId, {
     required double passengerLat,
@@ -794,7 +986,11 @@ class OrderService {
       }
       final status = data[_fieldStatus] as String?;
       final pickedUp = data['driverScannedAt'] != null || data['passengerScannedPickupAt'] != null;
-      if (status != statusAgreed || pickedUp) return false;
+      final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
+      final allowPrePickup = status == statusAgreed && !pickedUp;
+      final allowInTrip =
+          status == statusPickedUp && orderType == OrderModel.typeTravel;
+      if (!allowPrePickup && !allowInTrip) return false;
 
       await ref.update({
         'passengerLat': passengerLat,
@@ -1470,6 +1666,18 @@ class OrderService {
       return 'Pesanan yang sudah terjadi kesepakatan tidak bisa dihapus. Gunakan Sembunyikan untuk menyembunyikan dari daftar.';
     }
 
+    // Penumpang: travel pending dengan driver lain tidak boleh dihapus jika sudah ada travel agreed dengan driver lain
+    final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
+    if (passengerUid == user.uid &&
+        orderType == OrderModel.typeTravel &&
+        status == statusPendingAgreement &&
+        driverUid != null) {
+      final agreedDrivers = await getTravelAgreedDriverUidsForPassenger(user.uid);
+      if (agreedDrivers.isNotEmpty && !agreedDrivers.contains(driverUid)) {
+        return 'Ada pesanan travel dengan kesepakatan harga. Chat travel dengan driver lain tidak bisa dihapus. Selesaikan atau batalkan di tab Pesanan.';
+      }
+    }
+
     // Hapus isi chat dulu (boleh gagal; kalau kosong tidak apa-apa)
     try {
       await ChatService.deleteAllMessages(orderId);
@@ -1704,9 +1912,26 @@ class OrderService {
     final dLat = order.destLat ?? order.receiverLat;
     final dLng = order.destLng ?? order.receiverLng;
     if (oLat == null || oLng == null || dLat == null || dLng == null) return null;
-    final km = _haversineKm(oLat, oLng, dLat, dLng);
-    if (km < minTripDistanceKm) return null;
     try {
+      final parts = await _travelKmFerryEffective(oLat, oLng, dLat, dLng);
+      return _getEstimatedContributionForDriverWithKmParts(order, oLat, oLng, dLat, dLng, parts);
+    } catch (e, st) {
+      logError('OrderService.getEstimatedContributionForDriver', e, st);
+      return null;
+    }
+  }
+
+  /// Sama seperti [getEstimatedContributionForDriver] tetapi memakai [parts] yang sudah dihitung (hindari panggilan ganda ferry).
+  static Future<int?> _getEstimatedContributionForDriverWithKmParts(
+    OrderModel order,
+    double oLat,
+    double oLng,
+    double dLat,
+    double dLng,
+    ({double km, double ferryKm, double effectiveKm}) parts,
+  ) async {
+    try {
+      if (parts.km < minTripDistanceKm) return null;
       if (order.isKirimBarang) {
         final (tier, _) = await LacakBarangService.getTierAndFee(
           originLat: oLat,
@@ -1718,7 +1943,7 @@ class OrderService {
           tier,
           order.barangCategory,
         );
-        return (km * tarifPerKm).round();
+        return (parts.effectiveKm * tarifPerKm).round();
       } else {
         final totalPenumpang = order.totalPenumpang;
         if (totalPenumpang <= 0) return null;
@@ -1728,17 +1953,70 @@ class OrderService {
           oLng,
           dLat,
           dLng,
-          km,
+          parts.effectiveKm,
         );
       }
     } catch (e, st) {
-      logError('OrderService.getEstimatedContributionForDriver', e, st);
+      logError('OrderService._getEstimatedContributionForDriverWithKmParts', e, st);
+      return null;
+    }
+  }
+
+  /// Data jarak + kontribusi untuk pesan chat pertama (format teks di [PassengerFirstChatMessage.formatJarakKontribusiLines]).
+  /// Null jika tidak memenuhi [minTripDistanceKm] atau estimasi gagal.
+  static Future<JarakKontribusiPreview?> computeJarakKontribusiPreview({
+    required double originLat,
+    required double originLng,
+    required double destLat,
+    required double destLng,
+    required String orderType,
+    int? jumlahKerabat,
+    String? barangCategory,
+  }) async {
+    final preview = OrderModel(
+      id: '_preview',
+      passengerUid: '',
+      driverUid: '',
+      routeJourneyNumber: '',
+      passengerName: '',
+      originText: '',
+      destText: '',
+      status: statusPendingAgreement,
+      driverAgreed: false,
+      passengerAgreed: false,
+      originLat: originLat,
+      originLng: originLng,
+      destLat: destLat,
+      destLng: destLng,
+      orderType: orderType,
+      jumlahKerabat: jumlahKerabat,
+      barangCategory: barangCategory,
+    );
+    try {
+      final parts =
+          await _travelKmFerryEffective(originLat, originLng, destLat, destLng);
+      final contrib = await _getEstimatedContributionForDriverWithKmParts(
+        preview,
+        originLat,
+        originLng,
+        destLat,
+        destLng,
+        parts,
+      );
+      if (contrib == null) return null;
+      return JarakKontribusiPreview(
+        kmStraight: parts.km,
+        ferryKm: parts.ferryKm,
+        contributionRp: contrib,
+      );
+    } catch (e, st) {
+      logError('OrderService.computeJarakKontribusiPreview', e, st);
       return null;
     }
   }
 
   /// Hitung kontribusi travel untuk tampilan (order yang tripTravelContributionRupiah = 0).
-  /// Formula: totalPenumpang × (jarak × tarif per km, min Rp 5.000). Nilai dari jarak, bukan default.
+  /// Formula: totalPenumpang × (jarak × tarif per km, min Rp 5.000). Jarak = tripDistanceKm − ferryDistanceKm jika ada.
   /// Fallback: jika koordinat null (order lama), pakai totalPenumpang × minRp agar tetap tampil nilai.
   static Future<int?> getTripTravelContributionForDisplay(OrderModel order) async {
     final stored = (order.tripTravelContributionRupiah ?? 0).round();
@@ -1747,12 +2025,14 @@ class OrderService {
     if (totalPenumpang <= 0) return null;
     final km = order.tripDistanceKm ?? 0;
     if (km <= 0) return null;
+    final ferryStored = (order.ferryDistanceKm ?? 0).clamp(0.0, km);
+    final chargeKm = (km - ferryStored).clamp(0.0, double.infinity);
     final pickLat = order.pickupLat ?? order.passengerLat ?? order.originLat;
     final pickLng = order.pickupLng ?? order.passengerLng ?? order.originLng;
     final dropLat = order.dropLat ?? order.destLat ?? order.receiverLat;
     final dropLng = order.dropLng ?? order.destLng ?? order.receiverLng;
     if (pickLat != null && pickLng != null && dropLat != null && dropLng != null) {
-      return _calcTripTravelContributionRupiah(totalPenumpang, pickLat, pickLng, dropLat, dropLng, km);
+      return _calcTripTravelContributionRupiah(totalPenumpang, pickLat, pickLng, dropLat, dropLng, chargeKm);
     }
     // Fallback order lama tanpa koordinat: totalPenumpang × minRp (sinkron dengan INDEX_DOKUMEN_KONTRIBUSI)
     final minRupiah = await AppConfigService.getMinKontribusiTravelRupiah();
@@ -1760,7 +2040,7 @@ class OrderService {
   }
 
   /// Kontribusi travel per order (Rp): totalPenumpang × (jarak × tarif per km, min Rp 5.000).
-  /// Nilai per penumpang diambil dari jarak penumpang, bukan default.
+  /// [tripDistanceKm] = jarak pembebanan (biasanya setelah kurangi [ferry], selaras dengan tripFare).
   static Future<int?> _calcTripTravelContributionRupiah(
     int totalPenumpang,
     double pickLat,
@@ -2010,22 +2290,22 @@ class OrderService {
     double ferry = (ferryDistanceKm != null && ferryDistanceKm >= 0) ? ferryDistanceKm : 0.0;
     if (km != null && km >= 0 && ferry > km) ferry = km; // Anti-kecurangan: ferry tidak boleh melebihi total jarak
     if (ferry > 0) updateData['ferryDistanceKm'] = ferry;
+    double? effectiveKmForCharge;
     if (km != null && km >= 0) {
-      final effectiveKm = (km - ferry).clamp(0.0, double.infinity);
+      effectiveKmForCharge = (km - ferry).clamp(0.0, double.infinity);
       final tarifPerKm = await _getTarifPerKm();
-      updateData['tripFareRupiah'] = (effectiveKm * tarifPerKm).round();
+      updateData['tripFareRupiah'] = (effectiveKmForCharge * tarifPerKm).round();
     }
-    // Kontribusi travel: totalPenumpang × (jarak × tarif per km, min Rp 5.000). Nilai dari jarak.
+    // Kontribusi travel: totalPenumpang × (jarak × tarif per km, min Rp 5.000). Jarak = sama dengan tripFare (setelah kurangi ferry).
     final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
     if (orderType == OrderModel.typeTravel &&
         pickLat != null &&
         pickLng != null &&
-        km != null &&
-        km >= 0) {
+        effectiveKmForCharge != null) {
       final jumlahKerabat = (data['jumlahKerabat'] as num?)?.toInt() ?? 0;
       final totalPenumpang = jumlahKerabat > 0 ? 1 + jumlahKerabat : 1;
       final contrib = await _calcTripTravelContributionRupiah(
-        totalPenumpang, pickLat, pickLng, dropLat, dropLng, km,
+        totalPenumpang, pickLat, pickLng, dropLat, dropLng, effectiveKmForCharge,
       );
       if (contrib != null) updateData['tripTravelContributionRupiah'] = contrib;
     }
@@ -2122,10 +2402,21 @@ class OrderService {
     if ((data[_fieldStatus] as String?) != statusAgreed)
       return (false, 'Status pesanan tidak sesuai.');
 
-    final passLat = (data['passengerLat'] as num?)?.toDouble();
-    final passLng = (data['passengerLng'] as num?)?.toDouble();
-    if (passLat == null || passLng == null)
+    final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
+    if (orderType != OrderModel.typeTravel) {
+      return (
+        false,
+        'Konfirmasi otomatis penjemputan hanya untuk travel. Gunakan scan barcode.',
+      );
+    }
+
+    final orderModel = OrderModel.fromFirestore(doc);
+    final passCoords = orderModel.coordsForDriverPickupProximity;
+    if (passCoords == null) {
       return (false, 'Lokasi penumpang tidak tersedia.');
+    }
+    final passLat = passCoords.$1;
+    final passLng = passCoords.$2;
     final distM = _distanceMeters(pickupLat, pickupLng, passLat, passLng);
     if (distM > radiusBerdekatanMeter) {
       return (
@@ -2133,8 +2424,6 @@ class OrderService {
         'Hanya bisa saat HP Anda dan penumpang berdekatan (radius $radiusBerdekatanMeter m).',
       );
     }
-
-    final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
     final violationFeeRupiah = await _getViolationFeeRupiah();
 
     final updateData = <String, dynamic>{
@@ -2184,6 +2473,9 @@ class OrderService {
     if (!doc.exists || doc.data() == null) return false;
     final data = doc.data()!;
     if ((data[_fieldStatus] as String?) != statusPickedUp) return false;
+    final orderTypeForUi =
+        (data['orderType'] as String?) ?? OrderModel.typeTravel;
+    if (orderTypeForUi != OrderModel.typeTravel) return false;
     final driverUid = data[_fieldDriverUid] as String?;
     if (driverUid == null) return false;
     final (driverLat, driverLng) = await _getDriverPosition(driverUid);
@@ -2223,6 +2515,14 @@ class OrderService {
     if ((data[_fieldStatus] as String?) != statusPickedUp)
       return (false, 'Status pesanan tidak sesuai.');
 
+    final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
+    if (orderType != OrderModel.typeTravel) {
+      return (
+        false,
+        'Konfirmasi tanpa scan di tujuan hanya untuk travel. Kirim barang: gunakan scan barcode.',
+      );
+    }
+
     final driverUid = data[_fieldDriverUid] as String?;
     if (driverUid == null) return (false, 'Data driver tidak valid.');
     final (driverLat, driverLng) = await _getDriverPosition(driverUid);
@@ -2248,8 +2548,6 @@ class OrderService {
         );
       }
     }
-
-    final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
     final violationFeeRupiah = await _getViolationFeeRupiah();
 
     final updateData = <String, dynamic>{
@@ -2276,21 +2574,16 @@ class OrderService {
         (data['pickupLng'] as num?)?.toDouble() ??
         (data['passengerLng'] as num?)?.toDouble();
     if (pickLat != null && pickLng != null) {
-      final km = _haversineKm(pickLat, pickLng, dropLat, dropLng);
-      updateData['tripDistanceKm'] = km;
+      final kmPart = await _travelKmFerryEffective(pickLat, pickLng, dropLat, dropLng);
+      updateData['tripDistanceKm'] = kmPart.km;
+      if (kmPart.ferryKm > 0) updateData['ferryDistanceKm'] = kmPart.ferryKm;
       final tarifPerKm = await _getTarifPerKm();
-      updateData['tripFareRupiah'] = (km * tarifPerKm).round();
-    }
-    // Kontribusi travel: totalPenumpang × (jarak × tarif per km, min Rp 5.000). Nilai dari jarak.
-    if (orderType == OrderModel.typeTravel &&
-        pickLat != null &&
-        pickLng != null) {
-      final km = _haversineKm(pickLat, pickLng, dropLat, dropLng);
-      if (km >= 0) {
+      updateData['tripFareRupiah'] = (kmPart.effectiveKm * tarifPerKm).round();
+      if (orderType == OrderModel.typeTravel) {
         final jumlahKerabat = (data['jumlahKerabat'] as num?)?.toInt() ?? 0;
         final totalPenumpang = jumlahKerabat > 0 ? 1 + jumlahKerabat : 1;
         final contrib = await _calcTripTravelContributionRupiah(
-          totalPenumpang, pickLat, pickLng, dropLat, dropLng, km,
+          totalPenumpang, pickLat, pickLng, dropLat, dropLng, kmPart.effectiveKm,
         );
         if (contrib != null) updateData['tripTravelContributionRupiah'] = contrib;
       }
@@ -2341,6 +2634,14 @@ class OrderService {
     if ((data[_fieldStatus] as String?) != statusPickedUp)
       return (false, 'Status pesanan tidak sesuai.');
 
+    final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
+    if (orderType != OrderModel.typeTravel) {
+      return (
+        false,
+        'Penyelesaian otomatis saat menjauh hanya untuk travel.',
+      );
+    }
+
     double otherLat;
     double otherLng;
     double dropLat;
@@ -2348,14 +2649,14 @@ class OrderService {
     if (isDriver) {
       if ((data[_fieldDriverUid] as String?) != user.uid)
         return (false, 'Bukan pesanan Anda.');
-      final passLat = (data['passengerLat'] as num?)?.toDouble();
-      final passLng = (data['passengerLng'] as num?)?.toDouble();
-      if (passLat == null || passLng == null)
+      final orderModel = OrderModel.fromFirestore(doc);
+      final passCoords = orderModel.coordsForDriverPickupProximity;
+      if (passCoords == null)
         return (false, 'Lokasi penumpang belum tersedia.');
-      otherLat = passLat;
-      otherLng = passLng;
-      dropLat = passLat;
-      dropLng = passLng;
+      otherLat = passCoords.$1;
+      otherLng = passCoords.$2;
+      dropLat = otherLat;
+      dropLng = otherLng;
     } else {
       if ((data[_fieldPassengerUid] as String?) != user.uid)
         return (false, 'Bukan pesanan Anda.');
@@ -2374,7 +2675,6 @@ class OrderService {
     if (distM <= radiusMenjauhMeter)
       return (false, 'Belum menjauh. Jarak masih ${distM.round()} m.');
 
-    final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
     final violationFeeRupiah = await _getViolationFeeRupiah();
 
     final updateData = <String, dynamic>{
@@ -2389,10 +2689,8 @@ class OrderService {
       'passengerLastReadAt': FieldValue.serverTimestamp(),
       'driverLastReadAt': FieldValue.serverTimestamp(),
       'autoConfirmComplete': true,
+      'passengerViolationFee': violationFeeRupiah,
     };
-    if (orderType == OrderModel.typeTravel) {
-      updateData['passengerViolationFee'] = violationFeeRupiah;
-    }
     final pickLat =
         (data['pickupLat'] as num?)?.toDouble() ??
         (data['passengerLat'] as num?)?.toDouble();
@@ -2400,21 +2698,16 @@ class OrderService {
         (data['pickupLng'] as num?)?.toDouble() ??
         (data['passengerLng'] as num?)?.toDouble();
     if (pickLat != null && pickLng != null) {
-      final km = _haversineKm(pickLat, pickLng, dropLat, dropLng);
-      updateData['tripDistanceKm'] = km;
+      final kmPart = await _travelKmFerryEffective(pickLat, pickLng, dropLat, dropLng);
+      updateData['tripDistanceKm'] = kmPart.km;
+      if (kmPart.ferryKm > 0) updateData['ferryDistanceKm'] = kmPart.ferryKm;
       final tarifPerKm = await _getTarifPerKm();
-      updateData['tripFareRupiah'] = (km * tarifPerKm).round();
-    }
-    // Kontribusi travel: totalPenumpang × (jarak × tarif per km, min Rp 5.000). Nilai dari jarak.
-    if (orderType == OrderModel.typeTravel &&
-        pickLat != null &&
-        pickLng != null) {
-      final km = _haversineKm(pickLat, pickLng, dropLat, dropLng);
-      if (km >= 0) {
+      updateData['tripFareRupiah'] = (kmPart.effectiveKm * tarifPerKm).round();
+      if (orderType == OrderModel.typeTravel) {
         final jumlahKerabat = (data['jumlahKerabat'] as num?)?.toInt() ?? 0;
         final totalPenumpang = jumlahKerabat > 0 ? 1 + jumlahKerabat : 1;
         final contrib = await _calcTripTravelContributionRupiah(
-          totalPenumpang, pickLat, pickLng, dropLat, dropLng, km,
+          totalPenumpang, pickLat, pickLng, dropLat, dropLng, kmPart.effectiveKm,
         );
         if (contrib != null) updateData['tripTravelContributionRupiah'] = contrib;
       }
@@ -2470,6 +2763,83 @@ class OrderService {
       'driverLastReadAt': FieldValue.serverTimestamp(),
     });
     return true;
+  }
+
+  /// Satu thread pra-sepakat kirim barang per pasangan penumpang–driver
+  /// ([statusPendingAgreement] / [statusPendingReceiver]).
+  /// Mencegah order ganda dan pesan otomatis chat berulang. Setelah [statusAgreed] atau [statusPickedUp],
+  /// penumpang boleh membuat kirim barang baru ke driver yang sama.
+  ///
+  /// **Hybrid:** pembuatan order saat ini lewat Firestore; bila nanti lewat API, invariant yang sama
+  /// harus ditegakkan di server.
+  static Future<OrderModel?> getPassengerPendingKirimBarangWithDriver(
+    String passengerUid,
+    String driverUid,
+  ) async {
+    if (passengerUid.isEmpty || driverUid.isEmpty) return null;
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection(_collectionOrders)
+          .where(_fieldPassengerUid, isEqualTo: passengerUid)
+          .where(_fieldDriverUid, isEqualTo: driverUid)
+          .limit(40)
+          .get();
+      OrderModel? newest;
+      for (final doc in snapshot.docs) {
+        final o = OrderModel.fromFirestore(doc);
+        if (!o.isKirimBarang) continue;
+        final s = o.status;
+        if (s != statusPendingAgreement && s != statusPendingReceiver) continue;
+        if (newest == null) {
+          newest = o;
+          continue;
+        }
+        final a = o.createdAt;
+        final b = newest.createdAt;
+        if (a != null && (b == null || a.isAfter(b))) {
+          newest = o;
+        }
+      }
+      return newest;
+    } catch (e, st) {
+      logError('OrderService.getPassengerPendingKirimBarangWithDriver', e, st);
+      return null;
+    }
+  }
+
+  /// Travel belum sepakat harga: [statusPendingAgreement] saja, pasangan penumpang–driver sama.
+  static Future<OrderModel?> getPassengerPendingTravelWithDriver(
+    String passengerUid,
+    String driverUid,
+  ) async {
+    if (passengerUid.isEmpty || driverUid.isEmpty) return null;
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection(_collectionOrders)
+          .where(_fieldPassengerUid, isEqualTo: passengerUid)
+          .where(_fieldDriverUid, isEqualTo: driverUid)
+          .limit(40)
+          .get();
+      OrderModel? newest;
+      for (final doc in snapshot.docs) {
+        final o = OrderModel.fromFirestore(doc);
+        if (o.orderType != OrderModel.typeTravel) continue;
+        if (o.status != statusPendingAgreement) continue;
+        if (newest == null) {
+          newest = o;
+          continue;
+        }
+        final a = o.createdAt;
+        final b = newest.createdAt;
+        if (a != null && (b == null || a.isAfter(b))) {
+          newest = o;
+        }
+      }
+      return newest;
+    } catch (e, st) {
+      logError('OrderService.getPassengerPendingTravelWithDriver', e, st);
+      return null;
+    }
   }
 
   /// Cari pesanan aktif (pending_agreement atau agreed) antara penumpang dan driver.
@@ -2837,4 +3207,25 @@ class OrderService {
     await ref.update({'receiverLastReadAt': FieldValue.serverTimestamp()});
     return true;
   }
+
+  static Future<bool> _withReadRetry(
+    Future<bool> Function() attempt,
+  ) async {
+    for (var i = 0; i < 3; i++) {
+      final ok = await attempt();
+      if (ok) return true;
+      await Future<void>.delayed(Duration(milliseconds: 120 * (i + 1)));
+    }
+    return false;
+  }
+
+  /// Sama seperti [setDriverLastReadAt] dengan retry singkat (koneksi buruk).
+  static Future<bool> setDriverLastReadAtReliable(String orderId) =>
+      _withReadRetry(() => setDriverLastReadAt(orderId));
+
+  static Future<bool> setPassengerLastReadAtReliable(String orderId) =>
+      _withReadRetry(() => setPassengerLastReadAt(orderId));
+
+  static Future<bool> setReceiverLastReadAtReliable(String orderId) =>
+      _withReadRetry(() => setReceiverLastReadAt(orderId));
 }

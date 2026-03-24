@@ -1,19 +1,29 @@
+/**
+ * Gaya Google + require-jsdoc bentrok dengan file besar (index.js).
+ * Target: parser modern (optional chaining) + aturan aman tanpa rewrite massal.
+ */
 module.exports = {
+  root: true,
   env: {
-    es6: true,
+    es2022: true,
     node: true,
   },
   parserOptions: {
-    "ecmaVersion": 2018,
+    ecmaVersion: 2022,
   },
   extends: [
     "eslint:recommended",
-    "google",
+  ],
+  ignorePatterns: [
+    "node_modules/**",
+    "scripts/**",
   ],
   rules: {
-    "no-restricted-globals": ["error", "name", "length"],
-    "prefer-arrow-callback": "error",
-    "quotes": ["error", "double", {"allowTemplateLiterals": true}],
+    "no-unused-vars": ["error", {
+      "argsIgnorePattern": "^_",
+      "varsIgnorePattern": "^_",
+    }],
+    "no-console": "off",
   },
   overrides: [
     {
@@ -21,8 +31,6 @@ module.exports = {
       env: {
         mocha: true,
       },
-      rules: {},
     },
   ],
-  globals: {},
 };

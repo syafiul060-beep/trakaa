@@ -13,8 +13,6 @@ class NavigatingToPassengerOverlay extends StatelessWidget {
     required this.waitingPassengerCount,
     required this.navigatingToOrderId,
     required this.onExitNavigating,
-    this.voiceMuted = false,
-    this.onVoiceMuteToggle,
     this.onAlternativeRoutes,
   });
 
@@ -24,17 +22,16 @@ class NavigatingToPassengerOverlay extends StatelessWidget {
   final int waitingPassengerCount;
   final String? navigatingToOrderId;
   final VoidCallback onExitNavigating;
-  final bool voiceMuted;
-  final VoidCallback? onVoiceMuteToggle;
   final VoidCallback? onAlternativeRoutes;
 
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      top: 185,
-      right: 16,
+      left: 12,
+      right: 72,
+      bottom: 16,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 280),
+        constraints: const BoxConstraints(maxWidth: 400),
         child: Material(
           elevation: 4,
           borderRadius: BorderRadius.circular(8),
@@ -72,23 +69,6 @@ class NavigatingToPassengerOverlay extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (onVoiceMuteToggle != null)
-                      IconButton(
-                        onPressed: onVoiceMuteToggle,
-                        icon: Icon(
-                          voiceMuted ? Icons.volume_off : Icons.volume_up,
-                          size: 22,
-                          color: voiceMuted
-                              ? Theme.of(context).colorScheme.onSurfaceVariant
-                              : const Color(0xFF00B14F),
-                        ),
-                        tooltip: voiceMuted ? 'Nyalakan suara' : 'Matikan suara',
-                        style: IconButton.styleFrom(
-                          padding: const EdgeInsets.all(4),
-                          minimumSize: const Size(36, 36),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
                     TextButton(
                       onPressed: onExitNavigating,
                       style: TextButton.styleFrom(

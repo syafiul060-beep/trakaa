@@ -12,11 +12,21 @@ import '../screens/voice_call_screen.dart';
 import 'order_service.dart';
 
 /// Service untuk menangani navigasi saat pengguna tap notifikasi.
-/// Mendukung: chat, payment_reminder (kontribusi/pelanggaran).
+/// Mendukung: chat, payment_reminder (kontribusi/pelanggaran), admin_verification.
 class NotificationNavigationService {
   NotificationNavigationService._();
 
   static Map<String, String>? _pendingData;
+
+  /// Callback dari [PenumpangScreen]/[DriverScreen] — buka tab Profil (index 4).
+  static void Function()? _openProfileTab;
+  static void registerOpenProfileTab(void Function() fn) {
+    _openProfileTab = fn;
+  }
+
+  static void unregisterOpenProfileTab() {
+    _openProfileTab = null;
+  }
 
   /// Simpan data notifikasi untuk navigasi nanti (saat app belum siap).
   static void setPending(Map<String, String> data) {
@@ -67,6 +77,9 @@ class NotificationNavigationService {
         break;
       case 'payment_reminder':
         _navigateToPaymentReminder(context, data, role);
+        break;
+      case 'admin_verification':
+        _openProfileTab?.call();
         break;
       case 'voice_call':
         _navigateToVoiceCall(context, data);

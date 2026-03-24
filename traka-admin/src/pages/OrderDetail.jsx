@@ -55,9 +55,9 @@ export default function OrderDetail() {
   }
 
   const statusLabel = {
-    pending_agreement: 'Pending',
-    agreed: 'Agreed',
-    picked_up: 'Di Jalan',
+    pending_agreement: 'Menunggu kesepakatan',
+    agreed: 'Disepakati',
+    picked_up: 'Di jalan',
     completed: 'Selesai',
     cancelled: 'Dibatalkan',
   }
@@ -86,7 +86,7 @@ export default function OrderDetail() {
             <p className="text-sm text-gray-600">Ke: {order.destText}</p>
           </div>
           <div>
-            <h3 className="font-medium text-gray-700 mb-2">Info</h3>
+            <h3 className="font-medium text-gray-700 mb-2">Ringkasan</h3>
             <p className="text-sm">Tipe: {order.orderType === 'kirim_barang' ? 'Kirim Barang' : 'Travel'}</p>
             <p className="text-sm">Dibuat: {order.createdAt?.toDate?.()?.toLocaleString('id-ID') || '-'}</p>
             {order.completedAt && (

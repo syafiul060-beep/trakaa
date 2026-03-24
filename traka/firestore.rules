@@ -9,13 +9,97 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    // --- orders: integritas dokumen (selaras OrderService: travel vs kirim barang, auto-konfirmasi) ---
+    function orderParticipantUidsUnchanged() {
+      return request.resource.data.passengerUid == resource.data.passengerUid
+        && request.resource.data.driverUid == resource.data.driverUid
+        && request.resource.data.get('receiverUid', '') == resource.data.get('receiverUid', '');
+    }
+
+    function orderTypeUnchanged() {
+      return request.resource.data.get('orderType', 'travel') == resource.data.get('orderType', 'travel');
+    }
+
+    // Kirim barang: tidak boleh set autoConfirmPickup / autoConfirmComplete (hanya travel lewat app + service).
+    function kirimBarangNoAutoConfirmFlags() {
+      return request.resource.data.get('orderType', 'travel') != 'kirim_barang'
+        || (
+          request.resource.data.get('autoConfirmPickup', false) != true
+          && request.resource.data.get('autoConfirmComplete', false) != true
+        );
+    }
+
+    function validNewOrderNoKirimAutoConfirm() {
+      return request.resource.data.get('orderType', 'travel') != 'kirim_barang'
+        || (
+          request.resource.data.get('autoConfirmPickup', false) != true
+          && request.resource.data.get('autoConfirmComplete', false) != true
+        );
+    }
+
+    function orderUpdateIntegrity() {
+      return orderParticipantUidsUnchanged()
+        && orderTypeUnchanged()
+        && kirimBarangNoAutoConfirmFlags();
+    }
+
+    // Field verifikasi admin — hanya admin boleh mengubah (kecuali user set submittedAt).
+    function adminVerificationAdminKeysUnchangedForUser() {
+      return request.resource.data.get('adminVerificationPendingAt', null)
+          == resource.data.get('adminVerificationPendingAt', null)
+        && request.resource.data.get('adminVerificationMessage', null)
+          == resource.data.get('adminVerificationMessage', null)
+        && request.resource.data.get('adminVerificationDeadlineAt', null)
+          == resource.data.get('adminVerificationDeadlineAt', null)
+        && request.resource.data.get('adminVerificationRestrictFeatures', null)
+          == resource.data.get('adminVerificationRestrictFeatures', null);
+    }
+
+    // Data kendaraan di users: setelah tersimpan, hanya admin boleh ubah plat/merek/type/dll.
+    // Driver boleh menambah field permintaan ubah (STNK) tetapi tidak boleh menghapus timestamp permintaan.
+    function vehicleDataLocked(data) {
+      return data.vehiclePlat != null || data.vehicleUpdatedAt != null;
+    }
+
+    function vehicleCoreFieldsUnchangedForUser() {
+      return !vehicleDataLocked(resource.data)
+        || (
+          request.resource.data.vehiclePlat == resource.data.vehiclePlat
+          && request.resource.data.vehicleMerek == resource.data.vehicleMerek
+          && request.resource.data.vehicleType == resource.data.vehicleType
+          && request.resource.data.vehicleJumlahPenumpang == resource.data.vehicleJumlahPenumpang
+          && request.resource.data.vehicleUpdatedAt == resource.data.vehicleUpdatedAt
+        );
+    }
+
+    // User tidak boleh menghapus vehicleChangeRequestAt (set ke null) setelah pernah mengirim.
+    function vehicleChangeRequestNotClearedByUser() {
+      return resource.data.vehicleChangeRequestAt == null
+        || request.resource.data.vehicleChangeRequestAt != null;
+    }
+
+    function driverOwnVehicleLocked() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && vehicleDataLocked(
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+        );
+    }
+
     // Collection users: data profil (penumpang & driver, termasuk region/latitude/longitude)
     // Baca: hanya user login (cek email/phone via Cloud Function checkEmailExists/checkPhoneExists)
     // Tulis: user sendiri atau admin (untuk edit user dari panel admin)
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null
+      allow create: if request.auth != null
         && (request.auth.uid == userId || isAdmin());
+      allow update: if request.auth != null
+        && (isAdmin()
+          || (request.auth.uid == userId
+            && adminVerificationAdminKeysUnchangedForUser()
+            && vehicleCoreFieldsUnchangedForUser()
+            && vehicleChangeRequestNotClearedByUser()));
+      allow delete: if false;
       // verification_logs – audit trail verifikasi wajah (forensik)
       match /verification_logs/{logId} {
         allow create: if request.auth != null && request.auth.uid == userId;
@@ -78,11 +162,22 @@ service cloud.firestore {
     }
 
     // orders – pesanan penumpang (nomor pesanan unik, riwayat travel)
-    // Update/delete: driver, penumpang, penerima (kirim barang), atau admin
+    // Create: hanya sebagai penumpang (passengerUid = uid). Update: peserta + integritas field inti + blok autoConfirm untuk kirim_barang.
+    // Catatan: validasi transisi status/jarak tetap di app + idealnya Cloud Functions untuk hardening penuh.
     match /orders/{orderId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null
+      allow create: if request.auth != null
+        && request.resource.data.passengerUid == request.auth.uid
+        && validNewOrderNoKirimAutoConfirm();
+      allow update: if request.auth != null
+        && (isAdmin()
+            || (
+              orderUpdateIntegrity()
+              && (resource.data.driverUid == request.auth.uid
+                  || resource.data.passengerUid == request.auth.uid
+                  || resource.data.get('receiverUid', '') == request.auth.uid)
+            ));
+      allow delete: if request.auth != null
         && (resource.data.driverUid == request.auth.uid
             || resource.data.passengerUid == request.auth.uid
             || resource.data.get('receiverUid', '') == request.auth.uid
@@ -113,8 +208,9 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if request.auth != null 
         && request.resource.data.driverUid == request.auth.uid;
-      allow update, delete: if request.auth != null 
-        && resource.data.driverUid == request.auth.uid;
+      allow update, delete: if request.auth != null
+        && (isAdmin()
+          || (resource.data.driverUid == request.auth.uid && !driverOwnVehicleLocked()));
     }
 
     // vehicle_brands – data merek dan type mobil. Hanya admin yang boleh edit.
@@ -188,10 +284,19 @@ service cloud.firestore {
     }
 
     // track_share_links – link bagikan lacak ke keluarga. Token = docId (rahasia).
-    // Create: penumpang yang sudah bayar Lacak Driver. Read: siapa saja (token di URL = rahasia).
+    // Create: travel = penumpang pemesan; kirim_barang = pengirim (passengerUid) atau penerima (receiverUid).
+    // Read: siapa saja (token di URL = rahasia).
     match /track_share_links/{token} {
       allow create: if request.auth != null
-        && request.resource.data.passengerUid == request.auth.uid;
+        && (
+          (request.resource.data.orderType == 'travel'
+            && request.resource.data.passengerUid == request.auth.uid)
+          || (request.resource.data.orderType == 'kirim_barang'
+            && request.resource.data.passengerUid == request.auth.uid)
+          || (request.resource.data.orderType == 'kirim_barang'
+            && request.resource.data.get('receiverUid', '') != ''
+            && request.resource.data.receiverUid == request.auth.uid)
+        );
       allow read: if true;
       allow update, delete: if false;
     }
@@ -229,6 +334,14 @@ service cloud.firestore {
     match /promotions/{promoId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
+    }
+
+    // admin_notifications – riwayat alert (konfirmasi kirim data, STNK, dll.). Tulis hanya Admin SDK (Functions).
+    match /admin_notifications/{notifId} {
+      allow read: if isAdmin();
+      allow create: if false;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     // admin_audit_logs – log aksi admin. Create: admin. Read: admin.

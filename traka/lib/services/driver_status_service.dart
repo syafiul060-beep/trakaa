@@ -61,6 +61,11 @@ class DriverStatusService {
   static const double minDistanceLiveTrackingMeters = 50; // 50 m
   static const int maxSecondsLiveTracking = 5; // 5 detik (jemput penumpang)
 
+  /// Hemat write: ada penumpang agreed menunggu jemput, tapi driver belum tap arahkan / lacak penuh.
+  /// Cukup untuk notifikasi jarak ~1 km / 500 m tanpa spam seperti live tracking 50 m.
+  static const double minDistancePickupProximityMeters = 300;
+  static const int maxSecondsPickupProximity = 60;
+
   /// Update status driver ke Firestore.
   /// [status]: "siap_kerja" atau "tidak_aktif"
   /// [position]: posisi driver saat ini (lat, lng)
@@ -245,7 +250,7 @@ class DriverStatusService {
   }
 
   /// Cek apakah perlu update lokasi untuk live tracking (penumpang Lacak Driver).
-  /// Lebih sering: pindah >= 50 m atau sudah >= 10 detik. Ala Gojek/Grab.
+  /// Lebih sering: pindah >= 50 m atau sudah >= [maxSecondsLiveTracking] detik.
   static bool shouldUpdateLocationForLiveTracking({
     required Position currentPosition,
     Position? lastUpdatedPosition,
@@ -264,6 +269,25 @@ class DriverStatusService {
     return false;
   }
 
+  /// Update lokasi untuk notifikasi jarak penumpang (agreed, belum jemput) — lebih jarang dari live tracking.
+  static bool shouldUpdateLocationForPickupProximity({
+    required Position currentPosition,
+    Position? lastUpdatedPosition,
+    DateTime? lastUpdatedTime,
+  }) {
+    if (lastUpdatedPosition == null || lastUpdatedTime == null) return true;
+    final distance = Geolocator.distanceBetween(
+      lastUpdatedPosition.latitude,
+      lastUpdatedPosition.longitude,
+      currentPosition.latitude,
+      currentPosition.longitude,
+    );
+    if (distance >= minDistancePickupProximityMeters) return true;
+    final secondsSince = DateTime.now().difference(lastUpdatedTime).inSeconds;
+    if (secondsSince >= maxSecondsPickupProximity) return true;
+    return false;
+  }
+
   /// Hapus status driver (ketika logout atau selesai bekerja).
   static Future<void> removeDriverStatus() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -279,6 +303,43 @@ class DriverStatusService {
         .delete();
   }
 
+  /// Parse map status driver (JSON API) menjadi [DriverActiveRouteData], atau null.
+  static DriverActiveRouteData? _driverActiveRouteFromApiMap(Map<String, dynamic>? data) {
+    if (data == null) return null;
+    final status = data['status'] as String?;
+    if (status != statusSiapKerja) return null;
+    final originLat = (data['routeOriginLat'] as num?)?.toDouble();
+    final originLng = (data['routeOriginLng'] as num?)?.toDouble();
+    final destLat = (data['routeDestLat'] as num?)?.toDouble();
+    final destLng = (data['routeDestLng'] as num?)?.toDouble();
+    if (originLat == null || originLng == null || destLat == null || destLng == null) {
+      return null;
+    }
+    final routeStartedAtStr = data['routeStartedAt'] as String?;
+    final estSec = (data['estimatedDurationSeconds'] as num?)?.toInt();
+    final fromJadwal = data['routeFromJadwal'] as bool? ?? false;
+    final selectedIndex = (data['routeSelectedIndex'] as num?)?.toInt() ?? 0;
+    final scheduleId = data['scheduleId'] as String?;
+    DateTime? routeStartedAt;
+    if (routeStartedAtStr != null) {
+      routeStartedAt = DateTime.tryParse(routeStartedAtStr);
+    }
+    return DriverActiveRouteData(
+      originLat: originLat,
+      originLng: originLng,
+      destLat: destLat,
+      destLng: destLng,
+      originText: (data['routeOriginText'] as String?) ?? '',
+      destText: (data['routeDestText'] as String?) ?? '',
+      routeJourneyNumber: data['routeJourneyNumber'] as String?,
+      routeStartedAt: routeStartedAt,
+      estimatedDurationSeconds: estSec,
+      routeFromJadwal: fromJadwal,
+      routeSelectedIndex: selectedIndex >= 0 ? selectedIndex : 0,
+      scheduleId: scheduleId,
+    );
+  }
+
   /// Ambil rute kerja aktif driver dari Firestore/API (jika status siap_kerja + ada data rute).
   /// Dipanggil saat app dibuka untuk restore rute yang masih aktif.
   static Future<DriverActiveRouteData?> getActiveRouteFromFirestore() async {
@@ -287,39 +348,9 @@ class DriverStatusService {
 
     if (TrakaApiConfig.isApiEnabled) {
       final data = await TrakaApiService.getDriverStatus(user.uid);
-      if (data == null) return null;
-      final status = data['status'] as String?;
-      if (status != statusSiapKerja) return null;
-      final originLat = (data['routeOriginLat'] as num?)?.toDouble();
-      final originLng = (data['routeOriginLng'] as num?)?.toDouble();
-      final destLat = (data['routeDestLat'] as num?)?.toDouble();
-      final destLng = (data['routeDestLng'] as num?)?.toDouble();
-      if (originLat == null || originLng == null || destLat == null || destLng == null) {
-        return null;
-      }
-      final routeStartedAtStr = data['routeStartedAt'] as String?;
-      final estSec = (data['estimatedDurationSeconds'] as num?)?.toInt();
-      final fromJadwal = data['routeFromJadwal'] as bool? ?? false;
-      final selectedIndex = (data['routeSelectedIndex'] as num?)?.toInt() ?? 0;
-      final scheduleId = data['scheduleId'] as String?;
-      DateTime? routeStartedAt;
-      if (routeStartedAtStr != null) {
-        routeStartedAt = DateTime.tryParse(routeStartedAtStr);
-      }
-      return DriverActiveRouteData(
-        originLat: originLat,
-        originLng: originLng,
-        destLat: destLat,
-        destLng: destLng,
-        originText: (data['routeOriginText'] as String?) ?? '',
-        destText: (data['routeDestText'] as String?) ?? '',
-        routeJourneyNumber: data['routeJourneyNumber'] as String?,
-        routeStartedAt: routeStartedAt,
-        estimatedDurationSeconds: estSec,
-        routeFromJadwal: fromJadwal,
-        routeSelectedIndex: selectedIndex >= 0 ? selectedIndex : 0,
-        scheduleId: scheduleId,
-      );
+      final fromApi = _driverActiveRouteFromApiMap(data);
+      if (fromApi != null) return fromApi;
+      // API kosong / belum sinkron — dual-write Firestore masih bisa punya rute lengkap.
     }
 
     final doc = await FirebaseFirestore.instance

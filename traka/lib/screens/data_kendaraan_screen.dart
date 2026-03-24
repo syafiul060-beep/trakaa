@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../models/vehicle_model.dart';
+import '../services/verification_service.dart';
 import '../services/vehicle_brand_service.dart';
 import '../services/vehicle_plat_service.dart';
 import '../utils/safe_navigation_utils.dart';
@@ -206,6 +207,24 @@ class _DataKendaraanScreenState extends State<DataKendaraanScreen> {
   /// Simpan data kendaraan ke Firebase
   Future<void> _saveVehicleData() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final userCheck = _auth.currentUser;
+    if (userCheck != null) {
+      final snap =
+          await _firestore.collection('users').doc(userCheck.uid).get();
+      if (VerificationService.isVehicleDataLockedForDriver(snap.data() ?? {})) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(TrakaL10n.of(context).vehicleDataLockedBody),
+              backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+    }
 
     if (_selectedMerek == null ||
         _selectedType == null ||
@@ -789,6 +808,24 @@ class _DataKendaraanFormSheetState extends State<DataKendaraanFormSheet> {
   /// Simpan data kendaraan
   Future<void> _saveVehicleData() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final userCheck = _auth.currentUser;
+    if (userCheck != null) {
+      final snap =
+          await _firestore.collection('users').doc(userCheck.uid).get();
+      if (VerificationService.isVehicleDataLockedForDriver(snap.data() ?? {})) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(TrakaL10n.of(context).vehicleDataLockedBody),
+              backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+    }
 
     if (_selectedMerek == null ||
         _selectedType == null ||

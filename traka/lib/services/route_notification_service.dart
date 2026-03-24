@@ -69,11 +69,48 @@ class RouteNotificationService {
         importance: Importance.high,
       ),
     );
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _verificationChannelId,
+        'Verifikasi',
+        description: 'Permintaan verifikasi dari admin',
+        importance: Importance.high,
+      ),
+    );
   }
 
   /// Channel untuk notifikasi pembayaran (Lacak Driver, Lacak Barang, Kontribusi, Violation).
   static const String _paymentChannelId = 'traka_payment_channel';
+  static const String _verificationChannelId = 'traka_verification_channel';
   static const int _paymentNotificationIdBase = 4000;
+  static const int _adminVerificationNotificationId = 4101;
+
+  /// Notifikasi permintaan verifikasi dari admin (foreground FCM).
+  static Future<void> showAdminVerificationNotification({
+    required String title,
+    required String body,
+  }) async {
+    if (!_initialized) await init();
+    if (!Platform.isAndroid) return;
+    await requestPermissionIfNeeded();
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _verificationChannelId,
+        'Verifikasi',
+        channelDescription: 'Permintaan verifikasi dari admin',
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: _notificationIcon,
+      ),
+    );
+    await _plugin.show(
+      _adminVerificationNotificationId,
+      title,
+      body,
+      details,
+      payload: '{"type":"admin_verification"}',
+    );
+  }
 
   /// Notifikasi pembayaran berhasil (bisa dipanggil setelah IAP verified).
   static Future<void> showPaymentNotification({
@@ -261,7 +298,7 @@ class RouteNotificationService {
     );
     await _plugin.show(
       notificationId,
-      'Traka',
+      'Driver mendekati',
       'Driver sudah dekat ($distanceLabel). Siap-siap.',
       details,
     );

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart' as ph;
@@ -5,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart' as ph;
 import '../services/permission_service.dart';
 import '../widgets/app_update_wrapper.dart';
 import 'login_screen.dart';
+import '../services/performance_trace_service.dart';
 
 /// Layar ditampilkan ketika user sudah login tapi menolak izin lokasi/device ID.
 /// User bisa buka pengaturan, coba lagi, atau keluar.
@@ -29,6 +32,7 @@ class _PermissionRequiredScreenState extends State<PermissionRequiredScreen>
   @override
   void initState() {
     super.initState();
+    unawaited(PerformanceTraceService.stopStartupToInteractive());
     WidgetsBinding.instance.addObserver(this);
   }
 

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/user_role.dart';
+import '../services/performance_trace_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../widgets/app_update_wrapper.dart';
@@ -34,6 +37,12 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final _pageController = PageController();
   int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(PerformanceTraceService.stopStartupToInteractive());
+  }
 
   @override
   void dispose() {

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 /// Helper untuk format scheduleId yang unik per jadwal (menghindari tabrakan saat jam sama, rute beda).
 class ScheduleIdUtil {
@@ -99,6 +102,9 @@ class DriverScheduleService {
   /// Hapus jadwal yang tanggalnya sudah lewat (sebelum hari ini). Dipanggil saat load jadwal.
   /// Jadwal kemarin akan terhapus ketika driver buka halaman jadwal besok.
   /// [forceFromServer] true = ambil dari server (bukan cache) agar jadwal baru langsung tampil.
+  static const Duration _getSchedulesTimeout = Duration(seconds: 35);
+  static const Duration _updateSchedulesTimeout = Duration(seconds: 25);
+
   static Future<List<Map<String, dynamic>>> cleanupPastSchedules(
     String driverUid, {
     bool forceFromServer = false,
@@ -107,7 +113,8 @@ class DriverScheduleService {
       final doc = await _firestore
           .collection('driver_schedules')
           .doc(driverUid)
-          .get(forceFromServer ? const GetOptions(source: Source.server) : const GetOptions());
+          .get(forceFromServer ? const GetOptions(source: Source.server) : const GetOptions())
+          .timeout(_getSchedulesTimeout);
 
       if (!doc.exists || doc.data() == null) {
         return [];
@@ -131,12 +138,18 @@ class DriverScheduleService {
         await _firestore.collection('driver_schedules').doc(driverUid).update({
           'schedules': kept,
           'updatedAt': FieldValue.serverTimestamp(),
-        });
+        }).timeout(_updateSchedulesTimeout);
       }
 
       return kept;
-    } catch (_) {
-      return [];
+    } on TimeoutException {
+      rethrow;
+    } catch (e, st) {
+      // Jangan kembalikan [] diam-diam: UI akan menganggap tidak ada jadwal padahal gagal baca server.
+      if (kDebugMode) {
+        debugPrint('DriverScheduleService.cleanupPastSchedules: $e\n$st');
+      }
+      rethrow;
     }
   }
 

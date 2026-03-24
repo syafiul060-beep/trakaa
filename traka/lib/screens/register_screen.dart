@@ -7,6 +7,7 @@ import 'login_screen.dart';
 import 'driver_screen.dart';
 import 'penumpang_screen.dart';
 import '../widgets/app_update_wrapper.dart';
+import '../widgets/auth_loading_overlay.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/locale_service.dart';
@@ -59,6 +60,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _checkDeviceAndBlockIfNeeded();
+      if (!mounted) return;
+      // Biar layar pendaftaran sempat terlukis sebelum dialog izin lokasi (terasa lebih responsif).
+      await Future<void>.delayed(const Duration(milliseconds: 350));
       if (!mounted) return;
       await _requestLocationPermissionForAll();
     });
@@ -156,6 +160,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     setState(() => _isLoading = true);
+    await Future<void>.delayed(Duration.zero);
     // Cek apakah nomor sudah terdaftar (untuk UX: arahkan ke Login)
     try {
       final callable = FirebaseFunctions.instance.httpsCallable('checkPhoneExists');
@@ -496,6 +501,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _onSubmit() async {
     if (!_agreeToTerms) return;
     if (!_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
 
     final role = (widget.type == RegisterType.penumpang
             ? UserRole.penumpang
@@ -535,6 +541,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     if (!_phoneOtpSent || _phoneVerificationId == null) {
+      setState(() => _isLoading = true);
+      await Future<void>.delayed(Duration.zero);
       await _sendPhoneOtp();
       return;
     }
@@ -554,6 +562,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     setState(() => _isLoading = true);
+    await Future<void>.delayed(Duration.zero);
 
     try {
       final phoneE164 = toE164(phone);
@@ -644,14 +653,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         ),
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.symmetric(horizontal: context.responsive.horizontalPadding),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+      resizeToAvoidBottomInset: true,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+            child: SafeArea(
+              child: SingleChildScrollView(
+              padding: EdgeInsets.symmetric(horizontal: context.responsive.horizontalPadding),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
                 SizedBox(height: context.responsive.spacing(16)),
                 _RegisterUnderlineField(
                   controller: _nameController,
@@ -883,10 +897,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
+          ),
+          AuthLoadingOverlay(visible: _isLoading),
+        ],
       ),
     );
   }

@@ -67,8 +67,9 @@ class ChatRoomPenumpangScreen extends StatefulWidget {
 class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
   OrderModel? _order;
   bool _orderLoading = true;
-  bool _popupShown = false; // Flag agar tidak double-schedule timer
-  Timer? _kesepakatanPopupTimer; // Timer 3 detik sebelum popup kesepakatan
+  /// Satu stream per room — jangan buat ulang tiap build (StreamBuilder akan
+  /// resubscribe → waiting → loading terus walau pesan sudah ada).
+  late final Stream<List<ChatMessageModel>> _messagesStream;
   Timer?
   _orderRefreshTimer; // Refresh order berkala agar deteksi saat driver kirim harga
   Timer? _passengerLocationUpdateTimer; // Update lokasi penumpang ke order saat menunggu jemput
@@ -91,20 +92,19 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
   // Audio player untuk playback
   final Map<String, AudioPlayer> _audioPlayers = {};
   final Map<String, bool> _audioPlaying = {};
+  /// Cegah double-tap «Setujui & Lanjutkan» → dua kali setPassengerAgreed + pesan chat duplikat.
+  bool _submittingPassengerSetuju = false;
 
   @override
   void initState() {
     super.initState();
+    _messagesStream = ChatService.streamMessages(widget.orderId);
     _driverPhotoUrl = widget.driverPhotoUrl;
     _focusNode.addListener(_onFocusChange);
     _loadOrder();
-    // Refresh order tiap 5 detik agar ketika driver kirim kesepakatan harga kita deteksi dan jadwalkan popup 3 detik
+    // Refresh order tiap 5 detik agar banner tawaran harga & status order terbaru
     _orderRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
-      if (_order != null &&
-          _order!.agreedPrice != null &&
-          !_order!.canPassengerAgree)
-        return; // sudah setuju, stop refresh
       _loadOrder();
     });
     if (widget.driverPhotoUrl == null || widget.driverPhotoUrl!.isEmpty) {
@@ -143,9 +143,9 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     ChatBadgeService.instance.markAsReadOptimistic(widget.orderId);
     // Update lastReadAt segera (tanpa tunggu markAsDelivered/Read)
     if (widget.isReceiver) {
-      await OrderService.setReceiverLastReadAt(widget.orderId);
+      await OrderService.setReceiverLastReadAtReliable(widget.orderId);
     } else {
-      await OrderService.setPassengerLastReadAt(widget.orderId);
+      await OrderService.setPassengerLastReadAtReliable(widget.orderId);
     }
     // Mark delivered & read di background (untuk status pesan)
     unawaited(ChatService.markAsDelivered(widget.orderId));
@@ -165,7 +165,6 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
 
   @override
   void dispose() {
-    _kesepakatanPopupTimer?.cancel();
     _orderRefreshTimer?.cancel();
     _passengerLocationUpdateTimer?.cancel();
     _focusNode.removeListener(_onFocusChange);
@@ -184,33 +183,31 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
   Future<void> _loadOrder() async {
     final order = await OrderService.getOrderById(widget.orderId);
     if (mounted) {
-      final shouldSchedulePopup =
-          order != null &&
-          order.canPassengerAgree &&
-          order.agreedPrice != null &&
-          !_popupShown;
-
       setState(() {
         _order = order;
         _orderLoading = false;
       });
-
-      // Driver sudah kirim harga: jadwalkan popup konfirmasi kesepakatan setelah 3 detik, muncul terus sampai penumpang setuju
-      if (shouldSchedulePopup) {
-        _scheduleKesepakatanPopup();
-      }
 
       // Order agreed & belum dijemput: mulai update lokasi penumpang ke Firestore (untuk live tracking driver)
       _startOrStopPassengerLocationUpdates();
     }
   }
 
+  bool _shouldPushPassengerLocationToOrder(OrderModel? order) {
+    if (order == null || widget.isReceiver) return false;
+    if (order.orderType != OrderModel.typeTravel) return false;
+    if (order.isCompleted) return false;
+    if (order.status == OrderService.statusAgreed && !order.hasDriverScannedPassenger) {
+      return true;
+    }
+    if (order.status == OrderService.statusPickedUp) return true;
+    return false;
+  }
+
   /// Mulai atau hentikan timer update lokasi penumpang ke order.
   void _startOrStopPassengerLocationUpdates() {
     final order = _order;
-    final shouldUpdate = order != null &&
-        order.status == OrderService.statusAgreed &&
-        !order.hasDriverScannedPassenger;
+    final shouldUpdate = _shouldPushPassengerLocationToOrder(order);
 
     if (shouldUpdate && _passengerLocationUpdateTimer == null) {
       _passengerLocationUpdateTimer =
@@ -227,10 +224,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
   /// Ambil lokasi saat ini dan update ke order jika berubah ≥50m.
   Future<void> _updatePassengerLocationToOrder() async {
     if (!mounted || _order == null) return;
-    if (_order!.status != OrderService.statusAgreed ||
-        _order!.hasDriverScannedPassenger) {
-      return;
-    }
+    if (!_shouldPushPassengerLocationToOrder(_order)) return;
     try {
       final result = await LocationService.getCurrentPositionWithMockCheck();
       if (result.isFakeGpsDetected) {
@@ -255,23 +249,6 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
         }
       }
     } catch (_) {}
-  }
-
-  /// Jadwalkan popup kesepakatan 3 detik lagi; setelah tampil, jika penumpang tutup (Batal) akan dijadwalkan lagi.
-  void _scheduleKesepakatanPopup() {
-    _kesepakatanPopupTimer?.cancel();
-    _popupShown = true;
-    _kesepakatanPopupTimer = Timer(const Duration(seconds: 3), () {
-      _kesepakatanPopupTimer = null;
-      if (!mounted) return;
-      if (_order == null ||
-          !_order!.canPassengerAgree ||
-          _order!.agreedPrice == null) {
-        _popupShown = false;
-        return;
-      }
-      _showDialogKesepakatanPenumpangAuto();
-    });
   }
 
   /// Format alamat: hanya kecamatan dan kabupaten, tanpa provinsi.
@@ -748,60 +725,61 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     });
   }
 
-  /// Dialog Kesepakatan otomatis: muncul 3 detik setelah driver kirim harga, muncul terus sampai penumpang setuju.
-  void _showDialogKesepakatanPenumpangAuto() {
+  /// Konfirmasi penolakan tawaran (setelah tutup bottom sheet).
+  Future<void> _showTolakKesepakatanConfirmDialog() async {
+    final yes = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx2) => AlertDialog(
+        title: const Text('Tolak tawaran harga?'),
+        content: const Text(
+          'Tawaran ini tidak akan disetujui. Anda bisa lanjut chat untuk nego; '
+          'driver dapat mengirim tawaran harga baru. Pesanan tidak otomatis dibatalkan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx2, false),
+            child: const Text('Tidak'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx2, true),
+            child: const Text('Ya'),
+          ),
+        ],
+      ),
+    );
+    if (yes == true && mounted && _order != null) {
+      await OrderService.resetAgreementByPassenger(_order!.id);
+      await ChatService.sendMessage(
+        _order!.id,
+        'Penumpang menolak tawaran harga ini dan ingin melanjutkan diskusi / tawaran baru.',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Pesan ke driver sudah terkirim. Lanjutkan di chat untuk nego; '
+              'driver bisa mengirim tawaran harga baru. Pesanan tetap berjalan sampai Anda atau driver membatalkan.',
+            ),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Bottom sheet: tinjau kesepakatan (menggantikan popup otomatis berulang + banner jangkar).
+  void _showKesepakatanBottomSheet() {
     if (_order == null ||
         !_order!.canPassengerAgree ||
-        _order!.agreedPrice == null)
+        _order!.agreedPrice == null) {
       return;
+    }
     final order = _order!;
     final harga = order.agreedPrice!;
     bool checkboxValue = false;
 
-    void onBatalTapped() {
-      Navigator.of(context).pop(); // Tutup dialog kesepakatan dulu
-      showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx2) => AlertDialog(
-          title: const Text('Konfirmasi'),
-          content: const Text(
-            'Apakah Anda ingin membatalkan kesepakatan ini / ingin membuat kesepakatan baru?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx2, false),
-              child: const Text('Tidak'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx2, true),
-              child: const Text('Ya'),
-            ),
-          ],
-        ),
-      ).then((yes) async {
-        if (yes == true && mounted && _order != null) {
-          await OrderService.resetAgreementByPassenger(_order!.id);
-          await ChatService.sendMessage(
-            _order!.id,
-            'Penumpang membatalkan kesepakatan dan ingin membuat kesepakatan baru.',
-          );
-          if (mounted) {
-            _popupShown = true; // Agar popup tidak muncul lagi
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Pesan telah dikirim ke driver. Driver dapat mengirim kesepakatan harga baru.',
-                ),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
-        }
-      });
-    }
-
-    // Teks dinamis sesuai jenis pesanan (penumpang sendiri / kerabat / kirim barang)
     final String dialogTitle = order.isKirimBarang
         ? 'Konfirmasi Tawaran Biaya Pengiriman'
         : order.isTravelKerabat
@@ -828,173 +806,266 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     final hargaFormatted = harga.toStringAsFixed(0).replaceAllMapped(
         RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
 
-    showDialog<void>(
+    showModalBottomSheet<void>(
       context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) {
-          return PopScope(
-            canPop: false,
-            child: AlertDialog(
-              titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-              contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
-              actionsPadding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-              title: SizedBox(
-                width: double.maxFinite,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      dialogTitle,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      textAlign: TextAlign.left,
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .primaryContainer
-                            .withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        order.orderTypeDisplayLabel,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              content: SingleChildScrollView(
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) {
+        final maxH = MediaQuery.of(context).size.height * 0.92;
+        final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+        return Padding(
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: StatefulBuilder(
+            builder: (context, setSheetState) {
+              return ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxH),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            dialogTitle,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer
+                                  .withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              order.orderTypeDisplayLabel,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onPrimaryContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              pengantar,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              widget.driverName,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            if (order.originText.isNotEmpty) ...[
+                              Text(
+                                'Dari: ${_formatAlamatKecamatanKabupaten(order.originText)}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                            ],
+                            if (order.destText.isNotEmpty) ...[
+                              Text(
+                                'Tujuan: ${_formatAlamatKecamatanKabupaten(order.destText)}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+                            Text(
+                              '$labelHarga: Rp $hargaFormatted',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              catatanBayar,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            CheckboxListTile(
+                              value: checkboxValue,
+                              onChanged: (v) {
+                                setSheetState(() {
+                                  checkboxValue = v ?? false;
+                                });
+                              },
+                              title: Text(
+                                checkboxText,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            FilledButton(
+                              onPressed: checkboxValue
+                                  ? () {
+                                      Navigator.pop(sheetCtx);
+                                      _onSetujuiKesepakatan();
+                                    }
+                                  : null,
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                              ),
+                              child: const Text('Setujui & Lanjutkan'),
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(sheetCtx);
+                                WidgetsBinding.instance
+                                    .addPostFrameCallback((_) async {
+                                  if (!mounted) return;
+                                  await _showTolakKesepakatanConfirmDialog();
+                                });
+                              },
+                              child: const Text(
+                                'Tolak / minta tawaran baru',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  /// Banner di atas input: tap untuk membuka bottom sheet kesepakatan.
+  Widget _buildKesepakatanBanner(BuildContext context) {
+    final order = _order;
+    if (order == null ||
+        _orderLoading ||
+        !order.canPassengerAgree ||
+        order.agreedPrice == null) {
+      return const SizedBox.shrink();
+    }
+    final harga = order.agreedPrice!;
+    final hargaFormatted = harga.toStringAsFixed(0).replaceAllMapped(
+        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: cs.primaryContainer.withValues(alpha: 0.55),
+      child: InkWell(
+        onTap: () => _showKesepakatanBottomSheet(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(Icons.handshake_outlined, color: cs.primary, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      pengantar,
+                      'Tawaran harga dari driver',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: cs.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Rp $hargaFormatted · Ketuk untuk meninjau & setujui',
                       style: TextStyle(
                         fontSize: 13,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        color: cs.onPrimaryContainer.withValues(alpha: 0.85),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.maxFinite,
-                      child: Text(
-                        widget.driverName,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (order.originText.isNotEmpty) ...[
-                      SizedBox(
-                        width: double.maxFinite,
-                        child: Text(
-                          'Dari: ${_formatAlamatKecamatanKabupaten(order.originText)}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                    ],
-                    if (order.destText.isNotEmpty) ...[
-                      SizedBox(
-                        width: double.maxFinite,
-                        child: Text(
-                          'Tujuan: ${_formatAlamatKecamatanKabupaten(order.destText)}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                    SizedBox(
-                      width: double.maxFinite,
-                      child: Text(
-                        '$labelHarga: Rp $hargaFormatted',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      catatanBayar,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    CheckboxListTile(
-                      value: checkboxValue,
-                      onChanged: (v) {
-                        setDialogState(() {
-                          checkboxValue = v ?? false;
-                        });
-                      },
-                      title: Text(
-                        checkboxText,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
                     ),
                   ],
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => onBatalTapped(),
-                  child: const Text('Tolak'),
-                ),
-                FilledButton(
-                  onPressed: checkboxValue
-                      ? () {
-                          Navigator.pop(dialogContext);
-                          _onSetujuiKesepakatan();
-                        }
-                      : null,
-                  child: const Text('Setujui & Lanjutkan'),
-                ),
-              ],
-            ),
-          );
-        },
+              Icon(Icons.chevron_right, color: cs.onPrimaryContainer),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   Future<void> _onSetujuiKesepakatan() async {
     if (_order == null) return;
-
+    if (_submittingPassengerSetuju) return;
+    _submittingPassengerSetuju = true;
+    try {
     final hasPermission = await LocationService.requestPermission();
     if (!hasPermission) {
       if (mounted) {
@@ -1048,7 +1119,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     } catch (_) {}
 
     setState(() {});
-    final (ok, barcodePayload) = await OrderService.setPassengerAgreed(
+    final (ok, _, kirimPesanSetuju) = await OrderService.setPassengerAgreed(
       _order!.id,
       passengerLat: position.latitude,
       passengerLng: position.longitude,
@@ -1057,20 +1128,26 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     if (!mounted) return;
     setState(() {});
     if (ok) {
-      _popupShown = false;
-      await ChatService.sendMessage(
-        _order!.id,
-        'Penumpang sudah mensetujui kesepakatan.',
-      );
+      if (kirimPesanSetuju) {
+        await ChatService.sendMessage(
+          _order!.id,
+          'Penumpang sudah mensetujui kesepakatan.',
+        );
+      }
       // Barcode tidak dikirim ke chat. Driver tampilkan barcode di Data Order untuk di-scan penumpang.
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Kesepakatan berhasil. Pesanan aktif di menu Pesanan.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (kirimPesanSetuju) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Kesepakatan berhasil. Pesanan aktif di menu Pesanan.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
       _loadOrder();
+    }
+    } finally {
+      _submittingPassengerSetuju = false;
     }
   }
 
@@ -1229,7 +1306,9 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                 if (!canUse) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('$reason. Gunakan telepon biasa jika driver punya no. telepon.'),
+                      content: Text(
+                        '$reason Gunakan chat atau telepon jika nomor tersedia di profil.',
+                      ),
                       backgroundColor: Colors.orange,
                     ),
                   );
@@ -1324,6 +1403,40 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
           ),
           child: Column(
             children: [
+              if (_order != null &&
+                  _order!.orderType == OrderModel.typeTravel &&
+                  !widget.isReceiver &&
+                  (_order!.status == OrderService.statusAgreed ||
+                      _order!.status == OrderService.statusPickedUp) &&
+                  !_order!.isCompleted)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  color: Colors.blue.shade50,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.location_on_outlined,
+                        color: Colors.blue.shade800,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          TrakaL10n.of(context).pickupOperationalPassengerKeepApp,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               if (_order != null && _order!.hasDriverScannedPassenger)
                 Container(
                   width: double.infinity,
@@ -1354,9 +1467,20 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                 ),
               Expanded(
                 child: StreamBuilder<List<ChatMessageModel>>(
-                  stream: ChatService.streamMessages(widget.orderId),
+                  stream: _messagesStream,
                   builder: (context, snap) {
-                    // Loading hanya saat benar-benar masih waiting pertama kali dan belum ada data
+                    if (snap.hasError) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            'Gagal memuat pesan. Tarik untuk tutup lalu buka lagi.\n${snap.error}',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      );
+                    }
+                    // Loading hanya saat benar-benar belum ada snapshot pertama
                     if (snap.connectionState == ConnectionState.waiting &&
                         !snap.hasData) {
                       return const Center(child: CircularProgressIndicator());
@@ -1457,6 +1581,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                                   onToggleAudioPlayback: _toggleAudioPlayback,
                                   onOpenFullScreenImage: (url) =>
                                       _openFullScreenImage(url),
+                                  driverUid: widget.driverUid,
                                 ),
                               ],
                             ),
@@ -1467,6 +1592,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                   },
                 ),
               ),
+              _buildKesepakatanBanner(context),
               // Indikator rekaman audio
               if (_isRecording)
                 Container(
@@ -1567,7 +1693,6 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
-              // Tombol Kesepakatan tidak ditampilkan lagi karena sudah diganti dengan popup otomatis
             ],
           ),
         ),

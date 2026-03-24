@@ -120,9 +120,9 @@ export default function Violations() {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tanggal</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pengguna</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipe</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pesanan</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jumlah</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
             </tr>

@@ -1,11 +1,25 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/app_update_service.dart';
+import '../services/performance_trace_service.dart';
 import '../widgets/traka_l10n_scope.dart';
 
 /// Layar update wajib ketika versi app < minVersion dari Firestore.
-class ForceUpdateScreen extends StatelessWidget {
+class ForceUpdateScreen extends StatefulWidget {
   const ForceUpdateScreen({super.key});
+
+  @override
+  State<ForceUpdateScreen> createState() => _ForceUpdateScreenState();
+}
+
+class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(PerformanceTraceService.stopStartupToInteractive());
+  }
 
   @override
   Widget build(BuildContext context) {

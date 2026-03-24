@@ -1,3 +1,5 @@
+import 'dart:math' show min;
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -142,8 +144,8 @@ class PenumpangQuickActionsRow extends StatelessWidget {
               Text(
                 TrakaL10n.of(context).driverNearbyRadius,
                 style: TextStyle(
-                  fontSize: 10,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -177,66 +179,90 @@ class PenumpangSearchBar extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!visible) return const SizedBox.shrink();
     final r = context.responsive;
+    final w = MediaQuery.sizeOf(context).width;
+    // Bar tidak full-bleed: sisi kiri/kanan pakai IgnorePointer agar tap ke marker di peta tidak tertangkap InkWell.
+    final maxBarW = min(380.0, (w - 40).clamp(200.0, 900.0));
+
     return Positioned(
-      left: r.horizontalPadding,
-      right: r.horizontalPadding,
+      left: 0,
+      right: 0,
       bottom: 80,
-      child: Material(
-        elevation: 8,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: EdgeInsets.all(r.spacing(16)),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
-              ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: IgnorePointer(
+              ignoring: true,
+              child: const SizedBox.shrink(),
             ),
-            child: Row(
-              children: [
-                Icon(Icons.search, color: AppTheme.primary, size: 24),
-                SizedBox(width: r.spacing(12)),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+          ),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxBarW),
+            child: Material(
+              elevation: 8,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: EdgeInsets.all(r.spacing(16)),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
                     children: [
-                      Text(
-                        currentLocationText,
-                        style: TextStyle(
-                          fontSize: r.fontSize(12),
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      Icon(Icons.search, color: AppTheme.primary, size: 24),
+                      SizedBox(width: r.spacing(12)),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              currentLocationText,
+                              style: TextStyle(
+                                fontSize: r.fontSize(12),
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              destinationText.isEmpty
+                                  ? 'Masukkan tujuan (contoh: Bandara, Terminal)'
+                                  : destinationText,
+                              style: TextStyle(
+                                fontSize: r.fontSize(14),
+                                fontWeight: FontWeight.w500,
+                                color: destinationText.isEmpty
+                                    ? Theme.of(context).colorScheme.onSurfaceVariant
+                                    : Theme.of(context).colorScheme.onSurface,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        destinationText.isEmpty
-                            ? 'Masukkan tujuan (contoh: Bandara, Terminal)'
-                            : destinationText,
-                        style: TextStyle(
-                          fontSize: r.fontSize(14),
-                          fontWeight: FontWeight.w500,
-                          color: destinationText.isEmpty
-                              ? Theme.of(context).colorScheme.onSurfaceVariant
-                              : Theme.of(context).colorScheme.onSurface,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      Icon(Icons.arrow_forward_ios, size: 16, color: AppTheme.primary),
                     ],
                   ),
                 ),
-                Icon(Icons.arrow_forward_ios, size: 16, color: AppTheme.primary),
-              ],
+              ),
             ),
           ),
-        ),
+          Expanded(
+            child: IgnorePointer(
+              ignoring: true,
+              child: const SizedBox.shrink(),
+            ),
+          ),
+        ],
       ),
     );
   }

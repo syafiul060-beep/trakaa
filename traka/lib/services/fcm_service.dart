@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -39,6 +40,27 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     if (!_isDuplicateAppError(e)) rethrow;
   }
   try {
+    final dataStr = message.data.map((k, v) => MapEntry(k, v?.toString() ?? ''));
+    // Panggilan suara: data-only dari server + notifikasi lokal (fullScreenIntent) agar
+    // tidak tertunda saat Doze/layar mati (bukan hanya saat buka layar).
+    if (dataStr['type'] == 'voice_call') {
+      await FcmService.showVoiceCallBackgroundNotification(dataStr);
+      return;
+    }
+    if (dataStr['type'] == 'chat') {
+      await FcmService.showChatBackgroundNotification(dataStr);
+      return;
+    }
+    if (dataStr['type'] == 'admin_verification') {
+      final title = dataStr['title'] ?? 'Permintaan verifikasi';
+      final body = dataStr['body'] ??
+          'Admin meminta dokumen atau data tambahan. Buka Profil di aplikasi.';
+      await RouteNotificationService.showAdminVerificationNotification(
+        title: title,
+        body: body,
+      );
+      return;
+    }
     // Jika pesan punya notification payload, sistem Android menampilkan otomatis.
     if (message.notification != null) return;
     final data = message.data;
@@ -99,7 +121,16 @@ Future<void> _showBackgroundNotification(String title, String body) async {
 /// Service FCM: simpan token ke Firestore, tampilkan notifikasi saat foreground.
 class FcmService {
   static const String _channelId = 'traka_chat';
+  /// Saluran khusus panggilan (prioritas max + fullScreenIntent di background).
+  static const String _voiceChannelId = 'traka_voice_calls';
   static const int _chatNotificationId = 2001;
+  static const int _voiceNotificationIdBase = 3001;
+
+  /// ID unik per order agar notifikasi chat tidak saling timpa antar pesanan.
+  static int _notificationIdForChatOrder(String orderId) {
+    if (orderId.isEmpty) return _chatNotificationId;
+    return 2000000 + (orderId.hashCode.abs() % 500000);
+  }
 
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
@@ -157,28 +188,239 @@ class FcmService {
       },
     );
     if (Platform.isAndroid) {
-      await _localNotifications
+      final androidPlugin = _localNotifications
           .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin
-          >()
-          ?.createNotificationChannel(
-            const AndroidNotificationChannel(
-              _channelId,
-              'Chat',
-              description: 'Notifikasi chat dari penumpang',
-              importance: Importance.max,
-              enableVibration: true,
-              playSound: true,
-            ),
-          );
+          >();
+      await androidPlugin?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _channelId,
+          'Chat',
+          description: 'Notifikasi chat dari penumpang',
+          importance: Importance.max,
+          enableVibration: true,
+          playSound: true,
+        ),
+      );
+      await androidPlugin?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _voiceChannelId,
+          'Panggilan suara',
+          description: 'Panggilan masuk dari penumpang atau driver',
+          importance: Importance.max,
+          enableVibration: true,
+          playSound: true,
+        ),
+      );
     }
+  }
+
+  /// Dipanggil dari isolate background saat FCM data-only `type: chat` (Android).
+  static Future<void> showChatBackgroundNotification(
+    Map<String, String> data,
+  ) async {
+    if (!Platform.isAndroid) return;
+    final title = data['title'] ?? data['senderName'] ?? 'Chat';
+    final body = data['body'] ?? data['message'] ?? 'Pesan baru';
+    final plugin = FlutterLocalNotificationsPlugin();
+    const android = AndroidInitializationSettings(_notificationIcon);
+    await plugin.initialize(const InitializationSettings(android: android));
+    await plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            _channelId,
+            'Chat',
+            description: 'Notifikasi chat dari penumpang',
+            importance: Importance.max,
+            enableVibration: true,
+            playSound: true,
+          ),
+        );
+    final payloadStr = jsonEncode(data);
+    final nid = _notificationIdForChatOrder(data['orderId'] ?? '');
+    await plugin.show(
+      nid,
+      title,
+      body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          'Chat',
+          channelDescription: 'Notifikasi chat dari penumpang',
+          importance: Importance.max,
+          priority: Priority.max,
+          visibility: NotificationVisibility.public,
+          category: AndroidNotificationCategory.message,
+          icon: _notificationIcon,
+          enableVibration: true,
+          playSound: true,
+        ),
+      ),
+      payload: payloadStr,
+    );
+  }
+
+  /// Dipanggil dari isolate background saat FCM data-only `type: voice_call` (Android).
+  static Future<void> showVoiceCallBackgroundNotification(
+    Map<String, String> data,
+  ) async {
+    if (!Platform.isAndroid) return;
+    final title = data['title'] ?? 'Panggilan suara masuk';
+    final body = data['body'] ??
+        '${data['callerName'] ?? 'Pemanggil'} memanggil Anda. Buka aplikasi untuk menerima.';
+    final plugin = FlutterLocalNotificationsPlugin();
+    const android = AndroidInitializationSettings(_notificationIcon);
+    await plugin.initialize(const InitializationSettings(android: android));
+    await plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            _voiceChannelId,
+            'Panggilan suara',
+            description: 'Panggilan masuk dari penumpang atau driver',
+            importance: Importance.max,
+            enableVibration: true,
+            playSound: true,
+          ),
+        );
+    final payloadStr = jsonEncode(data);
+    final orderId = data['orderId'] ?? '';
+    final nid = _voiceNotificationIdBase +
+        (orderId.isEmpty ? 0 : orderId.hashCode.abs() % 900000);
+    await plugin.show(
+      nid,
+      title,
+      body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _voiceChannelId,
+          'Panggilan suara',
+          channelDescription: 'Panggilan masuk dari penumpang atau driver',
+          importance: Importance.max,
+          priority: Priority.max,
+          visibility: NotificationVisibility.public,
+          category: AndroidNotificationCategory.call,
+          fullScreenIntent: true,
+          icon: _notificationIcon,
+          enableVibration: true,
+          playSound: true,
+          ongoing: false,
+          autoCancel: true,
+        ),
+      ),
+      payload: payloadStr,
+    );
+  }
+
+  static Future<void> _showChatForegroundNotification(
+    Map<String, String> dataStr,
+  ) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await RouteNotificationService.requestPermissionIfNeeded();
+    } catch (_) {}
+    final title = dataStr['title'] ?? dataStr['senderName'] ?? 'Chat';
+    final body = dataStr['body'] ?? dataStr['message'] ?? 'Pesan baru';
+    final payloadStr = jsonEncode(dataStr);
+    final nid = _notificationIdForChatOrder(dataStr['orderId'] ?? '');
+    await _localNotifications.show(
+      nid,
+      title,
+      body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          'Chat',
+          channelDescription: 'Notifikasi chat dari penumpang',
+          importance: Importance.max,
+          priority: Priority.max,
+          visibility: NotificationVisibility.public,
+          category: AndroidNotificationCategory.message,
+          icon: _notificationIcon,
+          enableVibration: true,
+          playSound: true,
+        ),
+      ),
+      payload: payloadStr,
+    );
+  }
+
+  static Future<void> _showVoiceCallForegroundNotification(
+    Map<String, String> dataStr,
+  ) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await RouteNotificationService.requestPermissionIfNeeded();
+    } catch (_) {}
+    final title = dataStr['title'] ?? 'Panggilan suara masuk';
+    final body = dataStr['body'] ??
+        '${dataStr['callerName'] ?? 'Pemanggil'} memanggil Anda. Buka aplikasi untuk menerima.';
+    final payloadStr = jsonEncode(dataStr);
+    final orderId = dataStr['orderId'] ?? '';
+    final nid = _voiceNotificationIdBase +
+        (orderId.isEmpty ? 0 : orderId.hashCode.abs() % 900000);
+    await _localNotifications.show(
+      nid,
+      title,
+      body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _voiceChannelId,
+          'Panggilan suara',
+          channelDescription: 'Panggilan masuk dari penumpang atau driver',
+          importance: Importance.max,
+          priority: Priority.max,
+          visibility: NotificationVisibility.public,
+          category: AndroidNotificationCategory.call,
+          fullScreenIntent: false,
+          icon: _notificationIcon,
+          enableVibration: true,
+          playSound: true,
+          ongoing: false,
+          autoCancel: true,
+        ),
+      ),
+      payload: payloadStr,
+    );
   }
 
   static void _onMessageForeground(RemoteMessage message) {
     try {
-      final notification = message.notification;
       final data = message.data;
-      final title = notification?.title ?? data['passengerName'] ?? data['title'] ?? 'Chat';
+      final dataStr = data.map((k, v) => MapEntry(k, v?.toString() ?? ''));
+      if (dataStr['type'] == 'voice_call') {
+        unawaited(_showVoiceCallForegroundNotification(dataStr));
+        return;
+      }
+      if (dataStr['type'] == 'chat') {
+        unawaited(_showChatForegroundNotification(dataStr));
+        return;
+      }
+      if (dataStr['type'] == 'admin_verification') {
+        final notification = message.notification;
+        final title = notification?.title ??
+            data['title'] ??
+            'Permintaan verifikasi';
+        final body = notification?.body ??
+            data['body'] ??
+            'Buka Profil untuk melengkapi data.';
+        unawaited(
+          RouteNotificationService.showAdminVerificationNotification(
+            title: title,
+            body: body,
+          ),
+        );
+        return;
+      }
+      final notification = message.notification;
+      final title = notification?.title ??
+          data['passengerName'] ??
+          data['title'] ??
+          data['senderName'] ??
+          'Chat';
       final body = notification?.body ?? data['body'] ?? data['message'] ?? 'Pesan baru';
       final payload = data.map((k, v) => MapEntry(k, v?.toString() ?? ''));
       _showLocalNotification(title, body, payload: payload.isNotEmpty ? payload : null);
@@ -194,6 +436,7 @@ class FcmService {
     String title,
     String body, {
     Map<String, String>? payload,
+    int? notificationId,
   }) async {
     if (!Platform.isAndroid) return;
     try {
@@ -217,8 +460,9 @@ class FcmService {
       final payloadStr = payload != null && payload.isNotEmpty
           ? jsonEncode(payload)
           : null;
+      final nid = notificationId ?? _chatNotificationId;
       await _localNotifications.show(
-        _chatNotificationId,
+        nid,
         title,
         body,
         details,

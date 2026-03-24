@@ -1,10 +1,13 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../config/app_constants.dart';
 import '../services/car_icon_service.dart';
+import '../services/order_service.dart';
 import '../services/map_style_service.dart';
 import '../services/driver_status_service.dart';
 import '../services/geocoding_service.dart';
@@ -15,6 +18,7 @@ import '../models/order_model.dart';
 import '../services/directions_service.dart';
 import 'traka_l10n_scope.dart';
 import '../services/ferry_distance_service.dart';
+import '../services/camera_follow_engine.dart';
 import '../services/route_utils.dart';
 import '../utils/time_formatter.dart';
 import '../utils/app_logger.dart';
@@ -68,8 +72,10 @@ class PassengerTrackMapWidget extends StatefulWidget {
   State<PassengerTrackMapWidget> createState() => _PassengerTrackMapWidgetState();
 }
 
-class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
+class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
+    with WidgetsBindingObserver {
   GoogleMapController? _mapController;
+  final CameraFollowEngine _cameraFollowEngine = CameraFollowEngine();
   StreamSubscription<Map<String, dynamic>?>? _driverSub;
   List<LatLng>? _routePolyline;
   LatLng? _displayedPosition;
@@ -92,6 +98,11 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
   bool _invalidCoordinates = false;
   BitmapDescriptor? _carIconRed;
   BitmapDescriptor? _carIconGreen;
+  PremiumPassengerCarIconSet? _premiumCarIcons;
+  /// Diselaraskan dengan [_trackingZoom] sebagai zoom kerja map lacak.
+  double _mapZoomForCarIcons = 18.0;
+  int _carIconZoomBucket = CarIconService.passengerMapZoomBucket(18.0);
+  Timer? _carIconZoomDebounce;
   BitmapDescriptor? _shipIcon;
   FerryStatus? _ferryStatus;
   DateTime? _lastFerryCheckAt;
@@ -112,7 +123,7 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
   /// Kecepatan estimasi (km/jam) dari pergerakan terakhir. Null = pakai default 40.
   double? _estimatedSpeedKmh;
   bool _isRefreshing = false;
-  /// Target kamera terakhir untuk durasi animasi proporsional (Tahap 3).
+  /// Target kamera terakhir yang berhasil di-animate (disinkronkan dengan engine).
   LatLng? _lastCameraTarget;
   /// Kamera mengikuti driver. False = user pan/zoom manual, tampilkan tombol Fokus.
   bool _cameraTrackingEnabled = true;
@@ -120,7 +131,67 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
   bool _suppressNextCameraMoveStarted = false;
 
   void _focusOnCar() {
+    _cameraFollowEngine.resetThrottle();
+    _lastCameraTarget = null;
     setState(() => _cameraTrackingEnabled = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncCameraFollow(force: true);
+    });
+  }
+
+  /// Chase cam: sama sumber dengan marker interpolasi — bukan dari [build] tiap frame.
+  void _syncCameraFollow({bool force = false}) {
+    if (!mounted || _mapController == null || !_cameraTrackingEnabled) return;
+    final pos = _displayedPosition ?? _targetPosition;
+    if (pos == null) return;
+
+    final polyline = _routePolyline;
+    final cameraTarget = (polyline != null && polyline.length >= 2)
+        ? RouteUtils.pointAheadOnPolyline(
+            pos,
+            polyline,
+            _cameraOffsetAheadMeters,
+            maxDistanceMeters: 400,
+          )
+        : null;
+    final target = cameraTarget ??
+        RouteUtils.offsetPoint(
+          pos,
+          _smoothedBearing,
+          80.0,
+        );
+
+    final cameraMoveDistanceM = _lastCameraTarget != null
+        ? Geolocator.distanceBetween(
+            _lastCameraTarget!.latitude,
+            _lastCameraTarget!.longitude,
+            target.latitude,
+            target.longitude,
+          )
+        : 999.0;
+
+    if (!force && cameraMoveDistanceM < 5) {
+      _lastCameraTarget = target;
+      return;
+    }
+
+    final preferredDuration = _cameraDurationForDistance(cameraMoveDistanceM);
+    _suppressNextCameraMoveStarted = true;
+    final scheduled = _cameraFollowEngine.tryAnimateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: target,
+          bearing: _smoothedBearing,
+          tilt: _trackingTilt,
+          zoom: _trackingZoom,
+        ),
+      ),
+      duration: preferredDuration,
+      force: force,
+    );
+    if (scheduled) {
+      _lastCameraTarget = target;
+    }
   }
 
   /// Durasi animasi kamera: proporsional dengan jarak perpindahan.
@@ -133,6 +204,7 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadCarIcons();
     _loadShipIcon();
     _driverSub = DriverStatusService.streamDriverStatusData(widget.driverUid).listen(
@@ -145,22 +217,64 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _driverSub?.cancel();
     _interpolationTimer?.cancel();
+    _carIconZoomDebounce?.cancel();
     _mapController?.dispose();
     super.dispose();
   }
 
-  /// Asset: mobil menghadap ke bawah (selatan). rotation = (bearing + 180) % 360.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      _pullLatestDriverStatusOnResume();
+    }
+  }
+
+  /// Setelah multitasking/background, Firestore stream bisa tertunda — ambil snapshot sekali.
+  Future<void> _pullLatestDriverStatusOnResume() async {
+    if (!mounted) return;
+    try {
+      final d = await DriverStatusService.fetchDriverStatusOnce(widget.driverUid);
+      if (mounted) _onDriverStatus(d);
+    } catch (_) {}
+  }
+
+  Future<void> _syncCarIconsZoomFromMap() async {
+    final c = _mapController;
+    if (!mounted || c == null) return;
+    final z = await c.getZoomLevel();
+    if (!mounted) return;
+    final b = CarIconService.passengerMapZoomBucket(z);
+    if (b == _carIconZoomBucket) return;
+    _carIconZoomBucket = b;
+    _mapZoomForCarIcons = z;
+    _carIconZoomDebounce?.cancel();
+    _carIconZoomDebounce = Timer(const Duration(milliseconds: 180), () {
+      if (mounted) unawaited(_loadCarIcons());
+    });
+  }
+
+  /// Premium + legacy untuk marker lacak; ukuran mengikuti zoom peta.
   Future<void> _loadCarIcons() async {
     try {
+      final premium = await CarIconService.loadPremiumPassengerCarIcons(
+        context: context,
+        baseSize: 12,
+        padding: 4,
+        mapZoom: _mapZoomForCarIcons,
+      );
       final result = await CarIconService.loadCarIcons(
         context: context,
-        baseSize: 14,
+        baseSize: 12,
         padding: 4,
         forPassenger: true,
+        mapZoom: _mapZoomForCarIcons,
       );
       if (mounted) {
+        _premiumCarIcons = premium;
         _carIconRed = result.red;
         _carIconGreen = result.green;
         setState(() {});
@@ -201,6 +315,12 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
         _routePolyline = result.points;
         _lastRouteFetchOrigin = LatLng(driverLat, driverLng);
         _lastRouteFetchAt = DateTime.now();
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _cameraTrackingEnabled) {
+          _cameraFollowEngine.resetThrottle();
+          _syncCameraFollow(force: true);
+        }
       });
     }
   }
@@ -324,6 +444,9 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
         );
         _smoothedBearing = _displayedBearing;
       }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncCameraFollow(force: true);
+      });
     } else {
       _targetPosition = rawLatLng;
       _interpEndSeg = targetSeg;
@@ -457,7 +580,12 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
         _displayedBearing = b;
         _smoothedBearing = _smoothBearing(_smoothedBearing, b);
       }
-      if (mounted) setState(() {});
+      if (mounted) {
+        if (_cameraTrackingEnabled) {
+          _syncCameraFollow();
+        }
+        setState(() {});
+      }
     });
   }
 
@@ -685,15 +813,25 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
       driverIcon = _shipIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan);
       driverSnippet = 'Sedang di kapal laut';
     } else {
-      driverIcon = (isMoving ? _carIconGreen : _carIconRed) ??
-          BitmapDescriptor.defaultMarkerWithHue(
-            isMoving ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed,
-          );
+      final orderActive = widget.order.status == OrderService.statusAgreed ||
+          widget.order.status == OrderService.statusPickedUp;
+      final premium = _premiumCarIcons;
+      if (premium != null) {
+        driverIcon = orderActive ? premium.blue : premium.green;
+      } else {
+        driverIcon = (isMoving ? _carIconGreen : _carIconRed) ??
+            BitmapDescriptor.defaultMarkerWithHue(
+              isMoving ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed,
+            );
+      }
       driverSnippet = isMoving ? 'Sedang bergerak' : 'Berhenti';
     }
 
-    // Rotasi icon: default selatan (180°), rotation = (bearing + 180) % 360. Pakai smoothed agar halus.
-    final rotation = (_smoothedBearing + 180) % 360;
+    final rotation = CarIconService.markerRotationDegrees(
+      _smoothedBearing,
+      premiumAssetFrontUp:
+          !onFerry && (_premiumCarIcons?.assetFrontFacesNorth ?? false),
+    );
     // Overlay mode: icon mobil di bawah tengah (head unit style). Kapal tetap pakai marker.
     final markers = <Marker>{
       if (onFerry)
@@ -702,7 +840,7 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
           position: pos,
           icon: driverIcon,
           rotation: rotation,
-          flat: true,
+          flat: defaultTargetPlatform != TargetPlatform.android,
           anchor: const Offset(0.5, 0.5),
           infoWindow: InfoWindow(
             title: 'Driver',
@@ -712,63 +850,25 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget> {
       ...?widget.extraMarkers?.call(pos),
     };
 
-    // Chase cam ala GTA: mobil di bawah, target di depan (sama dengan driver screen)
-    final polyline = _routePolyline;
-    final cameraTarget = (polyline != null && polyline.length >= 2)
-        ? RouteUtils.pointAheadOnPolyline(
-            pos,
-            polyline,
-            _cameraOffsetAheadMeters,
-            maxDistanceMeters: 400,
-          )
-        : null;
-    final target = cameraTarget ??
-        RouteUtils.offsetPoint(
-          pos,
-          _smoothedBearing,
-          80.0,
-        );
-    final cameraMoveDistanceM = _lastCameraTarget != null
-        ? Geolocator.distanceBetween(
-            _lastCameraTarget!.latitude,
-            _lastCameraTarget!.longitude,
-            target.latitude,
-            target.longitude,
-          )
-        : 0.0;
-    _lastCameraTarget = target;
-    final cameraDuration = _cameraDurationForDistance(cameraMoveDistanceM);
-    if (_cameraTrackingEnabled) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _mapController != null) {
-          _suppressNextCameraMoveStarted = true;
-          _mapController!.animateCamera(
-            CameraUpdate.newCameraPosition(
-              CameraPosition(
-                target: target,
-                bearing: _smoothedBearing,
-                tilt: _trackingTilt,
-                zoom: _trackingZoom,
-              ),
-            ),
-            duration: cameraDuration,
-          );
-        }
-      });
-    }
-
     return Stack(
       fit: StackFit.expand,
       children: [
         StyledGoogleMapBuilder(
           builder: (style, _) => GoogleMap(
             buildingsEnabled: true,
+            indoorViewEnabled: true,
+            mapToolbarEnabled: false,
             initialCameraPosition: CameraPosition(
               target: pos,
               zoom: MapStyleService.defaultZoom,
               tilt: MapStyleService.defaultTilt,
             ),
-            onMapCreated: (c) => _mapController = c,
+            onMapCreated: (c) {
+              _mapController = c;
+              _cameraFollowEngine.attach(c);
+              unawaited(_syncCarIconsZoomFromMap());
+            },
+            onCameraIdle: _syncCarIconsZoomFromMap,
             onCameraMoveStarted: () {
               if (_suppressNextCameraMoveStarted) {
                 _suppressNextCameraMoveStarted = false;

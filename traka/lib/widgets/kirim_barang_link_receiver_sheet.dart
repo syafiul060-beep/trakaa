@@ -10,6 +10,8 @@ import '../services/app_analytics_service.dart';
 import '../services/lacak_barang_service.dart';
 import '../services/locale_service.dart';
 import '../services/order_service.dart';
+import '../services/passenger_first_chat_message.dart';
+import 'estimate_loading_dialog.dart';
 import 'receiver_contact_picker.dart';
 import 'traka_l10n_scope.dart';
 
@@ -32,6 +34,8 @@ class KirimBarangLinkReceiverSheet extends StatefulWidget {
   final void Function(String orderId, String message, [String? barangFotoUrl])
       onOrderCreated;
   final void Function(String message) onError;
+  /// Penumpang memilih lewati cek duplikat pra-sepakat (satu thread per driver).
+  final bool bypassDuplicatePendingKirimBarang;
 
   const KirimBarangLinkReceiverSheet({
     super.key,
@@ -51,6 +55,7 @@ class KirimBarangLinkReceiverSheet extends StatefulWidget {
     this.barangFotoUrl,
     required this.onOrderCreated,
     required this.onError,
+    this.bypassDuplicatePendingKirimBarang = false,
   });
 
   @override
@@ -165,6 +170,20 @@ class _KirimBarangLinkReceiverSheetState
       widget.onError('Gagal memverifikasi penerima. Coba lagi.');
       return;
     }
+    if (!widget.bypassDuplicatePendingKirimBarang) {
+      final pendingKb =
+          await OrderService.getPassengerPendingKirimBarangWithDriver(
+        user.uid,
+        widget.driver.driverUid,
+      );
+      if (!mounted) return;
+      if (pendingKb != null) {
+        widget.onError(
+          TrakaL10n.of(context).passengerPendingKirimBarangDuplicateShort,
+        );
+        return;
+      }
+    }
     setState(() => _loading = true);
     String? passengerName;
     String? passengerPhotoUrl;
@@ -213,17 +232,21 @@ class _KirimBarangLinkReceiverSheetState
       barangLebarCm: widget.barangLebarCm,
       barangTinggiCm: widget.barangTinggiCm,
       barangFotoUrl: widget.barangFotoUrl,
+      bypassDuplicatePendingKirimBarang:
+          widget.bypassDuplicatePendingKirimBarang,
     );
     if (!mounted) return;
-    setState(() => _loading = false);
     AppAnalyticsService.logOrderCreated(
       orderType: OrderModel.typeKirimBarang,
       success: orderId != null,
     );
     if (orderId == null) {
+      setState(() => _loading = false);
       widget.onError(TrakaL10n.of(context).failedToCreateOrder);
       return;
     }
+    setState(() => _loading = false);
+
     final driverName = widget.driver.driverName ?? 'Driver';
     final jenisLabel = widget.barangCategory == OrderModel.barangCategoryDokumen
         ? 'Dokumen (surat, amplop, paket kecil)'
@@ -247,14 +270,45 @@ class _KirimBarangLinkReceiverSheetState
       }
       barangDetail = '\nBarang: ${parts.join(' • ')}\n';
     }
-    final message =
-        'Halo Pak $driverName,\n\n'
-        'Saya ingin mengirim barang.\n\n'
-        'Jenis: $jenisLabel$barangDetail\n'
-        'Penerima: $receiverName\n'
-        'Dari: ${widget.asal}\n'
-        'Tujuan: ${widget.tujuan}\n\n'
-        'Mohon informasi biaya pengiriman untuk rute ini.';
+    final l10n = TrakaL10n.of(context);
+    final oLat = widget.originLat;
+    final oLng = widget.originLng;
+    final dLat = widget.destLat;
+    final dLng = widget.destLng;
+    String? jarakKontribusiLines;
+    if (oLat != null && oLng != null && dLat != null && dLng != null) {
+      jarakKontribusiLines = await runWithEstimateLoading<String?>(
+        context,
+        l10n,
+        () async {
+          final preview = await OrderService.computeJarakKontribusiPreview(
+            originLat: oLat,
+            originLng: oLng,
+            destLat: dLat,
+            destLng: dLng,
+            orderType: OrderModel.typeKirimBarang,
+            barangCategory:
+                widget.barangCategory ?? OrderModel.barangCategoryKargo,
+          );
+          if (preview != null) {
+            return PassengerFirstChatMessage.formatJarakKontribusiLines(
+                l10n, preview);
+          }
+          return l10n.chatPreviewEstimateUnavailable;
+        },
+      );
+    }
+    if (!mounted) return;
+    final message = PassengerFirstChatMessage.kirimBarang(
+      driverName: driverName,
+      isScheduled: false,
+      jenisLabel: jenisLabel,
+      barangDetailSuffix: barangDetail,
+      receiverName: receiverName,
+      asal: widget.asal,
+      tujuan: widget.tujuan,
+      jarakKontribusiLines: jarakKontribusiLines,
+    );
     widget.onOrderCreated(orderId, message, widget.barangFotoUrl);
   }
 

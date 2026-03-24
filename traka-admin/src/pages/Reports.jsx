@@ -248,10 +248,10 @@ export default function Reports() {
         </select>
       </div>
 
-      {/* Ringkasan Fee */}
+      {/* Ringkasan biaya */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
         <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-2xl border border-emerald-100 p-6 shadow-card hover:shadow-card-hover transition-shadow">
-          <p className="text-sm font-medium text-emerald-700">Total Fee Aplikasi</p>
+          <p className="text-sm font-medium text-emerald-700">Total biaya aplikasi</p>
           <p className="text-2xl font-bold text-emerald-800 mt-1">{formatRupiah(totalFee)}</p>
           <p className="text-xs text-emerald-600 mt-1">
             Lacak Driver + Lacak Barang + Pelanggaran
@@ -280,10 +280,10 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* Grafik Fee per Hari */}
+      {/* Grafik biaya per hari */}
       <div className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden">
         <div className="px-6 py-5 border-b border-slate-100">
-          <h3 className="font-semibold text-gray-800">Fee Aplikasi per Hari</h3>
+          <h3 className="font-semibold text-gray-800">Biaya aplikasi per hari</h3>
           <p className="text-sm text-gray-500 mt-0.5">Lacak Driver, Lacak Barang, Pelanggaran</p>
         </div>
         <div className="p-6">
@@ -376,7 +376,7 @@ export default function Reports() {
         <div className="px-6 py-5 border-b border-slate-100">
           <h3 className="font-semibold text-gray-800">Saran & Masukan</h3>
           <p className="text-sm text-gray-500 mt-0.5">
-            Feedback dari pengguna. Tambah fitur di app untuk mengumpulkan saran otomatis, atau catat manual di sini.
+            Masukan dari pengguna. Tambah fitur di app untuk mengumpulkan saran otomatis, atau catat manual di sini.
           </p>
         </div>
         <div className="p-6 space-y-4">

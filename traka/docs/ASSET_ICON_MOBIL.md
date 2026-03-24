@@ -33,6 +33,7 @@ Flutter otomatis memilih variant sesuai devicePixelRatio. Tanpa 2.0x/3.0x, icon 
 ## File
 - `assets/images/car_merah.png` – driver diam / tidak bergerak
 - `assets/images/car_hijau.png` – driver bergerak
+- `assets/images/traka_car_icons_premium/car_green.png`, `car_red.png`, `car_blue.png` – map penumpang (tersedia / penuh / rekomendasi atau trip aktif di lacak). **Depan mobil = bawah gambar** (sama legacy: selatan di PNG); **tanpa** putar 180° di pipeline decode. Rotasi marker: `(bearing + 180) % 360` lewat `CarIconService.markerRotationDegrees` dengan `PremiumPassengerCarIconSet.assetFrontFacesNorth == false`. Loader: `CarIconService.loadPremiumPassengerCarIcons`. **Latar putih:** di app dipotong dengan *flood fill dari tepi gambar* (bukan chromakey global) agar **atap putih** di dalam siluet tidak ikut transparan; pilar/atap sebaiknya tidak semuanya `#FFFFFF` menyatu dengan latar (sedikit beda RGB atau transparansi asli di PNG juga membantu).
 - `assets/images/2.0x/car_merah.png`, `car_hijau.png` – 192×192 px
 - `assets/images/3.0x/car_merah.png`, `car_hijau.png` – 288×288 px
 

@@ -5,8 +5,10 @@ class DriverTrackState {
   LatLng displayed;
   LatLng target;
   DateTime? lastUpdated;
-  /// Bearing (derajat) untuk rotasi icon mobil. Asset: depan = selatan, rotation = (bearing + 180) % 360.
+  /// Bearing (derajat) untuk rotasi icon mobil. Penyesuaian rotation: [CarIconService.markerRotationDegrees].
   double bearing = 0;
+  /// Bearing yang dihaluskan untuk tampilan marker (hindari lompatan saat GPS loncat).
+  double smoothedBearing = 0;
   int interpStartSeg = -1;
   double interpStartRatio = 0;
   int interpEndSeg = -1;

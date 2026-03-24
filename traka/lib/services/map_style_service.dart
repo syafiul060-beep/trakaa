@@ -26,7 +26,7 @@ class MapStyleService {
     }
   }
 
-  /// Load style terang custom (ala Grab) dari assets.
+  /// Load style terang custom (jalan kuning, POI/ikon penuh, bangunan kota) dari assets.
   static Future<String?> loadLightStyle() async {
     if (_lightStyle != null) return _lightStyle;
     try {

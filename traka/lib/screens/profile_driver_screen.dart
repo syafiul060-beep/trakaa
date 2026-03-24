@@ -11,6 +11,9 @@ import 'package:flutter/material.dart';
 import 'active_liveness_screen.dart';
 import '../services/face_validation_service.dart';
 import '../services/verification_log_service.dart';
+import '../services/verification_service.dart';
+import '../services/face_duplicate_check_service.dart';
+import '../utils/sim_ocr_extraction.dart';
 import '../services/permission_service.dart';
 import '../services/ocr_preprocess_service.dart';
 import 'package:image_picker/image_picker.dart';
@@ -20,11 +23,11 @@ import '../config/indonesia_config.dart';
 import '../services/account_deletion_service.dart';
 import '../services/app_analytics_service.dart';
 import '../services/auth_redirect_state.dart';
+import '../services/image_compression_service.dart';
 import '../services/low_ram_warning_service.dart';
 import '../services/lite_mode_service.dart';
 import '../services/driver_status_service.dart';
 import '../services/voice_call_incoming_service.dart';
-import '../services/image_compression_service.dart';
 import '../theme/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/locale_service.dart';
@@ -37,16 +40,18 @@ import '../services/rating_service.dart';
 import '../services/route_persistence_service.dart';
 import '../widgets/admin_contact_widget.dart';
 import '../widgets/document_capture_guide_dialog.dart';
+import '../widgets/admin_verification_banner.dart';
+import '../widgets/profile_app_bar_title.dart';
 import '../widgets/profile_contact_row.dart';
 import '../widgets/profile_face_validation_dialog.dart';
 import '../widgets/theme_toggle_widget.dart';
 import '../widgets/biometric_login_credential_tile.dart';
 import '../widgets/biometric_toggle_widget.dart';
-import '../widgets/app_version_title.dart';
 import '../widgets/delayed_loading_builder.dart';
 import '../widgets/shimmer_loading.dart';
 import 'data_kendaraan_screen.dart';
 import 'login_screen.dart';
+import 'notification_settings_screen.dart';
 import 'contribution_driver_screen.dart';
 import 'driver_earnings_screen.dart';
 import 'payment_history_screen.dart';
@@ -123,6 +128,27 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
 
   Map<String, dynamic> get _userData => _userDoc?.data() ?? <String, dynamic>{};
 
+  /// Centang verifikasi: kuning jika admin masih punya permintaan terbuka (sinkron field Firestore / panel admin).
+  Color get _verificationCheckColor => VerificationService.hasOpenAdminVerificationRequest(
+        _userData,
+      )
+      ? Colors.amber.shade800
+      : Colors.green.shade700;
+
+  /// Kartu Data Kendaraan: kuning jika ada permintaan ubah STNK ke admin.
+  Color get _vehicleVerificationIconColor {
+    if (VerificationService.hasPendingVehicleChangeRequest(_userData)) {
+      return Colors.amber.shade800;
+    }
+    return _verificationCheckColor;
+  }
+
+  String _displayStr(dynamic v) {
+    if (v == null) return '—';
+    final s = v.toString().trim();
+    return s.isEmpty ? '—' : s;
+  }
+
   /// Driver sudah isi verifikasi SIM (nama + nomor SIM tersimpan).
   bool get _isDriverVerified {
     return _userData['driverSIMVerifiedAt'] != null ||
@@ -135,21 +161,18 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
         _userData['vehicleUpdatedAt'] != null;
   }
 
-  /// Email & No.Telp dianggap lengkap jika email ATAU no. telepon sudah ditambahkan.
-  bool get _isEmailDanTelpFilled {
-    final String phone = ((_userData['phoneNumber'] as String?) ?? '').trim();
-    final String email = (_auth.currentUser?.email ?? '').trim();
-    return phone.isNotEmpty || email.isNotEmpty;
-  }
+  /// Selaras [VerificationService.isDriverVerified]: nomor HP wajib.
+  bool get _hasVerifiedPhone =>
+      ((_userData['phoneNumber'] as String?) ?? '').trim().isNotEmpty;
 
-  /// Semua menu verifikasi sudah lengkap: Data Kendaraan + Verifikasi Driver + Email & No.Telp.
+  /// Semua menu verifikasi sudah lengkap (wajah + kendaraan + SIM + HP).
   bool get _isAllProfileVerified =>
-      _isDataKendaraanFilled && _isDriverVerified && _isEmailDanTelpFilled;
+      VerificationService.isDriverVerified(_userData);
 
   int get _verificationCompleteCount =>
       (_isDataKendaraanFilled ? 1 : 0) +
       (_isDriverVerified ? 1 : 0) +
-      (_isEmailDanTelpFilled ? 1 : 0);
+      (_hasVerifiedPhone ? 1 : 0);
 
   DateTime? _timestamp(dynamic v) {
     if (v == null) return null;
@@ -257,18 +280,48 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (ctx) => const AlertDialog(
+        builder: (ctx) => AlertDialog(
           content: Row(
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('Mengunggah foto...'),
+              const CircularProgressIndicator(),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(TrakaL10n.of(context).checkingFaceUniqueness),
+              ),
             ],
           ),
         ),
       );
     }
     try {
+      final role = ((_userData['role'] as String?) ?? 'driver').trim();
+      final dup = await FaceDuplicateCheckService.isDuplicateFace(
+        file.path,
+        role.isEmpty ? 'driver' : role,
+        excludeUserId: user.uid,
+      );
+      if (mounted) Navigator.of(context).pop();
+      if (dup) {
+        if (mounted) {
+          _showSnackBar(TrakaL10n.of(context).duplicateFaceDetected, isError: true);
+        }
+        return;
+      }
+      if (mounted) {
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => const AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text('Mengunggah foto...'),
+              ],
+            ),
+          ),
+        );
+      }
       final compressedPath = await ImageCompressionService.compressForUpload(file.path);
       final fileToUpload = File(compressedPath);
       final photoRef = FirebaseStorage.instance.ref().child(
@@ -474,15 +527,15 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
           children: [
             Icon(Icons.check_circle, color: Colors.green.shade700, size: 28),
             const SizedBox(width: 8),
-            const Text(
-              'Verifikasi Driver',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Expanded(
+              child: Text(
+                TrakaL10n.of(context).driverVerificationCompleteDialogTitle,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
-        content: const Text(
-          'Verifikasi Berhasil anda tidak perlu mengubah data verifikasi kembali. Silahkan hubungi Admin.',
-        ),
+        content: Text(TrakaL10n.of(context).driverVerificationCompleteDialogBody),
         actions: [
           FilledButton(
             onPressed: () => Navigator.pop(ctx),
@@ -652,18 +705,18 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     );
   }
 
-  /// Verifikasi wajah/foto profil sudah ada di icon kamera profil. Verifikasi Driver = hanya SIM.
+  /// Verifikasi wajah di foto profil; SIM di kartu ini; data mobil di menu Data Kendaraan.
   Future<void> _showVerifikasiDriverDialog() async {
     final hasFace = (_userData['faceVerificationUrl'] as String?)?.trim().isNotEmpty ?? false;
     if (!hasFace) {
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text(
-            'Verifikasi Driver',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          title: Text(
+            TrakaL10n.of(context).driverFaceRequiredBeforeSimTitle,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
-          content: const Text(
+          content: Text(
             'Foto profil (verifikasi wajah) diperlukan terlebih dahulu. '
             'Klik icon kamera di samping nama untuk mengambil foto.',
           ),
@@ -680,14 +733,11 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text(
-          'Verifikasi Driver',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        title: Text(
+          TrakaL10n.of(context).driverVerification,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
-        content: const Text(
-          'Ambil foto SIM/Surat Izin Mengemudi untuk verifikasi. '
-          'Foto akan digunakan untuk membaca nama dan nomor SIM.',
-        ),
+        content: Text(TrakaL10n.of(context).driverSimVerificationExplain),
         actions: [
           TextButton(
             onPressed: () => safePop(ctx),
@@ -762,7 +812,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       // Voting: kumpulkan semua hasil valid, ambil yang paling sering muncul
       final voteCount = <String, int>{};
       for (final text in ocrTexts) {
-        final extractedData = _extractSIMData(text);
+        final extractedData = SimOcrExtraction.extractNamaAndNomorSim(text);
         if (extractedData['nama'] != null && extractedData['nomorSIM'] != null) {
           final key = '${extractedData['nama']}|${extractedData['nomorSIM']}';
           voteCount[key] = (voteCount[key] ?? 0) + 1;
@@ -816,83 +866,6 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
         if (mounted) _showSnackBarWithRetry(msg, onRetry: _scanSIM);
       }
     }
-  }
-
-  /// Ekstrak nama dan nomor SIM dari teks OCR. Mendukung koreksi OCR: O↔0, I/l↔1.
-  Map<String, String?> _extractSIMData(String ocrText) {
-    String? nama;
-    String? nomorSIM;
-
-    // Pattern untuk nomor SIM (format Indonesia: 12-16 digit)
-    final simPattern = RegExp(r'\b\d{12,16}\b');
-    var simMatch = simPattern.firstMatch(ocrText);
-    if (simMatch != null) {
-      nomorSIM = simMatch.group(0);
-    } else {
-      // Pola permissive untuk OCR error (O, I, l sebagai digit)
-      final ocrSimPattern = RegExp(r'\b[0-9OIl]{12,16}\b');
-      simMatch = ocrSimPattern.firstMatch(ocrText);
-      if (simMatch != null) {
-        nomorSIM = simMatch
-            .group(0)!
-            .replaceAll('O', '0')
-            .replaceAll('I', '1')
-            .replaceAll('l', '1');
-      }
-    }
-
-    // Pattern untuk mencari nama (biasanya setelah kata kunci seperti "NAMA", "NAME", atau di baris tertentu)
-    final lines = ocrText.split('\n');
-    for (int i = 0; i < lines.length; i++) {
-      final line = lines[i].trim().toUpperCase();
-
-      // Cari baris yang mengandung "NAMA" atau "NAME"
-      if (line.contains('NAMA') || line.contains('NAME')) {
-        // Ambil baris berikutnya atau bagian setelah "NAMA"
-        if (line.contains('NAMA') || line.contains('NAME')) {
-          final parts = line.split(RegExp(r'NAMA|NAME'));
-          if (parts.length > 1) {
-            nama = parts[1].trim();
-            if (nama.isEmpty && i + 1 < lines.length) {
-              nama = lines[i + 1].trim();
-            }
-          } else if (i + 1 < lines.length) {
-            nama = lines[i + 1].trim();
-          }
-        }
-      }
-
-      // Jika belum ditemukan, coba cari pola nama (huruf besar, minimal 3 kata)
-      if (nama == null || nama.isEmpty) {
-        final namePattern = RegExp(r'^[A-Z\s]{10,}$');
-        if (namePattern.hasMatch(line) &&
-            line.split(' ').length >= 2 &&
-            !line.contains('SIM') &&
-            !line.contains('DRIVER') &&
-            !line.contains('LICENSE')) {
-          nama = line;
-        }
-      }
-    }
-
-    // Jika masih belum ditemukan nama, ambil baris pertama yang panjang (kemungkinan nama)
-    if ((nama == null || nama.isEmpty) && lines.isNotEmpty) {
-      for (final line in lines) {
-        final trimmed = line.trim();
-        if (trimmed.length >= 10 &&
-            trimmed.split(' ').length >= 2 &&
-            !trimmed.contains(
-              RegExp(r'\d{4,}'),
-            ) && // Tidak mengandung banyak angka
-            !trimmed.contains('SIM') &&
-            !trimmed.contains('DRIVER')) {
-          nama = trimmed;
-          break;
-        }
-      }
-    }
-
-    return {'nama': nama, 'nomorSIM': nomorSIM};
   }
 
   Future<void> _showSIMDataConfirmationDialog(
@@ -1080,6 +1053,11 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
   }
 
   Future<void> _showDataKendaraanDialog() async {
+    if (VerificationService.isVehicleDataLockedForDriver(_userData)) {
+      await _showVehicleLockedSheet();
+      return;
+    }
+
     // Tampilkan keterangan dan tombol Ambil foto STNK dulu
     final shouldScan = await showDialog<bool>(
       context: context,
@@ -1197,6 +1175,256 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     );
     // Refresh profil agar status verifikasi data kendaraan langsung tampil
     if (mounted) _loadUser();
+  }
+
+  Future<void> _showVehicleLockedSheet() async {
+    final noteController = TextEditingController();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        final colorScheme = Theme.of(ctx).colorScheme;
+        final l10n = TrakaL10n.of(context);
+        final pending =
+            VerificationService.hasPendingVehicleChangeRequest(_userData);
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 12,
+              bottom: 20 + MediaQuery.of(ctx).viewInsets.bottom,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: colorScheme.outline,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Icon(Icons.directions_car, color: colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          l10n.vehicleDataLockedTitle,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    l10n.vehicleDataLockedBody,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.45,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _vehicleLockedRow('Plat', _displayStr(_userData['vehiclePlat'])),
+                  _vehicleLockedRow(
+                    'Merek',
+                    _displayStr(_userData['vehicleMerek']),
+                  ),
+                  _vehicleLockedRow(
+                    'Tipe',
+                    _displayStr(_userData['vehicleType']),
+                  ),
+                  _vehicleLockedRow(
+                    'Penumpang',
+                    _displayStr(_userData['vehicleJumlahPenumpang']),
+                  ),
+                  if (pending) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.amber.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            l10n.vehicleChangeRequestSentTitle,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.amber.shade900,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            l10n.vehicleChangeRequestSentBody,
+                            style: TextStyle(
+                              fontSize: 13,
+                              height: 1.4,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: noteController,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      labelText: l10n.vehicleChangeNoteOptional,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: () =>
+                        _submitVehicleChangeStnk(ctx, noteController.text),
+                    icon: const Icon(Icons.upload_file, size: 20),
+                    label: Text(l10n.vehicleSendStnkForChange),
+                  ),
+                  if (pending) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Anda dapat mengunggah foto STNK lain jika perlu mengganti.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: Text(l10n.close),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    noteController.dispose();
+  }
+
+  Widget _vehicleLockedRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _submitVehicleChangeStnk(
+    BuildContext sheetContext,
+    String note,
+  ) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    final picker = ImagePicker();
+    final xfile = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 4096,
+      imageQuality: 88,
+    );
+    if (xfile == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(TrakaL10n.of(context).vehicleStnkUploading),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final compressed =
+          await ImageCompressionService.compressForUpload(xfile.path);
+      final file = File(compressed);
+      final ref = FirebaseStorage.instance.ref().child(
+        'users/${user.uid}/vehicle_change_stnk_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+      await ref.putFile(file);
+      final url = await ref.getDownloadURL();
+      final update = <String, dynamic>{
+        'vehicleChangeRequestAt': FieldValue.serverTimestamp(),
+        'vehicleChangeRequestStnkUrl': url,
+      };
+      if (note.trim().isNotEmpty) {
+        update['vehicleChangeRequestNote'] = note.trim();
+      } else {
+        update['vehicleChangeRequestNote'] = FieldValue.delete();
+      }
+      await _firestore.collection('users').doc(user.uid).update(update);
+      if (!mounted) return;
+      if (context.mounted) Navigator.of(context).pop();
+      if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+      if (!mounted) return;
+      await _loadUser(forceFromServer: true);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(TrakaL10n.of(context).vehicleStnkUploadSuccess),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   /// Cek apakah nomor plat sudah dipakai driver lain (bukan driver saat ini)
@@ -1347,8 +1575,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const AppVersionTitle(),
         elevation: 0,
+        title: const ProfileAppBarTitle(),
         actions: [
           Semantics(
             label: TrakaL10n.of(context).logout,
@@ -1366,7 +1594,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
               loadingWidget: const Center(child: ShimmerLoading()),
               placeholder: Center(
                 child: Text(
-                  'Memuat...',
+                  TrakaL10n.of(context).loadingGeneric,
                   style: TextStyle(
                     fontSize: 14,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1383,6 +1611,11 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (_userData['adminVerificationPendingAt'] != null)
+                        AdminVerificationBanner(
+                          userData: _userData,
+                          onSubmitted: () => _loadUser(),
+                        ),
                       if (_verificationCompleteCount < 3) ...[
                         const SizedBox(height: 8),
                         Text(
@@ -1400,9 +1633,20 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                         children: [
                           // Foto profil di sebelah kiri
                           GestureDetector(
-                            onTap: _canChangePhoto() && !_isCheckingFace
-                                ? _pickAndVerifyPhoto
-                                : null,
+                            onTap: _isCheckingFace
+                                ? null
+                                : () {
+                                    if (_canChangePhoto()) {
+                                      _pickAndVerifyPhoto();
+                                    } else {
+                                      final d = _daysUntilPhotoChange();
+                                      if (d != null && mounted) {
+                                        _showSnackBar(
+                                          TrakaL10n.of(context).photoLockedForDays(d),
+                                        );
+                                      }
+                                    }
+                                  },
                             child: Stack(
                               alignment: Alignment.center,
                               children: [
@@ -1465,7 +1709,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                                             Icon(
                                               Icons.verified,
                                               size: 20,
-                                              color: Colors.green.shade700,
+                                              color: _verificationCheckColor,
                                             ),
                                         ],
                                       ),
@@ -1579,7 +1823,20 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                       ],
                       const SizedBox(height: 32), // Jarak antara garis dan menu
                       _buildSectionHeader(TrakaL10n.of(context).verification),
-                      const SizedBox(height: 8),
+                      if (!_isAllProfileVerified)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            bottom: context.responsive.spacing(10),
+                          ),
+                          child: Text(
+                            TrakaL10n.of(context).driverVerificationSubtitle,
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.35,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
                       GridView.count(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -1592,12 +1849,14 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                             title: TrakaL10n.of(context).vehicleData,
                             icon: Icons.directions_car,
                             verified: _isDataKendaraanFilled,
+                            verifiedIconColor: _vehicleVerificationIconColor,
                             onTap: _showDataKendaraanDialog,
                           ),
                           _buildMenuCard(
                             title: TrakaL10n.of(context).driverVerification,
                             icon: Icons.person_add_alt_1,
                             verified: _isDriverVerified,
+                            verifiedIconColor: _verificationCheckColor,
                             onTap: _isDriverVerified
                                 ? _showVerifikasiSudahBerhasilDialog
                                 : _showVerifikasiDriverDialog,
@@ -1605,7 +1864,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                           _buildMenuCard(
                             title: TrakaL10n.of(context).emailAndPhone,
                             icon: Icons.contact_phone,
-                            verified: _isEmailDanTelpFilled,
+                            verified: _hasVerifiedPhone,
+                            verifiedIconColor: _verificationCheckColor,
                             onTap: _showEmailDanTelpSheet,
                           ),
                         ],
@@ -1712,6 +1972,18 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                             },
                           ),
                         ],
+                      ),
+                      SizedBox(height: context.responsive.spacing(12)),
+                      _buildMenuCard(
+                        title: TrakaL10n.of(context).notificationSettingsTitle,
+                        icon: Icons.notifications_outlined,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const NotificationSettingsScreen(),
+                            ),
+                          );
+                        },
                       ),
                       SizedBox(height: context.responsive.spacing(16)),
                       _buildSectionHeader(TrakaL10n.of(context).other),
@@ -1885,6 +2157,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     required IconData icon,
     required VoidCallback onTap,
     bool verified = false,
+    Color? verifiedIconColor,
     bool isDanger = false,
   }) {
     final color = isDanger ? Colors.red : Theme.of(context).colorScheme.primary;
@@ -1945,7 +2218,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                         child: Icon(
                           Icons.verified,
                           size: isCompact ? 16 : 20,
-                          color: Colors.green.shade700,
+                          color: verifiedIconColor ?? Colors.green.shade700,
                         ),
                       ),
                   ],

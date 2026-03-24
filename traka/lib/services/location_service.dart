@@ -244,10 +244,12 @@ class LocationService {
 
   /// Ambil posisi saat ini (koordinat).
   /// [forceRefresh]: jika true, paksa ambil lokasi baru tanpa cache.
-  /// [forTracking]: jika true, gunakan medium accuracy (hemat baterai untuk update lokasi berkala).
+  /// [forTracking]: jika true, gunakan medium accuracy (hemat baterai untuk update lokasi berkala),
+  /// kecuali [highAccuracyWhenTracking] true (mis. driver sedang navigasi in-app).
   static Future<Position?> getCurrentPosition({
     bool forceRefresh = false,
     bool forTracking = false,
+    bool highAccuracyWhenTracking = false,
   }) async {
     final hasPermission = await requestPermission();
     if (!hasPermission) return null;
@@ -259,7 +261,11 @@ class LocationService {
         return null;
       }
 
-      final accuracy = forTracking ? LocationAccuracy.medium : LocationAccuracy.high;
+      final accuracy = forTracking
+          ? (highAccuracyWhenTracking
+              ? LocationAccuracy.high
+              : LocationAccuracy.medium)
+          : LocationAccuracy.high;
       final timeLimit = forceRefresh ? 30 : 20;
 
       // Jika forceRefresh, JANGAN gunakan lastKnownPosition sebagai fallback
@@ -302,6 +308,7 @@ class LocationService {
   static Future<PositionWithMockCheckResult> getCurrentPositionWithMockCheck({
     bool forceRefresh = false,
     bool forTracking = false,
+    bool highAccuracyWhenTracking = false,
   }) async {
     final hasPermission = await requestPermission();
     if (!hasPermission) {
@@ -373,6 +380,7 @@ class LocationService {
     final position = await getCurrentPosition(
       forceRefresh: forceRefresh,
       forTracking: forTracking,
+      highAccuracyWhenTracking: highAccuracyWhenTracking,
     );
     if (position == null) {
       return const PositionWithMockCheckResult(

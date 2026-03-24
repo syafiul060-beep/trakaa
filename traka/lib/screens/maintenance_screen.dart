@@ -1,15 +1,29 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../services/performance_trace_service.dart';
 import '../widgets/traka_l10n_scope.dart';
 
 /// Layar maintenance ketika admin mengaktifkan maintenance mode.
-class MaintenanceScreen extends StatelessWidget {
+class MaintenanceScreen extends StatefulWidget {
   const MaintenanceScreen({
     super.key,
     this.message,
   });
 
   final String? message;
+
+  @override
+  State<MaintenanceScreen> createState() => _MaintenanceScreenState();
+}
+
+class _MaintenanceScreenState extends State<MaintenanceScreen> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(PerformanceTraceService.stopStartupToInteractive());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +49,7 @@ class MaintenanceScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                message ?? TrakaL10n.of(context).maintenanceMessage,
+                widget.message ?? TrakaL10n.of(context).maintenanceMessage,
                 style: Theme.of(context).textTheme.bodyLarge,
                 textAlign: TextAlign.center,
               ),

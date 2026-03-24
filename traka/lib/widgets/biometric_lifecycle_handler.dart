@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../services/biometric_lock_service.dart';
 
-/// Mendengarkan lifecycle app: saat ke background, kunci jika biometric aktif.
+/// Mendengarkan lifecycle app: catat waktu saat [paused]; saat [resumed] kunci
+/// hanya jika sudah lama di background (lihat [BiometricLockService.requireLockAfterBackground]).
 class BiometricLifecycleHandler extends StatefulWidget {
   const BiometricLifecycleHandler({
     super.key,
@@ -32,13 +33,12 @@ class _BiometricLifecycleHandlerState extends State<BiometricLifecycleHandler>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
+    // Hanya [paused]: app benar-benar tidak terlihat (bukan [inactive] seperti
+    // panel notifikasi), agar waktu background akurat dan tidak "reset" terus.
+    if (state == AppLifecycleState.paused) {
       BiometricLockService.lockIfEnabled();
     } else if (state == AppLifecycleState.resumed) {
-      // User kembali ke app — batalkan lock jika masih dalam grace period.
-      // HP baru dibuka kunci → tidak perlu minta sidik jari lagi.
-      BiometricLockService.cancelLockIfInGracePeriod();
+      BiometricLockService.onAppResumed();
     }
   }
 

@@ -67,6 +67,9 @@ class TrackShareService {
       }
 
       final token = _randomToken();
+      // passengerUid / receiverUid = pemilik peran di pesanan (bukan sekadar siapa yang mengetuk Bagikan).
+      // Firestore rules mengizinkan create jika auth salah satu dari keduanya (kirim barang).
+      final receiverUid = order.receiverUid ?? '';
       await FirebaseFirestore.instance.collection(_collection).doc(token).set({
         'orderId': order.id,
         'orderType': OrderModel.typeKirimBarang,
@@ -75,7 +78,8 @@ class TrackShareService {
         'destText': order.destText,
         'orderNumber': order.orderNumber ?? order.id,
         'status': order.status,
-        'passengerUid': user.uid,
+        'passengerUid': order.passengerUid,
+        'receiverUid': receiverUid,
         'passengerLat': passengerLat,
         'passengerLng': passengerLng,
         'receiverLat': receiverLat,

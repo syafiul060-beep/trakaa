@@ -9,6 +9,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
 import '../services/ocr_preprocess_service.dart';
+import '../utils/ktp_ocr_extraction.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -17,6 +18,8 @@ import '../config/indonesia_config.dart';
 import '../services/face_validation_service.dart';
 import '../services/permission_service.dart';
 import '../services/verification_log_service.dart';
+import '../services/verification_service.dart';
+import '../services/face_duplicate_check_service.dart';
 import '../services/account_deletion_service.dart';
 import '../services/app_analytics_service.dart';
 import '../services/auth_redirect_state.dart';
@@ -24,6 +27,7 @@ import '../services/low_ram_warning_service.dart';
 import '../services/lite_mode_service.dart';
 import '../services/image_compression_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/traka_ui_helpers.dart';
 import '../l10n/app_localizations.dart';
 import '../services/locale_service.dart';
 import '../widgets/traka_l10n_scope.dart';
@@ -32,6 +36,8 @@ import '../utils/phone_utils.dart';
 import '../utils/safe_navigation_utils.dart';
 import '../widgets/admin_contact_widget.dart';
 import '../widgets/document_capture_guide_dialog.dart';
+import '../widgets/admin_verification_banner.dart';
+import '../widgets/profile_app_bar_title.dart';
 import '../widgets/profile_contact_row.dart';
 import '../widgets/profile_face_validation_dialog.dart';
 import '../widgets/delayed_loading_builder.dart';
@@ -44,9 +50,9 @@ import '../services/passenger_proximity_notification_service.dart';
 import '../services/receiver_proximity_notification_service.dart';
 import '../services/voice_call_incoming_service.dart';
 import '../services/passenger_tier_service.dart';
-import '../widgets/app_version_title.dart';
 import 'login_screen.dart';
 import 'payment_history_screen.dart';
+import 'notification_settings_screen.dart';
 import 'panduan_aplikasi_screen.dart';
 import 'promo_list_screen.dart';
 import 'saran_ke_admin_screen.dart';
@@ -119,24 +125,28 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
 
   Map<String, dynamic> get _userData => _userDoc?.data() ?? <String, dynamic>{};
 
+  /// Centang verifikasi: kuning jika admin masih punya permintaan terbuka (sinkron field Firestore / panel admin).
+  Color get _verificationCheckColor => VerificationService.hasOpenAdminVerificationRequest(
+        _userData,
+      )
+      ? Colors.amber.shade800
+      : Colors.green.shade700;
+
   /// Penumpang sudah isi verifikasi KTP (nama + NIK tersimpan sebagai hash).
   bool get _isPassengerKTPVerified =>
       _userData['passengerKTPVerifiedAt'] != null ||
       _userData['passengerKTPNomorHash'] != null;
 
-  /// Email & No.Telp lengkap jika email ATAU no. telepon sudah ditambahkan.
-  bool get _isEmailDanTelpFilled {
-    final String phone = ((_userData['phoneNumber'] as String?) ?? '').trim();
-    final String email = (_auth.currentUser?.email ?? '').trim();
-    return phone.isNotEmpty || email.isNotEmpty;
-  }
-
   bool get _hasFaceVerification =>
       (_userData['faceVerificationUrl'] as String?)?.trim().isNotEmpty ?? false;
 
+  /// Selaras [VerificationService.isPenumpangVerified]: nomor HP wajib (bukan cukup email).
+  bool get _hasVerifiedPhone =>
+      ((_userData['phoneNumber'] as String?) ?? '').trim().isNotEmpty;
+
   int get _verificationCompleteCount =>
       (_isPassengerKTPVerified ? 1 : 0) +
-      (_isEmailDanTelpFilled ? 1 : 0) +
+      (_hasVerifiedPhone ? 1 : 0) +
       (_hasFaceVerification ? 1 : 0);
 
   DateTime? _timestamp(dynamic v) {
@@ -156,6 +166,18 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
     if (updatedAt == null) return null;
     final days = _daysPhotoLock - DateTime.now().difference(updatedAt).inDays;
     return days > 0 ? days : null;
+  }
+
+  void _onFacePhotoFromMenu() {
+    if (_isCheckingFace) return;
+    if (!_canChangePhoto()) {
+      final d = _daysUntilPhotoChange();
+      if (d != null && mounted) {
+        _showSnackBar(TrakaL10n.of(context).photoLockedForDays(d));
+      }
+      return;
+    }
+    _pickAndVerifyPhoto();
   }
 
   Future<void> _pickAndVerifyPhoto() async {
@@ -245,18 +267,48 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
       showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (ctx) => const AlertDialog(
+        builder: (ctx) => AlertDialog(
           content: Row(
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('Mengunggah foto...'),
+              const CircularProgressIndicator(),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(TrakaL10n.of(context).checkingFaceUniqueness),
+              ),
             ],
           ),
         ),
       );
     }
     try {
+      final role = ((_userData['role'] as String?) ?? 'penumpang').trim();
+      final dup = await FaceDuplicateCheckService.isDuplicateFace(
+        file.path,
+        role.isEmpty ? 'penumpang' : role,
+        excludeUserId: user.uid,
+      );
+      if (mounted) Navigator.of(context).pop();
+      if (dup) {
+        if (mounted) {
+          _showSnackBar(TrakaL10n.of(context).duplicateFaceDetected, isError: true);
+        }
+        return;
+      }
+      if (mounted) {
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => const AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text('Mengunggah foto...'),
+              ],
+            ),
+          ),
+        );
+      }
       final compressedPath = await ImageCompressionService.compressForUpload(file.path);
       final fileToUpload = File(compressedPath);
       final photoRef = FirebaseStorage.instance.ref().child(
@@ -415,7 +467,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
       // Voting: kumpulkan semua hasil valid, ambil yang paling sering muncul
       final voteCount = <String, int>{};
       for (final text in ocrTexts) {
-        final extracted = _extractKTPData(text);
+        final extracted = KtpOcrExtraction.extractNikAndNama(text);
         if (extracted['nik'] != null && extracted['nama'] != null) {
           final key = '${extracted['nik']}|${extracted['nama']}';
           voteCount[key] = (voteCount[key] ?? 0) + 1;
@@ -466,63 +518,6 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
         if (mounted) _showSnackBarWithRetry(msg, onRetry: _scanKTP);
       }
     }
-  }
-
-  /// Ekstrak NIK (16 digit) dan nama dari teks OCR KTP Indonesia.
-  /// Mendukung koreksi OCR: O↔0, I/l↔1.
-  Map<String, String?> _extractKTPData(String ocrText) {
-    String? nik;
-    String? nama;
-
-    // Pola standar: 16 digit
-    final nikPattern = RegExp(r'\b\d{16}\b');
-    var nikMatch = nikPattern.firstMatch(ocrText);
-    if (nikMatch != null) {
-      nik = nikMatch.group(0);
-    } else {
-      // Pola permissive untuk OCR error (O, I, l sebagai digit)
-      final ocrNikPattern = RegExp(r'\b[0-9OIl]{16}\b');
-      nikMatch = ocrNikPattern.firstMatch(ocrText);
-      if (nikMatch != null) {
-        nik = nikMatch
-            .group(0)!
-            .replaceAll('O', '0')
-            .replaceAll('I', '1')
-            .replaceAll('l', '1');
-      }
-    }
-
-    final lines = ocrText.split('\n');
-    for (int i = 0; i < lines.length; i++) {
-      final line = lines[i].trim().toUpperCase();
-      if (line.contains('NAMA') || line.contains('NAME')) {
-        final parts = line.split(RegExp(r'NAMA|NAME'));
-        if (parts.length > 1) {
-          final partName = parts[1].trim();
-          nama = partName.isEmpty && i + 1 < lines.length
-              ? lines[i + 1].trim()
-              : partName;
-          if (nama.isNotEmpty) break;
-        } else if (i + 1 < lines.length) {
-          nama = lines[i + 1].trim();
-        }
-        if (nama != null && nama.isNotEmpty) break;
-      }
-    }
-    if ((nama == null || nama.isEmpty) && lines.isNotEmpty) {
-      for (final line in lines) {
-        final t = line.trim();
-        if (t.length >= 8 &&
-            t.split(' ').length >= 2 &&
-            !RegExp(r'\d{10,}').hasMatch(t) &&
-            !t.contains('NIK') &&
-            !t.contains('KTP')) {
-          nama = t;
-          break;
-        }
-      }
-    }
-    return {'nik': nik, 'nama': nama};
   }
 
   Future<void> _showKTPDataConfirmationDialog(String nama, String nik) async {
@@ -729,11 +724,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(context.responsive.radius(AppTheme.radiusLg)),
-        ),
-      ),
+      shape: TrakaUiHelpers.modalSheetShape(context),
       builder: (ctx) => Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
         child: DraggableScrollableSheet(
@@ -873,14 +864,28 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                l10n.language,
-                style: Theme.of(ctx).textTheme.titleLarge,
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  l10n.language,
+                  style: Theme.of(ctx).textTheme.titleLarge,
+                ),
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.flag),
+              leading: CircleAvatar(
+                radius: 18,
+                backgroundColor: Theme.of(ctx).colorScheme.primaryContainer,
+                child: Text(
+                  'ID',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(ctx).colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
               title: Text(TrakaL10n.of(context).languageIndonesia),
               onTap: () {
                 LocaleService.setLocale(AppLocale.id);
@@ -888,13 +893,25 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.flag),
+              leading: CircleAvatar(
+                radius: 18,
+                backgroundColor: Theme.of(ctx).colorScheme.secondaryContainer,
+                child: Text(
+                  'EN',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(ctx).colorScheme.onSecondaryContainer,
+                  ),
+                ),
+              ),
               title: Text(TrakaL10n.of(context).languageEnglish),
               onTap: () {
                 LocaleService.setLocale(AppLocale.en);
                 Navigator.pop(ctx);
               },
             ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -1144,8 +1161,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const AppVersionTitle(),
         elevation: 0,
+        title: const ProfileAppBarTitle(),
         actions: [
           Semantics(
             label: TrakaL10n.of(context).logout,
@@ -1163,7 +1180,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
               loadingWidget: const Center(child: ShimmerLoading()),
               placeholder: Center(
                 child: Text(
-                  'Memuat...',
+                  TrakaL10n.of(context).loadingGeneric,
                   style: TextStyle(
                     fontSize: 14,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1180,7 +1197,12 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (!_isPassengerKTPVerified || !_isEmailDanTelpFilled) ...[
+                      if (_userData['adminVerificationPendingAt'] != null)
+                        AdminVerificationBanner(
+                          userData: _userData,
+                          onSubmitted: () => _loadUser(),
+                        ),
+                      if (!VerificationService.isPenumpangVerified(_userData)) ...[
                         Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
@@ -1237,9 +1259,20 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           GestureDetector(
-                            onTap: _canChangePhoto() && !_isCheckingFace
-                                ? _pickAndVerifyPhoto
-                                : null,
+                            onTap: _isCheckingFace
+                                ? null
+                                : () {
+                                    if (_canChangePhoto()) {
+                                      _pickAndVerifyPhoto();
+                                    } else {
+                                      final d = _daysUntilPhotoChange();
+                                      if (d != null && mounted) {
+                                        _showSnackBar(
+                                          TrakaL10n.of(context).photoLockedForDays(d),
+                                        );
+                                      }
+                                    }
+                                  },
                             child: Stack(
                               alignment: Alignment.center,
                               children: [
@@ -1299,7 +1332,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                                             Icon(
                                               Icons.verified,
                                               size: 20,
-                                              color: Colors.green.shade700,
+                                              color: _verificationCheckColor,
                                             ),
                                           ],
                                         ],
@@ -1368,18 +1401,14 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                           ),
                         ),
                       ] else if (_canChangePhoto()) ...[
-                        const SizedBox(height: 12),
-                        Row(
-                          children: List.generate(20, (index) {
-                            return Expanded(
-                              child: Container(
-                                height: 4,
-                                color: index % 2 == 0
-                                    ? Colors.white
-                                    : Theme.of(context).colorScheme.primary,
-                              ),
-                            );
-                          }),
+                        const SizedBox(height: 8),
+                        Text(
+                          TrakaL10n.of(context).profileTapPhotoToChangeHint,
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ],
                       const SizedBox(height: 32),
@@ -1395,15 +1424,24 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                         childAspectRatio: 0.95,
                         children: [
                           _buildMenuCard(
+                            title: TrakaL10n.of(context).verifyFacePhoto,
+                            icon: Icons.face_retouching_natural_outlined,
+                            verified: _hasFaceVerification,
+                            verifiedIconColor: _verificationCheckColor,
+                            onTap: _onFacePhotoFromMenu,
+                          ),
+                          _buildMenuCard(
                             title: TrakaL10n.of(context).verifyData,
                             icon: Icons.badge_outlined,
                             verified: _isPassengerKTPVerified,
+                            verifiedIconColor: _verificationCheckColor,
                             onTap: _showVerifikasiKTPDialog,
                           ),
                           _buildMenuCard(
                             title: TrakaL10n.of(context).emailAndPhone,
                             icon: Icons.contact_phone,
-                            verified: _isEmailDanTelpFilled,
+                            verified: _hasVerifiedPhone,
+                            verifiedIconColor: _verificationCheckColor,
                             onTap: _showEmailDanTelpSheet,
                           ),
                         ],
@@ -1488,6 +1526,18 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                           ),
                         ],
                       ),
+                      SizedBox(height: context.responsive.spacing(12)),
+                      _buildMenuCard(
+                        title: TrakaL10n.of(context).notificationSettingsTitle,
+                        icon: Icons.notifications_outlined,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const NotificationSettingsScreen(),
+                            ),
+                          );
+                        },
+                      ),
                       SizedBox(height: context.responsive.spacing(16)),
                       _buildSectionHeader(TrakaL10n.of(context).other),
                       const SizedBox(height: 8),
@@ -1498,7 +1548,9 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                         icon: Icons.fingerprint,
                         onTap: _showBiometricSheet,
                       ),
+                      SizedBox(height: context.responsive.spacing(10)),
                       _buildLiteModeTile(),
+                      SizedBox(height: context.responsive.spacing(10)),
                       _buildMenuCard(
                         title: TrakaL10n.of(context).showLowRamWarning,
                         icon: Icons.memory_outlined,
@@ -1509,6 +1561,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                           }
                         },
                       ),
+                      SizedBox(height: context.responsive.spacing(10)),
                       _buildMenuCard(
                         title: TrakaL10n.of(context).deleteAccount,
                         icon: Icons.delete_outline,
@@ -1602,7 +1655,6 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
       valueListenable: LiteModeService.liteModeNotifier,
       builder: (context, isLite, _) {
         return Container(
-          margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
@@ -1653,6 +1705,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
     required IconData icon,
     required VoidCallback onTap,
     bool verified = false,
+    Color? verifiedIconColor,
     bool isDanger = false,
   }) {
     final color = isDanger ? Colors.red : Theme.of(context).colorScheme.primary;
@@ -1706,7 +1759,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                         child: Icon(
                           Icons.verified,
                           size: isCompact ? 16 : 20,
-                          color: Colors.green.shade700,
+                          color: verifiedIconColor ?? Colors.green.shade700,
                         ),
                       ),
                   ],
@@ -2356,9 +2409,11 @@ class _UbahEmailOtpDialogState extends State<_UbahEmailOtpDialog> {
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _emailController,
-decoration: InputDecoration(
-                  labelText: 'Email baru',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                  decoration: InputDecoration(
+                    labelText: 'Email baru',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                     hintText: 'contoh@email.com',
                   ),
                   keyboardType: TextInputType.emailAddress,

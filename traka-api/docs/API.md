@@ -26,6 +26,16 @@ Authorization: Bearer <Firebase ID Token>
 - `GET /api/users/:uid` - Data user (auth required)
 
 ### Orders
+- `POST /api/orders` - Buat order penumpang (auth required, Bearer = penumpang)
+  - Body (JSON): selaras `OrderService.createOrder` di Flutter — field utama `passengerUid`, `driverUid`, `routeJourneyNumber`, `passengerName`, `originText`, `destText`, `orderType` (`travel` | `kirim_barang`), koordinat opsional, kirim barang / jadwal / penerima, dll. **Jangan** kirim `createdAt` / `updatedAt` (server set `serverTimestamp` di Firestore).
+  - Flag opsional: `bypassDuplicatePendingTravel`, `bypassDuplicatePendingKirimBarang` (boolean) — sama semantiknya dengan app.
+  - **201** `{ id, status, orderType, driverUid, routeJourneyNumber }`
+  - **400** `{ error }` — validasi (mis. field wajib kosong)
+  - **403** `{ error: 'passengerUid must match authenticated user' | 'admin_verification_blocking' }`
+  - **409** `{ error: 'duplicate_pending_travel' | 'duplicate_pending_kirim_barang', existingOrderId }`
+  - **500** `{ error }` — gagal tulis Firestore/PostgreSQL (jika PG gagal, dokumen Firestore yang baru dibuat dihapus)
+  - **503** `{ error }` — Firestore Admin tidak terkonfigurasi
+  - Dual-write: Firestore (sumber utama app) + PostgreSQL jika `DATABASE_URL` aktif. Detail aturan: [ORDER_CREATE_HYBRID.md](./ORDER_CREATE_HYBRID.md).
 - `GET /api/orders` - Daftar order user (auth required)
   - Query: `role` (driver|passenger), `limit` (default 50, max 100), `offset` (default 0)
 - `GET /api/orders/:id` - Detail order (auth required)

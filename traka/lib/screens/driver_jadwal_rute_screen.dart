@@ -22,6 +22,7 @@ import '../services/map_style_service.dart';
 import '../services/route_utils.dart';
 import '../services/recent_destination_service.dart';
 import '../services/schedule_reminder_service.dart';
+import '../services/driver_jadwal_route_category_prefs.dart';
 import '../theme/app_theme.dart';
 import '../widgets/shimmer_loading.dart';
 import 'package:geolocator/geolocator.dart';
@@ -80,12 +81,28 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
   /// Tampilkan spinner hanya jika loading > 200ms (terasa lebih responsif)
   bool _showLoadingSpinner = false;
   Timer? _loadingDelayTimer;
+  /// Setelah muat pertama: bar atas saat sinkron dari server (tambah/edit/hapus/refresh).
+  bool _syncingWithServer = false;
+  /// Beberapa `_loadJadwal` bisa berjalan berurutan/bersamaan; jangan matikan bar saat masih ada yang aktif.
+  int _serverSyncBarrierCount = 0;
+  /// Cegah `finally` load lawas menutup indikator sinkron saat ada load baru.
+  int _loadJadwalGen = 0;
+  /// Hapus jadwal dari kartu: overlay agar jelas ada proses ke server.
+  bool _firestoreCardBusy = false;
 
   /// PageView jadwal per tanggal: geser kiri = tanggal berikutnya, geser kanan = kembali.
   final PageController _jadwalPageController = PageController();
 
   /// Halaman PageView yang sedang aktif (untuk chip, dots).
   int _currentPageIndex = 0;
+
+  /// Kategori rute yang dipilih per tanggal (halaman ini); dipakai saat Tambah jadwal / FAB.
+  final Map<DateTime, String> _routeCategoryByDate = {};
+  /// Saat belum ada jadwal: kategori untuk jadwal baru berikutnya (FAB).
+  String _categoryForEmptyListNew = RouteCategoryService.categoryAntarProvinsi;
+
+  /// Preferensi chip per uid sudah dimuat dari [SharedPreferences].
+  String? _prefsLoadedForUid;
 
   @override
   void initState() {
@@ -99,7 +116,25 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
     _loadingDelayTimer?.cancel();
     _jadwalPageController.removeListener(_onPageChanged);
     _jadwalPageController.dispose();
+    _serverSyncBarrierCount = 0;
     super.dispose();
+  }
+
+  void _beginServerSyncIndicator() {
+    if (!mounted) return;
+    _serverSyncBarrierCount++;
+    if (_serverSyncBarrierCount == 1) {
+      setState(() => _syncingWithServer = true);
+    }
+  }
+
+  void _endServerSyncIndicator() {
+    if (_serverSyncBarrierCount <= 0) return;
+    _serverSyncBarrierCount--;
+    if (!mounted) return;
+    if (_serverSyncBarrierCount == 0) {
+      setState(() => _syncingWithServer = false);
+    }
   }
 
   void _onPageChanged() {
@@ -111,11 +146,25 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
     }
   }
 
-  Future<void> _loadJadwal({bool forceFromServer = false}) async {
+  Future<void> _loadJadwal({
+    bool forceFromServer = false,
+    /// Set false setelah tambah/edit/hapus: daftar sudah di-update optimistik; hindari bar biru + race gen.
+    bool showSyncBarIfApplicable = true,
+  }) async {
+    final gen = ++_loadJadwalGen;
     final user = _auth.currentUser;
     if (user == null) {
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _prefsLoadedForUid = null;
+        _routeCategoryByDate.clear();
+        _categoryForEmptyListNew = RouteCategoryService.categoryAntarProvinsi;
+      });
       return;
+    }
+    final showSyncIndicator = showSyncBarIfApplicable && !_loading;
+    if (showSyncIndicator) {
+      _beginServerSyncIndicator();
     }
     _loadingDelayTimer?.cancel();
     _loadingDelayTimer = Timer(const Duration(milliseconds: 200), () {
@@ -123,55 +172,111 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
         setState(() => _showLoadingSpinner = true);
       }
     });
+    const loadTimeout = Duration(seconds: 45);
     try {
-      final kept = await DriverScheduleService.cleanupPastSchedules(
-        user.uid,
-        forceFromServer: forceFromServer,
-      );
-      _items.clear();
-      for (final map in kept) {
-        final timeStamp = map['departureTime'] as Timestamp?;
-        final dateStamp = map['date'] as Timestamp?;
-        TimeOfDay jam = TimeOfDay.now();
-        if (timeStamp != null) {
-          final d = timeStamp.toDate();
-          jam = TimeOfDay(hour: d.hour, minute: d.minute);
+      await Future<void>(() async {
+        await _ensurePrefsLoaded(user.uid);
+        final kept = await DriverScheduleService.cleanupPastSchedules(
+          user.uid,
+          forceFromServer: forceFromServer,
+        );
+        _items.clear();
+        for (final map in kept) {
+          final timeStamp = map['departureTime'] as Timestamp?;
+          final dateStamp = map['date'] as Timestamp?;
+          TimeOfDay jam = TimeOfDay.now();
+          if (timeStamp != null) {
+            final d = timeStamp.toDate();
+            jam = TimeOfDay(hour: d.hour, minute: d.minute);
+          }
+          final date = dateStamp?.toDate() ?? DateTime.now();
+          final origin = (map['origin'] as String?) ?? '';
+          final dest = (map['destination'] as String?) ?? '';
+          final routePolyline = _parseRoutePolyline(map['routePolyline']);
+          final routeCategory = (map['routeCategory'] as String?) ??
+              RouteCategoryService.categoryAntarProvinsi;
+          _items.add(
+            _JadwalItem(
+              tujuanAwal: origin,
+              tujuanAkhir: dest,
+              jam: jam,
+              tanggal: date,
+              routePolyline: routePolyline,
+              routeCategory: routeCategory,
+            ),
+          );
         }
-        final date = dateStamp?.toDate() ?? DateTime.now();
-        final origin = (map['origin'] as String?) ?? '';
-        final dest = (map['destination'] as String?) ?? '';
-        final routePolyline = _parseRoutePolyline(map['routePolyline']);
-        final routeCategory = (map['routeCategory'] as String?) ??
-            RouteCategoryService.categoryAntarProvinsi;
-        _items.add(
-          _JadwalItem(
-            tujuanAwal: origin,
-            tujuanAkhir: dest,
-            jam: jam,
-            tanggal: date,
-            routePolyline: routePolyline,
-            routeCategory: routeCategory,
+        if (mounted && gen == _loadJadwalGen) {
+          _loadingDelayTimer?.cancel();
+          setState(() {
+            _loading = false;
+            _showLoadingSpinner = false;
+            _currentPageIndex = 0;
+            _seedRouteCategoryPreferencesFromItems();
+          });
+          unawaited(ScheduleReminderService.scheduleRemindersForDriver(user.uid));
+        }
+      }).timeout(loadTimeout);
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('DriverJadwal _loadJadwal: $e\n$st');
+      }
+      if (mounted && gen == _loadJadwalGen) {
+        _loadingDelayTimer?.cancel();
+        setState(() {
+          _loading = false;
+          _showLoadingSpinner = false;
+        });
+        final msg = e is TimeoutException
+            ? 'Waktu habis. Periksa jaringan lalu coba lagi.'
+            : 'Tidak dapat memuat jadwal. Periksa koneksi internet.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: Colors.orange.shade800,
+            action: SnackBarAction(
+              label: 'Coba lagi',
+              textColor: Colors.white,
+              onPressed: () => _loadJadwal(forceFromServer: true),
+            ),
           ),
         );
       }
-      if (mounted) {
-        _loadingDelayTimer?.cancel();
-        setState(() {
-          _loading = false;
-          _showLoadingSpinner = false;
-          _currentPageIndex = 0;
-        });
-        unawaited(ScheduleReminderService.scheduleRemindersForDriver(user.uid));
+    } finally {
+      if (showSyncIndicator) {
+        _endServerSyncIndicator();
       }
-    } catch (_) {
-      if (mounted) {
-        _loadingDelayTimer?.cancel();
-        setState(() {
-          _loading = false;
-          _showLoadingSpinner = false;
+    }
+  }
+
+  /// Sinkron daftar dari server setelah tambah/edit; tidak memblokir UI (snackbar) di form.
+  Future<void> _syncJadwalListAfterMutation({_JadwalItem? newItem}) async {
+    try {
+      await _loadJadwal(
+        forceFromServer: true,
+        showSyncBarIfApplicable: false,
+      );
+    } catch (_) {}
+    if (!mounted) return;
+    if (newItem != null) {
+      final exists = _items.any((i) =>
+          i.tujuanAwal == newItem.tujuanAwal &&
+          i.tujuanAkhir == newItem.tujuanAkhir &&
+          _dateOnly(i.tanggal) == _dateOnly(newItem.tanggal) &&
+          i.jam.hour == newItem.jam.hour &&
+          i.jam.minute == newItem.jam.minute);
+      if (!exists) {
+        _items.add(newItem);
+        _items.sort((a, b) {
+          final da = _dateOnly(a.tanggal);
+          final db = _dateOnly(b.tanggal);
+          if (da != db) return da.compareTo(db);
+          return (a.jam.hour * 60 + a.jam.minute)
+              .compareTo(b.jam.hour * 60 + b.jam.minute);
         });
       }
     }
+    if (mounted) setState(() {});
   }
 
   String _formatTime(TimeOfDay t) {
@@ -273,22 +378,10 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
     return DateTime.now().isAfter(departure);
   }
 
-  /// Icon rute berfungsi hanya jika: tanggal jadwal = hari ini dan dalam 4 jam sebelum keberangkatan.
+  /// Tombol rute aktif selama jadwal belum lewat (tanggal+jam). Tanpa jendela «4 jam sebelum» —
+  /// aturan itu membuat tombol terasa tidak bisa diklik seharian di Android.
   bool _isRuteAvailableForJadwal(_JadwalItem item) {
-    final today = _today;
-    final scheduleDate = _dateOnly(item.tanggal);
-    if (scheduleDate != today) return false;
-    final departure = DateTime(
-      item.tanggal.year,
-      item.tanggal.month,
-      item.tanggal.day,
-      item.jam.hour,
-      item.jam.minute,
-    );
-    final now = DateTime.now();
-    final windowStart = departure.subtract(const Duration(hours: 4));
-    return (now.isAfter(windowStart) || now.isAtSameMomentAs(windowStart)) &&
-        (now.isBefore(departure) || now.isAtSameMomentAs(departure));
+    return !_isScheduleTimePassed(item);
   }
 
   /// ID jadwal (sama dengan format di Pesan nanti penumpang) untuk sinkron pesanan terjadwal.
@@ -323,6 +416,109 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
   int _scheduleCountForDate(DateTime d) {
     final key = _dateOnly(d);
     return _items.where((i) => _dateOnly(i.tanggal) == key).length;
+  }
+
+  String _categoryForDate(DateTime d) {
+    final key = _dateOnly(d);
+    return _routeCategoryByDate[key] ?? RouteCategoryService.categoryAntarProvinsi;
+  }
+
+  Future<void> _persistRouteCategoryPrefs() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    await DriverJadwalRouteCategoryPrefs.save(
+      uid,
+      _routeCategoryByDate,
+      _categoryForEmptyListNew,
+      writtenAtMs: ts,
+    );
+    try {
+      await DriverJadwalRouteCategoryPrefs.saveToFirestore(
+        uid,
+        _routeCategoryByDate,
+        _categoryForEmptyListNew,
+        writtenAtMs: ts,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _ensurePrefsLoaded(String uid) async {
+    if (_prefsLoadedForUid == uid) return;
+    final data = await DriverJadwalRouteCategoryPrefs.mergeLocalAndRemote(uid)
+        .timeout(const Duration(seconds: 25));
+    if (!mounted) return;
+    setState(() {
+      _routeCategoryByDate
+        ..clear()
+        ..addAll(data.byDate);
+      _categoryForEmptyListNew = data.empty;
+      _prefsLoadedForUid = uid;
+    });
+  }
+
+  void _setCategoryForDate(DateTime d, String category) {
+    setState(() {
+      _routeCategoryByDate[_dateOnly(d)] = category;
+    });
+    unawaited(_persistRouteCategoryPrefs());
+  }
+
+  void _setCategoryForEmptyList(String category) {
+    setState(() => _categoryForEmptyListNew = category);
+    unawaited(_persistRouteCategoryPrefs());
+  }
+
+  /// Isi preferensi dari jadwal yang sudah tersimpan (hanya jika belum ada pilihan chip).
+  void _seedRouteCategoryPreferencesFromItems() {
+    final grouped = _groupedByDate();
+    for (final e in grouped) {
+      final date = e.key;
+      if (_routeCategoryByDate.containsKey(date)) continue;
+      final firstIdx = e.value.first;
+      _routeCategoryByDate[date] = _items[firstIdx].routeCategory;
+    }
+  }
+
+  static const List<String> _routeCategoryOrder = [
+    RouteCategoryService.categoryDalamKota,
+    RouteCategoryService.categoryAntarKabupaten,
+    RouteCategoryService.categoryAntarProvinsi,
+    RouteCategoryService.categoryNasional,
+  ];
+
+  Widget _buildRouteCategoryChipsRow(DateTime dateKey) {
+    final selected = _categoryForDate(dateKey);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _routeCategoryOrder.map((c) {
+        final isSel = selected == c;
+        return FilterChip(
+          showCheckmark: false,
+          label: Text(RouteCategoryService.getLabel(c)),
+          selected: isSel,
+          onSelected: (_) => _setCategoryForDate(dateKey, c),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildRouteCategoryChipsEmptyList() {
+    final selected = _categoryForEmptyListNew;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _routeCategoryOrder.map((c) {
+        final isSel = selected == c;
+        return FilterChip(
+          showCheckmark: false,
+          label: Text(RouteCategoryService.getLabel(c)),
+          selected: isSel,
+          onSelected: (_) => _setCategoryForEmptyList(c),
+        );
+      }).toList(),
+    );
   }
 
   /// Daftar tanggal yang punya jadwal, masing-masing berisi list index jadwal (urutan isi = urutan tampil).
@@ -405,7 +601,10 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
       );
       return;
     }
-    _showAturJadwalForm(date);
+    final preferred = _items.isEmpty
+        ? _categoryForEmptyListNew
+        : _categoryForDate(date);
+    _showAturJadwalForm(date, preferredRouteCategoryForNew: preferred);
   }
 
   /// Duplikat jadwal ke tanggal lain (rute rutin).
@@ -451,6 +650,8 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
     int? editIndex,
     _JadwalItem? editItem,
     _JadwalItem? duplicateFromItem,
+    /// Hanya untuk jadwal baru (bukan edit/duplikat): isi dropdown kategori di form.
+    String? preferredRouteCategoryForNew,
   }) {
     if (!widget.isDriverVerified) {
       widget.onVerificationRequired?.call();
@@ -522,34 +723,16 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
             });
             if (mounted) setState(() {});
           }
-          await _loadJadwal(forceFromServer: true);
-          // Merge: jika server belum punya (eventual consistency), pertahankan item
-          if (newItem != null && mounted) {
-            final exists = _items.any((i) =>
-                i.tujuanAwal == newItem.tujuanAwal &&
-                i.tujuanAkhir == newItem.tujuanAkhir &&
-                _dateOnly(i.tanggal) == _dateOnly(newItem.tanggal) &&
-                i.jam.hour == newItem.jam.hour &&
-                i.jam.minute == newItem.jam.minute);
-            if (!exists) {
-              _items.add(newItem);
-              _items.sort((a, b) {
-                final da = _dateOnly(a.tanggal);
-                final db = _dateOnly(b.tanggal);
-                if (da != db) return da.compareTo(db);
-                return (a.jam.hour * 60 + a.jam.minute)
-                    .compareTo(b.jam.hour * 60 + b.jam.minute);
-              });
-            }
-          }
-          if (mounted) setState(() {});
+          unawaited(_syncJadwalListAfterMutation(newItem: newItem));
         },
         editScheduleIndex: editIndex,
         initialOrigin: editItem?.tujuanAwal ?? duplicateFromItem?.tujuanAwal,
         initialDest: editItem?.tujuanAkhir ?? duplicateFromItem?.tujuanAkhir,
         initialJam: editItem?.jam ?? duplicateFromItem?.jam,
         initialRoutePolyline: editItem?.routePolyline ?? duplicateFromItem?.routePolyline,
-        initialRouteCategory: editItem?.routeCategory ?? duplicateFromItem?.routeCategory,
+        initialRouteCategory: editItem?.routeCategory ??
+            duplicateFromItem?.routeCategory ??
+            preferredRouteCategoryForNew,
         isDriverVerified: widget.isDriverVerified,
         onVerificationRequired: widget.onVerificationRequired,
         otherScheduleTimesOnDate: otherTimes,
@@ -557,6 +740,119 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
     ).then((_) {
       formSaving.dispose();
     });
+  }
+
+  /// Kategori rute per tanggal: dari AppBar agar layar utama tidak penuh.
+  void _showKategoriRuteSheet(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final grouped = _groupedByDate();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 4,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: cs.primaryContainer.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(Icons.alt_route, color: cs.primary, size: 26),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Kategori rute',
+                              style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              grouped.isEmpty
+                                  ? 'Pilihan untuk jadwal baru (tombol +). Bisa diubah lagi di form.'
+                                  : 'Untuk tanggal terpilih. Dipakai saat Tambah jadwal; bisa diubah di form.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: cs.onSurfaceVariant,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (grouped.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Icon(Icons.calendar_today_outlined, size: 18, color: cs.primary),
+                        const SizedBox(width: 8),
+                        Text(
+                          _formatDateWithDay(
+                            grouped[_currentPageIndex.clamp(0, grouped.length - 1)].key,
+                          ),
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _buildRouteCategoryChipsRow(
+                      grouped[_currentPageIndex.clamp(0, grouped.length - 1)].key,
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Icon(Icons.add_circle_outline, size: 18, color: cs.primary),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Jadwal baru berikutnya',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _buildRouteCategoryChipsEmptyList(),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -579,16 +875,28 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
           ],
         ),
         elevation: 0,
+        actions: [
+          if (!_showLoadingSpinner)
+            IconButton(
+              icon: const Icon(Icons.alt_route_outlined),
+              tooltip: 'Kategori rute',
+              onPressed: () => _showKategoriRuteSheet(context),
+            ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _onFabTambahJadwalTapped(),
+        onPressed: (_syncingWithServer || _firestoreCardBusy)
+            ? null
+            : () => _onFabTambahJadwalTapped(),
         icon: const Icon(Icons.add),
         label: const Text('Tambah jadwal'),
       ),
       body: SafeArea(
-        child: _showLoadingSpinner
-            ? const Center(child: ShimmerLoading())
-            : Padding(
+        child: Stack(
+          children: [
+            _showLoadingSpinner
+                ? const Center(child: ShimmerLoading())
+                : Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -631,6 +939,39 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
                                       textAlign: TextAlign.center,
                                     ),
                                   ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.alt_route_outlined,
+                                        size: 18,
+                                        color: Theme.of(context).colorScheme.primary,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Kategori rute untuk jadwal baru (juga lewat ikon di AppBar)',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _buildRouteCategoryChipsEmptyList(),
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      'Pilihan ini dipakai saat Tambah jadwal (bisa diubah lagi di form).',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.9),
+                                      ),
+                                    ),
+                                  ),
                                   const SizedBox(height: 24),
                                   TextButton.icon(
                                     onPressed: () async {
@@ -655,9 +996,9 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  // Ringkasan jadwal
+                                  // Ringkasan + pengingat (ringkas di atas)
                                   Padding(
-                                    padding: const EdgeInsets.only(bottom: 12),
+                                    padding: const EdgeInsets.only(bottom: 8),
                                     child: Row(
                                       children: [
                                         Icon(
@@ -666,20 +1007,23 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
                                           color: Theme.of(context).colorScheme.primary,
                                         ),
                                         const SizedBox(width: 8),
-                                        Text(
-                                          _countJadwalHariIni() > 0
-                                              ? '${_countJadwalHariIni()} jadwal hari ini'
-                                              : '${_countJadwalMingguIni()} jadwal minggu ini',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: Theme.of(context).colorScheme.onSurface,
+                                        Expanded(
+                                          child: Text(
+                                            _countJadwalHariIni() > 0
+                                                ? '${_countJadwalHariIni()} jadwal hari ini'
+                                                : '${_countJadwalMingguIni()} jadwal minggu ini',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: Theme.of(context).colorScheme.onSurface,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                  // Pengingat: jadwal dalam 2 jam
                                   Builder(
                                     builder: (context) {
                                       final upcoming = _getUpcomingScheduleWithin2Hours();
@@ -696,40 +1040,27 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
                                           ? '${mins ~/ 60} jam ${mins % 60} menit'
                                           : '$mins menit';
                                       return Container(
-                                        margin: const EdgeInsets.only(bottom: 12),
-                                        padding: const EdgeInsets.all(12),
+                                        margin: const EdgeInsets.only(bottom: 8),
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                         decoration: BoxDecoration(
                                           color: Colors.orange.shade50,
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(10),
                                           border: Border.all(color: Colors.orange.shade200),
                                         ),
                                         child: Row(
                                           children: [
-                                            Icon(Icons.notifications_active, color: Colors.orange.shade700, size: 24),
-                                            const SizedBox(width: 12),
+                                            Icon(Icons.notifications_active, color: Colors.orange.shade700, size: 20),
+                                            const SizedBox(width: 8),
                                             Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    'Pengingat: Jadwal $timeLabel lagi',
-                                                    style: TextStyle(
-                                                      fontWeight: FontWeight.w600,
-                                                      color: Colors.orange.shade900,
-                                                      fontSize: 14,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 2),
-                                                  Text(
-                                                    '${_formatTime(upcoming.jam)} • ${upcoming.tujuanAwal} → ${upcoming.tujuanAkhir}',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: Colors.orange.shade800,
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                ],
+                                              child: Text(
+                                                'Dalam $timeLabel: ${_formatTime(upcoming.jam)} • ${upcoming.tujuanAwal} → ${upcoming.tujuanAkhir}',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.orange.shade900,
+                                                  fontSize: 12,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
                                             ),
                                           ],
@@ -737,7 +1068,67 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
                                       );
                                     },
                                   ),
-                                  // Chip tanggal untuk loncat cepat
+                                  // Utama: daftar jadwal (maks. ruang layar)
+                                  Expanded(
+                                    child: PageView.builder(
+                                      controller: _jadwalPageController,
+                                      itemCount: _groupedByDate().length,
+                                      itemBuilder: (context, pageIndex) {
+                                        final grouped = _groupedByDate();
+                                        if (pageIndex >= grouped.length) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        final entry = grouped[pageIndex];
+                                        final date = entry.key;
+                                        final indices = entry.value;
+                                        return SingleChildScrollView(
+                                          physics: const AlwaysScrollableScrollPhysics(),
+                                          padding: const EdgeInsets.only(bottom: 12),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                                            children: [
+                                              Padding(
+                                                padding: const EdgeInsets.only(top: 2, bottom: 12),
+                                                child: Row(
+                                                  children: [
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(
+                                                        horizontal: 10,
+                                                        vertical: 6,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .primary
+                                                            .withValues(alpha: 0.1),
+                                                        borderRadius: BorderRadius.circular(8),
+                                                      ),
+                                                      child: Text(
+                                                        _formatDateWithDay(date),
+                                                        style: TextStyle(
+                                                          fontSize: 14,
+                                                          fontWeight: FontWeight.w600,
+                                                          color: Theme.of(context).colorScheme.primary,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              ...indices.map(
+                                                (index) => _buildJadwalCard(
+                                                  index,
+                                                  _items[index],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  // Navigasi tanggal + kategori di bawah daftar jadwal
+                                  const SizedBox(height: 4),
                                   SizedBox(
                                     height: 40,
                                     child: ListView.separated(
@@ -773,100 +1164,8 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
                                       },
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 8),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.swipe_rounded,
-                                          size: 18,
-                                          color: Theme.of(context).colorScheme.onSurface,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Geser untuk pindah tanggal',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                            color: Theme.of(context).colorScheme.onSurface,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: PageView.builder(
-                                      controller: _jadwalPageController,
-                                      itemCount: _groupedByDate().length,
-                                      itemBuilder: (context, pageIndex) {
-                                        final grouped = _groupedByDate();
-                                        if (pageIndex >= grouped.length) {
-                                          return const SizedBox.shrink();
-                                        }
-                                        final entry = grouped[pageIndex];
-                                        final date = entry.key;
-                                        final indices = entry.value;
-                                        return SingleChildScrollView(
-                                          physics:
-                                              const AlwaysScrollableScrollPhysics(),
-                                          padding: const EdgeInsets.only(
-                                            bottom: 24,
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.stretch,
-                                            children: [
-                                              Padding(
-                                                padding: const EdgeInsets.only(
-                                                  top: 4,
-                                                  bottom: 16,
-                                                ),
-                                                child: Row(
-                                                  children: [
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(
-                                                        horizontal: 10,
-                                                        vertical: 6,
-                                                      ),
-                                                      decoration: BoxDecoration(
-                                                        color: Theme.of(context)
-                                                            .colorScheme
-                                                            .primary
-                                                            .withValues(alpha: 0.1),
-                                                        borderRadius:
-                                                            BorderRadius.circular(8),
-                                                      ),
-                                                      child: Text(
-                                                        _formatDateWithDay(date),
-                                                        style: TextStyle(
-                                                          fontSize: 14,
-                                                          fontWeight: FontWeight.w600,
-                                                          color: Theme.of(context)
-                                                              .colorScheme
-                                                              .primary,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              ...indices.map(
-                                                (index) => _buildJadwalCard(
-                                                  index,
-                                                  _items[index],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                  // Page dots
                                   if (_groupedByDate().length > 1) ...[
-                                    const SizedBox(height: 12),
+                                    const SizedBox(height: 6),
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: List.generate(
@@ -888,6 +1187,17 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
                                       ),
                                     ),
                                   ],
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4, bottom: 4),
+                                    child: Text(
+                                      'Geser kiri/kanan atau pilih chip • kategori: ikon rute di AppBar',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ),
                       ),
@@ -895,6 +1205,62 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
                   ],
                 ),
               ),
+            if (_syncingWithServer)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: LinearProgressIndicator(
+                  minHeight: 3,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            if (_firestoreCardBusy)
+              Positioned.fill(
+                child: AbsorbPointer(
+                  child: ColoredBox(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    child: Center(
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 28,
+                            vertical: 20,
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(
+                                width: 36,
+                                height: 36,
+                                child: CircularProgressIndicator(strokeWidth: 3),
+                              ),
+                              const SizedBox(height: 14),
+                              Text(
+                                'Menyimpan ke server…',
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Pastikan koneksi stabil',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1163,8 +1529,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
                 final disableByHomeRoute =
                     widget.disableRouteIconForToday &&
                     _dateOnly(item.tanggal) == _today;
-                final routeAvailable = _isRuteAvailableForJadwal(item);
-                final bool routeEnabled = !timePassed;
+                final routeEnabled = _isRuteAvailableForJadwal(item);
                 return SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
@@ -1172,9 +1537,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
                     children: [
                       _buildRuteButton(
                         enabled: routeEnabled,
-                        routeAvailable: routeAvailable,
                         disableByHomeRoute: disableByHomeRoute,
-                        timePassed: timePassed,
                         item: item,
                       ),
                       const SizedBox(width: 8),
@@ -1194,16 +1557,13 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
 
   Widget _buildRuteButton({
     required bool enabled,
-    required bool routeAvailable,
     required bool disableByHomeRoute,
-    required bool timePassed,
     required _JadwalItem item,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
+    final highlight = enabled && !disableByHomeRoute;
     return Material(
-      color: enabled && routeAvailable && !disableByHomeRoute
-          ? colorScheme.primary
-          : colorScheme.surfaceContainerHighest,
+      color: highlight ? colorScheme.primary : colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: enabled
@@ -1219,24 +1579,13 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
                   );
                   return;
                 }
-                if (routeAvailable) {
-                  widget.onOpenRuteFromJadwal?.call(
-                    item.tujuanAwal,
-                    item.tujuanAkhir,
-                    _scheduleIdForItem(item),
-                    item.routePolyline,
-                    item.routeCategory,
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Rute tersedia mulai 4 jam sebelum jam keberangkatan (${_formatTime(item.jam)}) pada hari H.',
-                      ),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
+                widget.onOpenRuteFromJadwal?.call(
+                  item.tujuanAwal,
+                  item.tujuanAkhir,
+                  _scheduleIdForItem(item),
+                  item.routePolyline,
+                  item.routeCategory,
+                );
               }
             : null,
         borderRadius: BorderRadius.circular(10),
@@ -1248,9 +1597,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
               Icon(
                 Icons.route_rounded,
                 size: 18,
-                color: enabled && routeAvailable && !disableByHomeRoute
-                    ? colorScheme.onPrimary
-                    : colorScheme.onSurfaceVariant,
+                color: highlight ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 6),
               Text(
@@ -1258,9 +1605,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: enabled && routeAvailable && !disableByHomeRoute
-                      ? colorScheme.onPrimary
-                      : colorScheme.onSurfaceVariant,
+                  color: highlight ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -1383,7 +1728,8 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
     if (confirmed != true || !mounted) return;
     final user = _auth.currentUser;
     if (user == null) return;
-    const timeout = Duration(seconds: 20);
+    if (mounted) setState(() => _firestoreCardBusy = true);
+    const timeout = Duration(seconds: 40);
     try {
       final doc = await _firestore
           .collection('driver_schedules')
@@ -1462,6 +1808,8 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
           SnackBar(content: Text(msg), backgroundColor: Colors.red),
         );
       }
+    } finally {
+      if (mounted) setState(() => _firestoreCardBusy = false);
     }
   }
 
@@ -1629,7 +1977,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
 
 /// Bottom sheet daftar penumpang yang sudah pesan (nama + foto) untuk satu jadwal.
 /// Tombol Pindah ke jadwal lain dan Oper Driver (hanya travel, picked_up).
-class _ScheduledPassengersSheet extends StatelessWidget {
+class _ScheduledPassengersSheet extends StatefulWidget {
   final String scheduleId;
   final String driverUid;
   final String title;
@@ -1645,6 +1993,53 @@ class _ScheduledPassengersSheet extends StatelessWidget {
   });
 
   @override
+  State<_ScheduledPassengersSheet> createState() =>
+      _ScheduledPassengersSheetState();
+}
+
+class _ScheduledPassengersSheetState extends State<_ScheduledPassengersSheet> {
+  late Future<List<OrderModel>> _ordersFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _ordersFuture = _loadOrders();
+  }
+
+  Future<List<OrderModel>> _loadOrders() => OrderService.getScheduledOrdersForSchedule(
+        widget.scheduleId,
+        travelOnly: widget.travelOnly,
+        kirimBarangOnly: widget.kirimBarangOnly,
+      );
+
+  /// Penjelasan singkat aturan pindah jadwal vs Oper (hindari kebingungan driver).
+  Widget _buildAturanHint(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    String? text;
+    if (widget.travelOnly == true) {
+      text =
+          'Setelah kesepakatan, Anda bisa memindah penumpang ke jadwal lain (ikon kalender). '
+          'Oper Driver hanya muncul untuk penumpang travel yang sudah dijemput.';
+    } else if (widget.kirimBarangOnly == true) {
+      text =
+          'Setelah kesepakatan, Anda bisa memindah pesanan ke jadwal lain (ikon kalender). '
+          'Oper Driver tidak berlaku untuk kirim barang.';
+    }
+    if (text == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          height: 1.4,
+          color: colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
@@ -1654,21 +2049,44 @@ class _ScheduledPassengersSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              title,
+              widget.title,
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
+            _buildAturanHint(context),
             const SizedBox(height: 16),
             FutureBuilder<List<OrderModel>>(
-              future: OrderService.getScheduledOrdersForSchedule(
-                scheduleId,
-                travelOnly: travelOnly,
-                kirimBarangOnly: kirimBarangOnly,
-              ),
+              future: _ordersFuture,
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Gagal memuat daftar. Periksa jaringan lalu coba lagi.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: () => setState(() {
+                            _ordersFuture = _loadOrders();
+                          }),
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: const Text('Coba lagi'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Padding(
                     padding: EdgeInsets.symmetric(vertical: 24),
@@ -1690,7 +2108,7 @@ class _ScheduledPassengersSheet extends StatelessWidget {
                     ),
                   );
                 }
-                final pickedUpTravel = travelOnly == true
+                final pickedUpTravel = widget.travelOnly == true
                     ? orders
                         .where((o) =>
                             o.status == OrderService.statusPickedUp &&
@@ -1764,8 +2182,8 @@ class _ScheduledPassengersSheet extends StatelessWidget {
                               showPindahJadwalSheet(
                                 context,
                                 order: o,
-                                currentScheduleId: scheduleId,
-                                driverUid: driverUid,
+                                currentScheduleId: widget.scheduleId,
+                                driverUid: widget.driverUid,
                               );
                             },
                           ),
@@ -1843,10 +2261,11 @@ class _JadwalRoutePreviewScreenState extends State<_JadwalRoutePreviewScreen> {
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
     _fitBounds();
+    if (mounted) setState(() {});
   }
 
   void _fitBounds() {
-    if (widget.alternatives.isEmpty || _mapController == null) return;
+    if (widget.alternatives.isEmpty || _mapController == null || !mounted) return;
     double minLat = double.infinity;
     double maxLat = -double.infinity;
     double minLng = double.infinity;
@@ -1860,24 +2279,23 @@ class _JadwalRoutePreviewScreenState extends State<_JadwalRoutePreviewScreen> {
       }
     }
     if (minLat == double.infinity) return;
-    final spanLat = maxLat - minLat;
-    final spanLng = maxLng - minLng;
-    const minZoom = 10.0;
-    if (spanLat > 0.1 || spanLng > 0.1) {
-      final center = LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
-      _mapController!.animateCamera(
-        CameraUpdate.newLatLngZoom(center, minZoom),
-      );
-    } else {
+    // Padding lebih besar + area bawah untuk card agar semua alternatif kelihatan
+    // (bukan zoom tetap 10 yang sering memotong rute panjang).
+    final mq = MediaQuery.of(context);
+    final pad = 100.0 + mq.padding.top + mq.padding.bottom;
+    try {
       _mapController!.animateCamera(
         CameraUpdate.newLatLngBounds(
           LatLngBounds(
             southwest: LatLng(minLat, minLng),
             northeast: LatLng(maxLat, maxLng),
           ),
-          80,
+          pad,
         ),
       );
+    } catch (_) {
+      final center = LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
+      _mapController!.animateCamera(CameraUpdate.newLatLngZoom(center, 10));
     }
   }
 
@@ -1897,19 +2315,14 @@ class _JadwalRoutePreviewScreenState extends State<_JadwalRoutePreviewScreen> {
       }
     }
     if (closestIndex >= 0 && mounted) {
-      setState(() {
-        _selectedIndex = closestIndex;
-        _scrollToSelectedRoute();
-      });
+      setState(() => _selectedIndex = closestIndex);
+      _scrollToSelectedRoute();
     }
   }
 
   void _selectRoute(int index) {
-    if (index == _selectedIndex) return;
-    setState(() {
-      _selectedIndex = index;
-      _scrollToSelectedRoute();
-    });
+    setState(() => _selectedIndex = index);
+    _scrollToSelectedRoute();
   }
 
   Set<Polyline> _buildPolylines() {
@@ -1949,276 +2362,270 @@ class _JadwalRoutePreviewScreenState extends State<_JadwalRoutePreviewScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Stack(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          StyledGoogleMapBuilder(
-            builder: (style, _) => GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: origin,
-                zoom: MapStyleService.defaultZoom,
-                tilt: MapStyleService.defaultTilt,
-              ),
-              onMapCreated: _onMapCreated,
-              mapType: MapType.normal,
-              style: style,
-              mapToolbarEnabled: false,
-              zoomControlsEnabled: false,
-              myLocationButtonEnabled: false,
-              polylines: _buildPolylines(),
-              markers: {
-                Marker(
-                  markerId: const MarkerId('origin'),
-                  position: origin,
-                  icon: BitmapDescriptor.defaultMarkerWithHue(
-                    BitmapDescriptor.hueGreen,
-                  ),
-                ),
-                Marker(
-                  markerId: const MarkerId('dest'),
-                  position: dest,
-                  icon: BitmapDescriptor.defaultMarkerWithHue(
-                    BitmapDescriptor.hueRed,
-                  ),
-                ),
-              },
-            ),
-          ),
-          // Tombol zoom in/out (di atas)
-          Positioned(
-            top: 80,
-            right: 16,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+          Expanded(
+            child: Stack(
               children: [
-                Material(
-                  elevation: 2,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      InkWell(
-                        onTap: () => _mapController?.animateCamera(CameraUpdate.zoomIn()),
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          alignment: Alignment.center,
-                          child: Icon(Icons.add, color: Theme.of(context).colorScheme.onSurface, size: 22),
+                Positioned.fill(
+                  child: StyledGoogleMapBuilder(
+                    builder: (style, _) => GoogleMap(
+                      buildingsEnabled: true,
+                      indoorViewEnabled: true,
+                      initialCameraPosition: CameraPosition(
+                        target: origin,
+                        zoom: MapStyleService.defaultZoom,
+                        tilt: MapStyleService.defaultTilt,
+                      ),
+                      onMapCreated: _onMapCreated,
+                      onTap: _onMapTap,
+                      mapType: MapType.normal,
+                      style: style,
+                      mapToolbarEnabled: false,
+                      zoomControlsEnabled: false,
+                      myLocationButtonEnabled: false,
+                      polylines: _buildPolylines(),
+                      markers: {
+                        Marker(
+                          markerId: const MarkerId('origin'),
+                          position: origin,
+                          icon: BitmapDescriptor.defaultMarkerWithHue(
+                            BitmapDescriptor.hueGreen,
+                          ),
+                        ),
+                        Marker(
+                          markerId: const MarkerId('dest'),
+                          position: dest,
+                          icon: BitmapDescriptor.defaultMarkerWithHue(
+                            BitmapDescriptor.hueRed,
+                          ),
+                        ),
+                      },
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 80,
+                  right: 16,
+                  child: Material(
+                    elevation: 2,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        InkWell(
+                          onTap: () => _mapController?.animateCamera(CameraUpdate.zoomIn()),
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                          child: Container(
+                            width: 44,
+                            height: 44,
+                            alignment: Alignment.center,
+                            child: Icon(Icons.add, color: Theme.of(context).colorScheme.onSurface, size: 22),
+                          ),
+                        ),
+                        Divider(height: 1, color: Theme.of(context).colorScheme.outline),
+                        InkWell(
+                          onTap: () => _mapController?.animateCamera(CameraUpdate.zoomOut()),
+                          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
+                          child: Container(
+                            width: 44,
+                            height: 44,
+                            alignment: Alignment.center,
+                            child: Icon(Icons.remove, color: Theme.of(context).colorScheme.onSurface, size: 22),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 16,
+                  top: 80,
+                  child: Material(
+                    elevation: 2,
+                    borderRadius: BorderRadius.circular(8),
+                    child: InkWell(
+                      onTap: _goToMyLocation,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        child: Icon(
+                          Icons.my_location,
+                          color: Theme.of(context).colorScheme.primary,
+                          size: 24,
                         ),
                       ),
-                      Divider(height: 1, color: Theme.of(context).colorScheme.outline),
-                      InkWell(
-                        onTap: () => _mapController?.animateCamera(CameraUpdate.zoomOut()),
-                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          alignment: Alignment.center,
-                          child: Icon(Icons.remove, color: Theme.of(context).colorScheme.onSurface, size: 22),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          // Tombol Lokasi saya
-          Positioned(
-            left: 16,
-            top: 80,
-            child: Material(
-              elevation: 2,
-              borderRadius: BorderRadius.circular(8),
-              child: InkWell(
-                onTap: _goToMyLocation,
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  child: Icon(
-                    Icons.my_location,
-                    color: Theme.of(context).colorScheme.primary,
-                    size: 24,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // Overlay tap: bypass Polyline.onTap yang bermasalah di Android/iOS
-          if (_mapController != null)
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTapUp: (details) async {
-                  if (_mapController == null || !mounted) return;
-                  try {
-                    final latLng = await _mapController!.getLatLng(
-                      ScreenCoordinate(
-                        x: details.localPosition.dx.toInt(),
-                        y: details.localPosition.dy.toInt(),
-                      ),
-                    );
-                    if (mounted) _onMapTap(latLng);
-                  } catch (_) {}
-                },
-              ),
-            ),
-          // Petunjuk + tombol konfirmasi (tombol rute di dalam card)
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 24,
-            child: Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Tombol pilih rute (Rute 1, 2, 3) di dalam card - geser kanan/kiri jika banyak
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: List.generate(widget.alternatives.length, (i) {
-                              final r = widget.alternatives[i];
-                              final color = routeColorForIndex(i);
-                              final isSelected = i == _selectedIndex;
-                              return Padding(
-                                key: _routeButtonKeys[i],
-                                padding: const EdgeInsets.only(right: 8),
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    onTap: () => _selectRoute(i),
-                                borderRadius: BorderRadius.circular(12),
+          // Di luar area GoogleMap (bukan Stack di atas platform view) agar tombol Rute 1/2/3
+          // tetap dapat sentuhan di Android.
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: List.generate(widget.alternatives.length, (i) {
+                                final r = widget.alternatives[i];
+                                final color = routeColorForIndex(i);
+                                final isSelected = i == _selectedIndex;
+                                return Padding(
+                                  key: _routeButtonKeys[i],
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: Material(
+                                    type: MaterialType.transparency,
+                                    child: InkWell(
+                                      onTap: () => _selectRoute(i),
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 10,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: color.withValues(alpha: isSelected ? 1 : 0.85),
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: isSelected
+                                              ? Border.all(color: Colors.white, width: 3)
+                                              : null,
+                                        ),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Rute ${i + 1}',
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            Text(
+                                              r.distanceText,
+                                              style: TextStyle(
+                                                color: Colors.white.withValues(alpha: 0.9),
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ),
+                          ),
+                          if (widget.alternatives.length >= 3)
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: IgnorePointer(
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 10,
-                                  ),
+                                  width: 32,
                                   decoration: BoxDecoration(
-                                    color: color.withValues(alpha: isSelected ? 1 : 0.85),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: isSelected
-                                        ? Border.all(color: Colors.white, width: 3)
-                                        : null,
-                                  ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Rute ${i + 1}',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                      Text(
-                                        r.distanceText,
-                                        style: TextStyle(
-                                          color: Colors.white.withValues(alpha: 0.9),
-                                          fontSize: 10,
-                                        ),
-                                      ),
-                                    ],
+                                    gradient: LinearGradient(
+                                      begin: Alignment.centerLeft,
+                                      end: Alignment.centerRight,
+                                      colors: [
+                                        Theme.of(context).colorScheme.surface.withValues(alpha: 0),
+                                        Theme.of(context).colorScheme.surface,
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          );
-                        }),
+                        ],
+                      ),
+                      if (widget.alternatives.length == 1)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Hanya tersedia 1 rute untuk rute ini.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
-                        // Gradient edge kanan - hint ada rute lain di sebelah kanan
-                        if (widget.alternatives.length >= 3)
-                          Positioned(
-                            top: 0,
-                            right: 0,
-                            bottom: 0,
-                            child: IgnorePointer(
-                              child: Container(
-                                width: 32,
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.centerLeft,
-                                    end: Alignment.centerRight,
-                                    colors: [
-                                      Theme.of(context).colorScheme.surface.withValues(alpha: 0),
-                                      Theme.of(context).colorScheme.surface,
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    if (widget.alternatives.length == 1)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          'Hanya tersedia 1 rute untuk rute ini.',
+                      if (_selectedIndex >= 0) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          '${widget.alternatives[_selectedIndex].distanceText} • ${widget.alternatives[_selectedIndex].durationText}',
                           style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Text(
+                        'Tap peta, tombol rute, atau garis untuk ganti rute. Pinch untuk zoom.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
-                    if (_selectedIndex >= 0) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        '${widget.alternatives[_selectedIndex].distanceText} • ${widget.alternatives[_selectedIndex].durationText}',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.onSurface,
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _mapController == null ? null : _fitBounds,
+                          icon: const Icon(Icons.fit_screen, size: 18),
+                          label: const Text('Tampilkan semua rute'),
                         ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 100,
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              ),
+                              child: const Text('Kembali', overflow: TextOverflow.ellipsis, maxLines: 1),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: _selectedIndex >= 0
+                                  ? () => Navigator.pop(
+                                        context,
+                                        widget.alternatives[_selectedIndex].points,
+                                      )
+                                  : null,
+                              icon: const Icon(Icons.check, size: 20),
+                              label: const Text('Pilih rute ini'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
-                    const SizedBox(height: 8),
-                    Text(
-                      'Tap tombol atau garis di peta untuk ganti rute.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        SizedBox(
-                          width: 100,
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.pop(context),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            ),
-                            child: const Text('Kembali', overflow: TextOverflow.ellipsis, maxLines: 1),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: _selectedIndex >= 0
-                                ? () => Navigator.pop(
-                                      context,
-                                      widget.alternatives[_selectedIndex].points,
-                                    )
-                                : null,
-                            icon: const Icon(Icons.check, size: 20),
-                            label: const Text('Pilih rute ini'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -2487,6 +2894,35 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                   ),
                 ),
                 const SizedBox(height: 20),
+                DropdownButtonFormField<String>(
+                  value: _routeCategory,
+                  decoration: InputDecoration(
+                    labelText: 'Kategori rute',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
+                    isDense: true,
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: RouteCategoryService.categoryDalamKota, child: Text('Dalam Kota')),
+                    DropdownMenuItem(value: RouteCategoryService.categoryAntarKabupaten, child: Text('Antar Kabupaten')),
+                    DropdownMenuItem(value: RouteCategoryService.categoryAntarProvinsi, child: Text('Antar Provinsi')),
+                    DropdownMenuItem(value: RouteCategoryService.categoryNasional, child: Text('Nasional')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setState(() => _routeCategory = v);
+                  },
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Penumpang dapat memfilter driver berdasarkan kategori ini saat mencari travel.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 if (_recentDestinations.isNotEmpty) ...[
                   Text(
                     'Riwayat cepat',
@@ -2793,35 +3229,6 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                       ),
                     ),
                   ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: _routeCategory,
-                  decoration: InputDecoration(
-                    labelText: 'Kategori rute',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                    ),
-                    isDense: true,
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: RouteCategoryService.categoryDalamKota, child: Text('Dalam Kota')),
-                    DropdownMenuItem(value: RouteCategoryService.categoryAntarKabupaten, child: Text('Antar Kabupaten')),
-                    DropdownMenuItem(value: RouteCategoryService.categoryAntarProvinsi, child: Text('Antar Provinsi')),
-                    DropdownMenuItem(value: RouteCategoryService.categoryNasional, child: Text('Nasional')),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) setState(() => _routeCategory = v);
-                  },
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Penumpang dapat memfilter driver berdasarkan kategori ini saat mencari travel.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
                 if (widget.editScheduleIndex != null) ...[
                   const SizedBox(height: 8),
                   Align(
@@ -3080,7 +3487,8 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
     );
     if (confirmed != true) return;
     widget.formSaving.value = true;
-    const timeout = Duration(seconds: 20);
+    // Selaras dengan timeout baca/tulis di DriverScheduleService (jaringan lambat sering 20–30s).
+    const timeout = Duration(seconds: 40);
     try {
       final doc = await widget.firestore
           .collection('driver_schedules')
@@ -3317,7 +3725,8 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
     final user = widget.auth.currentUser;
     if (user == null) return;
     widget.formSaving.value = true;
-    const timeout = Duration(seconds: 20);
+    // Selaras dengan timeout baca/tulis di DriverScheduleService (jaringan lambat sering 20–30s).
+    const timeout = Duration(seconds: 40);
     try {
       final doc = await widget.firestore
           .collection('driver_schedules')
@@ -3398,11 +3807,6 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
       );
       final scaffoldMessenger = ScaffoldMessenger.of(context);
       if (mounted) Navigator.pop(context);
-      try {
-        await widget.onSaved(newItem, editIndex: editIdx);
-      } catch (e) {
-        if (kDebugMode) debugPrint('DriverJadwal onSaved after save: $e');
-      }
       scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text(
@@ -3413,6 +3817,11 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
           backgroundColor: Colors.green,
         ),
       );
+      try {
+        await widget.onSaved(newItem, editIndex: editIdx);
+      } catch (e) {
+        if (kDebugMode) debugPrint('DriverJadwal onSaved after save: $e');
+      }
     } catch (e) {
       final msg = e is TimeoutException
           ? 'Koneksi timeout. Cek jaringan dan coba lagi.'

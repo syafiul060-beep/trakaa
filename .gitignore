@@ -1,0 +1,12 @@
+# Monorepo Traka — pola sensitif tambahan (subfolder punya .gitignore masing-masing)
+
+.env
+.env.*
+!.env.example
+*.pem
+**/service-account*.json
+**/firebase-adminsdk*.json
+
+# Opsional: jangan commit jika tidak ingin API key client di repo
+# **/google-services.json
+# **/GoogleService-Info.plist

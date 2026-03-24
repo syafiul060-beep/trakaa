@@ -170,7 +170,7 @@ export default function Chat() {
         <div className="p-4 border-b bg-gray-50">
           <h3 className="font-semibold text-gray-800">Percakapan</h3>
           <p className="text-sm text-gray-500 mt-1">
-            {chats.length} chat
+            {chats.length} percakapan
           </p>
         </div>
         <div className="flex-1 overflow-y-auto">
@@ -216,7 +216,7 @@ export default function Chat() {
                 </div>
                 <div>
                   <div className="font-semibold text-gray-800">
-                    {userInfo?.displayName || 'User'}
+                    {userInfo?.displayName || 'Pengguna'}
                   </div>
                   <div className="text-sm text-gray-500">
                     {userInfo?.email || userInfo?.phoneNumber || selectedUserId}

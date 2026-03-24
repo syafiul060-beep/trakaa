@@ -9,6 +9,9 @@ import 'package:http_certificate_pinning/http_certificate_pinning.dart';
 import '../config/traka_api_config.dart';
 import '../utils/retry_utils.dart';
 
+/// Hasil [createPassengerOrderViaApi]: id order atau fallback ke Firestore lokal.
+typedef CreateOrderApiResult = ({String? orderId, bool fallBackToFirestore});
+
 /// HTTP client untuk Traka Backend API.
 /// Digunakan untuk driver_status (Redis) saat hybrid aktif.
 /// Tahap 6: Certificate pinning opsional via TRAKA_API_CERT_SHA256.
@@ -102,15 +105,17 @@ class TrakaApiService {
   }) async {
     if (!_enabled) return false;
     try {
-      final res = await _httpPatch(
-        Uri.parse('$_base/api/driver/status'),
-        headers: await _authHeaders(),
-        body: _jsonEncode({'currentPassengerCount': currentPassengerCount}),
-      );
-      if (res.statusCode >= 500 || res.statusCode == 429) {
-        throw Exception('HTTP ${res.statusCode}');
-      }
-      return res.statusCode == 200;
+      return await RetryUtils.withRetry(() async {
+        final res = await _httpPatch(
+          Uri.parse('$_base/api/driver/status'),
+          headers: await _authHeaders(),
+          body: _jsonEncode({'currentPassengerCount': currentPassengerCount}),
+        );
+        if (res.statusCode >= 500 || res.statusCode == 429) {
+          throw Exception('HTTP ${res.statusCode}');
+        }
+        return res.statusCode == 200;
+      }, maxAttempts: 3, baseDelayMs: 400);
     } catch (e) {
       if (kDebugMode) debugPrint('TrakaApiService.patchDriverStatus: $e');
       return false;
@@ -158,11 +163,48 @@ class TrakaApiService {
     }
   }
 
+  /// POST /api/orders — buat order (penumpang). Dual-write di server; butuh hybrid + [TrakaApiConfig.createOrderViaApi].
+  static Future<CreateOrderApiResult> createPassengerOrderViaApi(
+    Map<String, dynamic> body,
+  ) async {
+    if (!TrakaApiConfig.shouldCreateOrderViaApi) {
+      return (orderId: null, fallBackToFirestore: true);
+    }
+    try {
+      final res = await _httpPost(
+        Uri.parse('$_base/api/orders'),
+        headers: await _authHeaders(),
+        body: _jsonEncode(body),
+      );
+      if (res.statusCode == 201) {
+        final m = _jsonDecode(res.body) as Map<String, dynamic>?;
+        final id = m?['id'] as String?;
+        return (orderId: id, fallBackToFirestore: false);
+      }
+      if (res.statusCode == 409 ||
+          res.statusCode == 403 ||
+          res.statusCode == 400) {
+        return (orderId: null, fallBackToFirestore: false);
+      }
+      if (kDebugMode) {
+        debugPrint(
+          'TrakaApiService.createPassengerOrderViaApi: ${res.statusCode} ${res.body}',
+        );
+      }
+      return (orderId: null, fallBackToFirestore: true);
+    } catch (e) {
+      if (kDebugMode) debugPrint('TrakaApiService.createPassengerOrderViaApi: $e');
+      return (orderId: null, fallBackToFirestore: true);
+    }
+  }
+
   /// GET /api/match/drivers – driver terdekat dari titik pickup (#9, Tahap 2).
   /// Tidak perlu auth. Returns [{ uid, distance, ...driverStatus }].
   static Future<List<Map<String, dynamic>>> getMatchDrivers({
     required double lat,
     required double lng,
+    double? destLat,
+    double? destLng,
     String? city,
     double radiusKm = 5,
     int limit = 30,
@@ -173,21 +215,28 @@ class TrakaApiService {
       final query = <String, String>{
         'lat': lat.toString(),
         'lng': lng.toString(),
+        if (destLat != null) 'destLat': destLat.toString(),
+        if (destLng != null) 'destLng': destLng.toString(),
         if (city != null && city.isNotEmpty) 'city': city,
         'radius': radiusKm.toString(),
         'limit': limit.toString(),
         if (minCapacity != null && minCapacity > 0) 'minCapacity': minCapacity.toString(),
       };
       final uri = Uri.parse('$_base/api/match/drivers').replace(queryParameters: query);
-      final res = await _httpGet(uri);
-      if (res.statusCode != 200) return [];
-      final data = _jsonDecode(res.body) as Map<String, dynamic>?;
-      final list = data?['drivers'] as List<dynamic>?;
-      if (list == null) return [];
-      return list
-          .whereType<Map<String, dynamic>>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+      return await RetryUtils.withRetry(() async {
+        final res = await _httpGet(uri);
+        if (res.statusCode >= 500 || res.statusCode == 429) {
+          throw Exception('HTTP ${res.statusCode}');
+        }
+        if (res.statusCode != 200) return <Map<String, dynamic>>[];
+        final data = _jsonDecode(res.body) as Map<String, dynamic>?;
+        final list = data?['drivers'] as List<dynamic>?;
+        if (list == null) return <Map<String, dynamic>>[];
+        return list
+            .whereType<Map<String, dynamic>>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }, maxAttempts: 3, baseDelayMs: 500);
     } catch (e) {
       if (kDebugMode) debugPrint('TrakaApiService.getMatchDrivers: $e');
       return [];
@@ -226,7 +275,7 @@ class TrakaApiService {
     if (!_enabled) return;
 
     yield await getDriverStatus(driverUid);
-    await for (final _ in Stream.periodic(const Duration(seconds: 4))) {
+    await for (final _ in Stream.periodic(const Duration(seconds: 3))) {
       yield await getDriverStatus(driverUid);
     }
   }

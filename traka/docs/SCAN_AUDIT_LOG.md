@@ -11,8 +11,8 @@ Setiap dokumen berisi:
 | Field | Tipe | Keterangan |
 |-------|------|------------|
 | `orderId` | string | ID order |
-| `scanType` | string | `pickup` \| `complete` \| `receiver` \| `driver_pickup` |
-| `scannedBy` | string | `passenger` \| `receiver` \| `driver` |
+| `scanType` | string | `pickup` \| `complete` \| `receiver` \| `driver_pickup` \| `auto_confirm_pickup` \| `auto_confirm_complete` |
+| `scannedBy` | string | `passenger` \| `receiver` \| `driver` \| `system` |
 | `passengerUid` | string? | UID penumpang (jika ada) |
 | `driverUid` | string? | UID driver |
 | `receiverUid` | string? | UID penerima (untuk kirim barang) |
@@ -23,6 +23,8 @@ Setiap dokumen berisi:
 | `tripDistanceKm` | number? | Jarak perjalanan (km) |
 | `tripFareRupiah` | number? | Tarif perjalanan (travel) |
 | `tripBarangFareRupiah` | number? | Tarif kirim barang |
+| `driverViolationFee` | number? | Denda driver (auto_confirm_pickup, travel) |
+| `passengerViolationFee` | number? | Denda penumpang (auto_confirm_complete, travel) |
 | `orderType` | string | `travel` \| `kirim_barang` |
 | `status` | string | Status order setelah scan |
 | `timestamp` | Timestamp | Waktu scan |
@@ -35,6 +37,8 @@ Setiap dokumen berisi:
 | `complete` | passenger | passengerScannedAt di-set (travel selesai) |
 | `receiver` | receiver | receiverScannedAt di-set (kirim barang diterima) |
 | `driver_pickup` | driver | driverScannedAt di-set (legacy) |
+| `auto_confirm_pickup` | system | `autoConfirmPickup` baru true (travel, penjemputan tanpa scan) |
+| `auto_confirm_complete` | system | `autoConfirmComplete` baru true (travel, selesai tanpa scan / menjauh) |
 
 ## Keamanan
 

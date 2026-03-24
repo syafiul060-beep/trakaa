@@ -4,6 +4,100 @@
 
 ---
 
+## Setup untuk Developer Baru (Setelah Clone Repo)
+
+Setelah clone repo, buat file config berikut (semua di `.gitignore`, tidak ikut ter-commit):
+
+### 1. Keys.plist (iOS Maps)
+
+**Windows (PowerShell/CMD):**
+```powershell
+cd d:\Traka\traka\ios\Runner
+copy Keys.plist.example Keys.plist
+```
+
+**Mac/Linux:**
+```bash
+cd traka/ios/Runner
+cp Keys.plist.example Keys.plist
+```
+
+Buka `Keys.plist`, ganti `YOUR_GOOGLE_MAPS_API_KEY` dengan Maps API key Anda.
+
+### 2. firebase-config.js (Web track.html)
+
+**traka/web/** (untuk track.html di Flutter web):
+```powershell
+# Windows
+cd d:\Traka\traka\web
+copy firebase-config.example.js firebase-config.js
+```
+```bash
+# Mac/Linux
+cp traka/web/firebase-config.example.js traka/web/firebase-config.js
+```
+
+**traka/hosting/** (jika pakai hosting):
+```powershell
+# Windows
+copy traka\hosting\firebase-config.example.js traka\hosting\firebase-config.js
+```
+
+**traka-admin** (untuk deploy web admin):
+```powershell
+# Windows
+copy traka-admin\public\firebase-config.example.js traka-admin\public\firebase-config.js
+```
+
+Edit masing-masing `firebase-config.js`, ganti `YOUR_FIREBASE_WEB_API_KEY` dengan Browser/Web API key dari Firebase Console.
+
+### 3. Firebase config (Flutter)
+
+```powershell
+cd d:\Traka\traka
+flutterfire configure
+```
+
+Perintah ini akan generate:
+- `lib/firebase_options.dart`
+- `android/app/google-services.json`
+- `ios/Runner/GoogleService-Info.plist`
+
+### 4. key.properties (Android Maps)
+
+```powershell
+# Windows
+cd d:\Traka\traka\android
+copy key.properties.example key.properties
+```
+```bash
+# Mac/Linux
+cp traka/android/key.properties.example traka/android/key.properties
+```
+
+Edit `key.properties`, tambah baris:
+```properties
+MAPS_API_KEY=AIzaSy_xxx
+```
+
+### 5. traka-admin .env
+
+```powershell
+# Windows
+cd d:\Traka\traka-admin
+copy .env.example .env
+```
+```bash
+# Mac/Linux
+cp traka-admin/.env.example traka-admin/.env
+```
+
+Edit `.env`, isi `VITE_FIREBASE_API_KEY` dan variabel lain sesuai Firebase Console.
+
+> **Catatan:** API key didapat dari project owner atau [Google Cloud Console](https://console.cloud.google.com/) → project syafiul-traka → Credentials.
+
+---
+
 ## File yang JANGAN Di-commit (sudah di .gitignore)
 
 | File | Isi |

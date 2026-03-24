@@ -1,18 +1,32 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { signInWithEmailAndPassword } from 'firebase/auth'
 import { auth } from '../firebase'
+
+const SESSION_IDLE_KEY = 'traka_admin_session_end'
 
 export default function Login() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    try {
+      const reason = sessionStorage.getItem(SESSION_IDLE_KEY)
+      if (reason === 'idle') {
+        setInfo('Sesi berakhir karena tidak ada aktivitas selama 30 menit. Silakan masuk kembali.')
+        sessionStorage.removeItem(SESSION_IDLE_KEY)
+      }
+    } catch (_) {}
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    setInfo('')
     setLoading(true)
     try {
       await signInWithEmailAndPassword(auth, email, password)
@@ -29,7 +43,7 @@ export default function Login() {
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-100 p-8">
         <div className="flex justify-center mb-6">
           <div className="flex items-center gap-2">
-            <div className="flex -space-x-1">
+            <div className="flex -space-x-1" aria-hidden>
               <div className="w-4 h-4 rounded-md bg-orange-500" />
               <div className="w-4 h-4 rounded-md bg-teal-500" />
               <div className="w-4 h-4 rounded-md bg-orange-400" />
@@ -41,11 +55,25 @@ export default function Login() {
         <h1 className="text-lg font-semibold text-center text-slate-600 mb-6">
           Panel Admin
         </h1>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {info ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-4 rounded-xl bg-slate-100 border border-slate-200 px-3 py-2 text-sm text-slate-700"
+          >
+            {info}
+          </div>
+        ) : null}
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <label htmlFor="admin-email" className="block text-sm font-medium text-gray-700 mb-1">
+              Email
+            </label>
             <input
+              id="admin-email"
               type="email"
+              name="username"
+              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 transition"
@@ -54,24 +82,35 @@ export default function Login() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <label htmlFor="admin-password" className="block text-sm font-medium text-gray-700 mb-1">
+              Password
+            </label>
             <input
+              id="admin-password"
               type="password"
+              name="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 transition"
               required
             />
           </div>
-          {error && (
-            <p className="text-sm text-red-600">{error}</p>
-          )}
+          {error ? (
+            <p
+              role="alert"
+              aria-live="assertive"
+              className="text-sm text-red-600"
+            >
+              {error}
+            </p>
+          ) : null}
           <button
             type="submit"
             disabled={loading}
             className="w-full py-3 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 disabled:opacity-50 shadow-md hover:shadow-lg transition"
           >
-            {loading ? 'Memuat...' : 'Login'}
+            {loading ? 'Memuat...' : 'Masuk'}
           </button>
         </form>
       </div>

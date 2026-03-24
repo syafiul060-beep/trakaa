@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import '../services/car_icon_service.dart';
+import '../services/passenger_driver_car_icon.dart';
 import '../services/geocoding_service.dart';
 import '../services/route_utils.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' hide Cluster, ClusterManager;
@@ -22,8 +25,14 @@ import '../services/app_analytics_service.dart';
 import '../services/locale_service.dart';
 import '../services/favorite_driver_service.dart';
 import '../services/location_service.dart';
+import 'package:geolocator/geolocator.dart';
 import '../services/map_style_service.dart';
 import '../services/order_service.dart';
+import '../widgets/passenger_duplicate_pending_order_dialog.dart'
+    show
+        PassengerDuplicatePendingChoice,
+        passengerDuplicatePendingChoiceAnalyticsValue,
+        showPassengerDuplicatePendingOrderDialog;
 import '../widgets/styled_google_map_builder.dart';
 import '../widgets/shimmer_loading.dart';
 import 'chat_room_penumpang_screen.dart';
@@ -79,9 +88,14 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
   Set<Marker> _clusterMarkers = {};
   GoogleMapController? _mapController;
 
-  /// Icon mobil: car_merah = diam, car_hijau = bergerak (bukan pin).
+  /// Icon mobil: traka_car_icons_premium (CarIconService).
   BitmapDescriptor? _carIconRed;
   BitmapDescriptor? _carIconGreen;
+  PremiumPassengerCarIconSet? _premiumCarIcons;
+  double _mapZoomForCarIcons = MapStyleService.searchZoom;
+  int _carIconZoomBucket =
+      CarIconService.passengerMapZoomBucket(MapStyleService.searchZoom);
+  Timer? _carIconZoomDebounce;
 
   @override
   void initState() {
@@ -101,14 +115,22 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
   Future<void> _loadCarIcons() async {
     if (!mounted) return;
     try {
+      final premium = await CarIconService.loadPremiumPassengerCarIcons(
+        context: context,
+        baseSize: 12,
+        padding: 4,
+        mapZoom: _mapZoomForCarIcons,
+      );
       final result = await CarIconService.loadCarIcons(
         context: context,
-        baseSize: 14,
+        baseSize: 12,
         padding: 4,
         forPassenger: true,
+        mapZoom: _mapZoomForCarIcons,
       );
       if (mounted) {
         setState(() {
+          _premiumCarIcons = premium;
           _carIconRed = result.red;
           _carIconGreen = result.green;
         });
@@ -140,6 +162,22 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
     if (mounted) setState(() => _clusterMarkers = markers);
   }
 
+  Future<void> _onTravelMapCameraIdle() async {
+    _clusterManager.updateMap();
+    final ctrl = _mapController;
+    if (!mounted || ctrl == null) return;
+    final z = await ctrl.getZoomLevel();
+    if (!mounted) return;
+    final b = CarIconService.passengerMapZoomBucket(z);
+    if (b == _carIconZoomBucket) return;
+    _carIconZoomBucket = b;
+    _mapZoomForCarIcons = z;
+    _carIconZoomDebounce?.cancel();
+    _carIconZoomDebounce = Timer(const Duration(milliseconds: 180), () {
+      if (mounted) unawaited(_loadCarIcons());
+    });
+  }
+
   Future<Marker> _buildClusterMarker(Cluster<_DriverClusterItem> cluster) async {
     if (cluster.isMultiple) {
       final icon = await _buildClusterIcon(cluster.count.toString());
@@ -155,25 +193,50 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
       );
     }
     final driver = cluster.items.first.driver;
-    // Icon mobil: car_merah = diam, car_hijau = bergerak (bukan pin merah).
-    final icon = (driver.isMoving ? _carIconGreen : _carIconRed) ??
-        BitmapDescriptor.defaultMarkerWithHue(
-          driver.isMoving ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueRed,
+    String? recommendedUid;
+    if (widget.passengerOriginLat != null && widget.passengerOriginLng != null) {
+      final sorted = List<ActiveDriverRoute>.from(_filteredDrivers);
+      sorted.sort((a, b) {
+        final da = Geolocator.distanceBetween(
+          widget.passengerOriginLat!,
+          widget.passengerOriginLng!,
+          a.driverLat,
+          a.driverLng,
         );
-    // Bearing: driver -> tujuan. Asset depan = selatan, rotation = (bearing + 180) % 360.
+        final db = Geolocator.distanceBetween(
+          widget.passengerOriginLat!,
+          widget.passengerOriginLng!,
+          b.driverLat,
+          b.driverLng,
+        );
+        return da.compareTo(db);
+      });
+      if (sorted.isNotEmpty) recommendedUid = sorted.first.driverUid;
+    }
+    final icon = PassengerDriverMapCarIcon.pick(
+      driver: driver,
+      isMoving: driver.isMoving,
+      recommendedDriverUid: recommendedUid,
+      premium: _premiumCarIcons,
+      legacyGreen: _carIconGreen,
+      legacyRed: _carIconRed,
+    );
     double bearing = 0;
     try {
       final driverPos = LatLng(driver.driverLat, driver.driverLng);
       final destPos = LatLng(driver.routeDestLat, driver.routeDestLng);
       bearing = RouteUtils.bearingBetween(driverPos, destPos);
     } catch (_) {}
-    final rotation = (bearing + 180) % 360;
+    final rotation = CarIconService.markerRotationDegrees(
+      bearing,
+      premiumAssetFrontUp: _premiumCarIcons?.assetFrontFacesNorth ?? false,
+    );
     return Marker(
       markerId: MarkerId(cluster.getId()),
       position: cluster.location,
       icon: icon,
       rotation: rotation,
-      flat: true,
+      flat: defaultTargetPlatform != TargetPlatform.android,
       anchor: const Offset(0.5, 0.5),
       infoWindow: InfoWindow(
         title: driver.driverName ?? 'Driver',
@@ -216,10 +279,14 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
 
   @override
   void dispose() {
+    _carIconZoomDebounce?.cancel();
     _asalController.dispose();
     _tujuanController.dispose();
     super.dispose();
   }
+
+  /// Sama dengan batas driver di map beranda (mode Driver sekitar).
+  static const int _maxNearbyDriversOnMap = 15;
 
   Future<void> _loadDrivers() async {
     setState(() {
@@ -229,31 +296,53 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
     try {
       double? destLat = widget.passengerDestLat;
       double? destLng = widget.passengerDestLng;
-      if ((destLat == null || destLng == null) &&
-          _tujuanController.text.trim().isNotEmpty) {
+      double? originLat = widget.passengerOriginLat;
+      double? originLng = widget.passengerOriginLng;
+
+      final originText = _asalController.text.trim();
+      final destText = _tujuanController.text.trim();
+
+      if ((originLat == null || originLng == null) && originText.isNotEmpty) {
         try {
-          final list = await GeocodingService.locationFromAddress(
-            _tujuanController.text.trim(),
-          );
+          final list = await GeocodingService.locationFromAddress(originText);
+          if (list.isNotEmpty) {
+            originLat = list.first.latitude;
+            originLng = list.first.longitude;
+          }
+        } catch (_) {}
+      }
+      if ((destLat == null || destLng == null) && destText.isNotEmpty) {
+        try {
+          final list = await GeocodingService.locationFromAddress(destText);
           if (list.isNotEmpty) {
             destLat = list.first.latitude;
             destLng = list.first.longitude;
           }
         } catch (_) {}
       }
+
+      final originGeocodeFailed =
+          originText.isNotEmpty && (originLat == null || originLng == null);
+      final destGeocodeFailed =
+          destText.isNotEmpty && (destLat == null || destLng == null);
+
+      // Mode rute: keempat koordinat harus ada (polyline + RouteUtils).
+      // Selain itu: mode sekitar — radius 40 km dari GPS, tanpa Directions.
+      final bool hasFullRoute = originLat != null &&
+          originLng != null &&
+          destLat != null &&
+          destLng != null;
+
       List<ActiveDriverRoute> list;
-      if ((widget.passengerOriginLat != null &&
-                  widget.passengerOriginLng != null) ||
-              (destLat != null && destLng != null)) {
+      if (hasFullRoute) {
         list = await ActiveDriversService.getActiveDriversForMap(
-          passengerOriginLat: widget.passengerOriginLat,
-          passengerOriginLng: widget.passengerOriginLng,
+          passengerOriginLat: originLat,
+          passengerOriginLng: originLng,
           passengerDestLat: destLat,
           passengerDestLng: destLng,
         );
       } else {
         final all = await ActiveDriversService.getActiveDriverRoutes();
-        // Filter 40 km dari lokasi penumpang saat ini
         final pos = await LocationService.getCurrentPosition();
         if (pos != null) {
           list = ActiveDriversService.filterByDistanceFromCenter(
@@ -261,8 +350,26 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
             pos.latitude,
             pos.longitude,
           );
+          list.sort((a, b) {
+            final distA = Geolocator.distanceBetween(
+              pos.latitude,
+              pos.longitude,
+              a.driverLat,
+              a.driverLng,
+            );
+            final distB = Geolocator.distanceBetween(
+              pos.latitude,
+              pos.longitude,
+              b.driverLat,
+              b.driverLng,
+            );
+            return distA.compareTo(distB);
+          });
         } else {
           list = all;
+        }
+        if (list.length > _maxNearbyDriversOnMap) {
+          list = list.take(_maxNearbyDriversOnMap).toList();
         }
       }
       if (mounted) {
@@ -271,6 +378,18 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
           _loading = false;
         });
         _refreshClusterMarkers();
+        if (!hasFullRoute && (originGeocodeFailed || destGeocodeFailed)) {
+          final l10n = TrakaL10n.of(context);
+          final parts = <String>[];
+          if (originGeocodeFailed) parts.add(l10n.cariTravelGeocodeOriginFailed);
+          if (destGeocodeFailed) parts.add(l10n.cariTravelGeocodeDestFailed);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(parts.join('\n')),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
       }
     } catch (e, st) {
       logError('CariTravelScreen._loadDrivers', e, st);
@@ -284,13 +403,61 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
     }
   }
 
-  Future<void> _onPesanTravel(ActiveDriverRoute driver) async {
+  Future<void> _onPesanTravel(
+    ActiveDriverRoute driver, {
+    bool bypassDuplicatePendingTravel = false,
+  }) async {
     if (!mounted) return;
     Navigator.pop(context);
     if (!mounted) return;
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+
+    if (!bypassDuplicatePendingTravel) {
+      final pendingT = await OrderService.getPassengerPendingTravelWithDriver(
+        user.uid,
+        driver.driverUid,
+      );
+      if (!mounted) return;
+      if (pendingT != null) {
+        final l10n = TrakaL10n.of(context);
+        final choice = await showPassengerDuplicatePendingOrderDialog(
+          context,
+          title: l10n.passengerPendingTravelDuplicateTitle,
+          body: l10n.passengerPendingTravelDuplicateBody,
+        );
+        if (!mounted) return;
+        AppAnalyticsService.logPassengerDuplicatePendingDialog(
+          orderKind: 'travel',
+          choice: passengerDuplicatePendingChoiceAnalyticsValue(choice),
+          surface: 'cari_travel',
+        );
+        if (choice == null ||
+            choice == PassengerDuplicatePendingChoice.cancel) {
+          return;
+        }
+        if (choice == PassengerDuplicatePendingChoice.openExisting) {
+          Navigator.push<void>(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => ChatRoomPenumpangScreen(
+                orderId: pendingT.id,
+                driverUid: driver.driverUid,
+                driverName: driver.driverName ?? 'Driver',
+                driverPhotoUrl: driver.driverPhotoUrl,
+                driverVerified: driver.isVerified,
+              ),
+            ),
+          );
+          return;
+        }
+        if (choice == PassengerDuplicatePendingChoice.forceNew) {
+          await _onPesanTravel(driver, bypassDuplicatePendingTravel: true);
+        }
+        return;
+      }
+    }
 
     String? passengerName;
     String? passengerPhotoUrl;
@@ -333,6 +500,7 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
       originLng: null,
       destLat: null,
       destLng: null,
+      bypassDuplicatePendingTravel: bypassDuplicatePendingTravel,
     );
 
     if (!mounted) return;
@@ -353,6 +521,9 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
           ),
         ),
       );
+      if (bypassDuplicatePendingTravel) {
+        _showNewSplitOrderThreadSnackCariTravel();
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -361,6 +532,19 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
         ),
       );
     }
+  }
+
+  void _showNewSplitOrderThreadSnackCariTravel() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(TrakaL10n.of(context).passengerNewOrderThreadSnack),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    });
   }
 
   void _onSelectDriver(ActiveDriverRoute driver) {
@@ -382,15 +566,31 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
               driver: driver,
               asalController: _asalController,
               tujuanController: _tujuanController,
-              onSubmitted: () {
+              onSubmitted: ({bool newThreadFromDuplicate = false}) {
                 Navigator.pop(ctx);
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
+                final messenger = ScaffoldMessenger.of(context);
+                messenger.showSnackBar(
                   SnackBar(
-                    content: Text(TrakaL10n.of(context).requestSentWaitingDriver),
+                    content:
+                        Text(TrakaL10n.of(context).requestSentWaitingDriver),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
+                if (newThreadFromDuplicate) {
+                  Future<void>.delayed(const Duration(milliseconds: 500), () {
+                    if (!context.mounted) return;
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          TrakaL10n.of(context).passengerNewOrderThreadSnack,
+                        ),
+                        behavior: SnackBarBehavior.floating,
+                        duration: const Duration(seconds: 5),
+                      ),
+                    );
+                  });
+                }
               },
             ),
           ),
@@ -804,6 +1004,8 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
                     child: StyledGoogleMapBuilder(
                       builder: (style, _) => GoogleMap(
                         buildingsEnabled: true,
+                        indoorViewEnabled: true,
+                        mapToolbarEnabled: false,
                         initialCameraPosition: CameraPosition(
                           target: LatLng(
                             (_filteredDrivers.isNotEmpty ? _filteredDrivers.first : _drivers.first).driverLat,
@@ -820,9 +1022,10 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
                           _mapController = controller;
                           _clusterManager.setMapId(controller.mapId);
                           _clusterManager.updateMap();
+                          unawaited(_onTravelMapCameraIdle());
                         },
                         onCameraMove: _clusterManager.onCameraMove,
-                        onCameraIdle: _clusterManager.updateMap,
+                        onCameraIdle: () => unawaited(_onTravelMapCameraIdle()),
                       ),
                     ),
                   ),
@@ -857,7 +1060,7 @@ class _RequestFormSheet extends StatefulWidget {
   final ActiveDriverRoute driver;
   final TextEditingController asalController;
   final TextEditingController tujuanController;
-  final VoidCallback onSubmitted;
+  final void Function({bool newThreadFromDuplicate}) onSubmitted;
 
   @override
   State<_RequestFormSheet> createState() => _RequestFormSheetState();
@@ -866,7 +1069,7 @@ class _RequestFormSheet extends StatefulWidget {
 class _RequestFormSheetState extends State<_RequestFormSheet> {
   bool _sending = false;
 
-  Future<void> _submit() async {
+  Future<void> _submit({bool bypassDuplicatePendingTravel = false}) async {
     final asal = widget.asalController.text.trim();
     final tujuan = widget.tujuanController.text.trim();
     if (asal.isEmpty || tujuan.isEmpty) {
@@ -890,6 +1093,53 @@ class _RequestFormSheetState extends State<_RequestFormSheet> {
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+
+    if (!bypassDuplicatePendingTravel) {
+      final pendingT = await OrderService.getPassengerPendingTravelWithDriver(
+        user.uid,
+        widget.driver.driverUid,
+      );
+      if (!mounted) return;
+      if (pendingT != null) {
+        final l10n = TrakaL10n.of(context);
+        final choice = await showPassengerDuplicatePendingOrderDialog(
+          context,
+          title: l10n.passengerPendingTravelDuplicateTitle,
+          body: l10n.passengerPendingTravelDuplicateBody,
+        );
+        if (!mounted) return;
+        AppAnalyticsService.logPassengerDuplicatePendingDialog(
+          orderKind: 'travel',
+          choice: passengerDuplicatePendingChoiceAnalyticsValue(choice),
+          surface: 'cari_travel_request_form',
+        );
+        if (choice == null ||
+            choice == PassengerDuplicatePendingChoice.cancel) {
+          return;
+        }
+        if (choice == PassengerDuplicatePendingChoice.openExisting) {
+          Navigator.pop(context);
+          if (!mounted) return;
+          Navigator.push<void>(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => ChatRoomPenumpangScreen(
+                orderId: pendingT.id,
+                driverUid: widget.driver.driverUid,
+                driverName: widget.driver.driverName ?? 'Driver',
+                driverPhotoUrl: widget.driver.driverPhotoUrl,
+                driverVerified: widget.driver.isVerified,
+              ),
+            ),
+          );
+          return;
+        }
+        if (choice == PassengerDuplicatePendingChoice.forceNew) {
+          await _submit(bypassDuplicatePendingTravel: true);
+        }
+        return;
+      }
+    }
 
     setState(() => _sending = true);
     try {
@@ -923,6 +1173,7 @@ class _RequestFormSheetState extends State<_RequestFormSheet> {
         originLng: null,
         destLat: null,
         destLng: null,
+        bypassDuplicatePendingTravel: bypassDuplicatePendingTravel,
       );
       if (mounted) {
         AppAnalyticsService.logOrderCreated(
@@ -930,7 +1181,11 @@ class _RequestFormSheetState extends State<_RequestFormSheet> {
           success: orderId != null,
         );
       }
-      if (orderId != null && mounted) widget.onSubmitted();
+      if (orderId != null && mounted) {
+        widget.onSubmitted(
+          newThreadFromDuplicate: bypassDuplicatePendingTravel,
+        );
+      }
     } catch (e, st) {
       logError('CariTravelScreen._RequestFormSheet._submit', e, st);
       if (mounted) {

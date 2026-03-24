@@ -97,6 +97,15 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
   }
 
   /// Icon kategori pesanan berdasarkan jenis pesanan.
+  /// Beda thread bila satu penumpang punya lebih dari satu obrolan aktif.
+  String? _threadDistinguisher(OrderModel order, int siblingCount) {
+    if (siblingCount <= 1) return null;
+    final typeLabel = order.isKirimBarang ? 'Kirim barang' : 'Travel';
+    final id = order.id;
+    final tail = id.length > 4 ? id.substring(id.length - 4) : id;
+    return '$typeLabel · …$tail';
+  }
+
   IconData _getCategoryIcon(OrderModel order) {
     if (order.isKirimBarang) {
       return Icons.local_shipping; // Kirim barang
@@ -309,28 +318,15 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
                 .toList();
             _latestAllOrders = allOrders;
 
-            // Kelompokkan orders berdasarkan passengerUid, ambil order terbaru per penumpang
-            final Map<String, OrderModel> groupedOrders = {};
-            for (final order in allOrders) {
-              final passengerUid = order.passengerUid;
-              if (!groupedOrders.containsKey(passengerUid)) {
-                groupedOrders[passengerUid] = order;
-              } else {
-                final existingOrder = groupedOrders[passengerUid]!;
-                final existingTime =
-                    existingOrder.lastMessageAt ?? existingOrder.updatedAt;
-                final currentTime = order.lastMessageAt ?? order.updatedAt;
-                if (currentTime != null) {
-                  if (existingTime == null ||
-                      currentTime.isAfter(existingTime)) {
-                    groupedOrders[passengerUid] = order;
-                  }
-                }
-              }
+            // Satu baris per order (bukan digabung per penumpang) agar beberapa chat ke driver
+            // untuk penumpang yang sama tetap terlihat — penting untuk "tetap buat pesanan baru".
+            final countByPassengerUid = <String, int>{};
+            for (final o in allOrders) {
+              countByPassengerUid[o.passengerUid] =
+                  (countByPassengerUid[o.passengerUid] ?? 0) + 1;
             }
 
-            // Convert ke list dan urutkan berdasarkan waktu terbaru (terbaru di atas)
-            final List<OrderModel> orders = groupedOrders.values.toList();
+            final List<OrderModel> orders = List<OrderModel>.of(allOrders);
             orders.sort((a, b) {
               final aTime = a.lastMessageAt ?? a.updatedAt;
               final bTime = b.lastMessageAt ?? b.updatedAt;
@@ -395,6 +391,9 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
                 separatorBuilder: (_, __) => const Divider(height: 1),
                 itemBuilder: (context, i) {
                   final order = orders[i];
+                  final siblingCount =
+                      countByPassengerUid[order.passengerUid] ?? 1;
+                  final threadLine = _threadDistinguisher(order, siblingCount);
                   final info = _passengerInfo[order.passengerUid];
                   final passengerName =
                       (info?['displayName'] as String?)?.isNotEmpty == true
@@ -484,19 +483,43 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
                           ],
                         ],
                       ),
-                      subtitle:
-                          order.lastMessageText != null &&
-                              order.lastMessageText!.isNotEmpty
-                          ? Text(
-                              order.lastMessageText!,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: AppTheme.onSurfaceVariant,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            )
-                          : null,
+                      subtitle: threadLine == null &&
+                              (order.lastMessageText == null ||
+                                  order.lastMessageText!.isEmpty)
+                          ? null
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (threadLine != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 2),
+                                    child: Text(
+                                      threadLine,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                if (order.lastMessageText != null &&
+                                    order.lastMessageText!.isNotEmpty)
+                                  Text(
+                                    order.lastMessageText!,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: AppTheme.onSurfaceVariant,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                              ],
+                            ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,9 +9,12 @@ import 'package:flutter/material.dart';
 import '../services/face_validation_service.dart';
 import '../services/image_compression_service.dart';
 import '../services/verification_log_service.dart';
+import '../services/face_duplicate_check_service.dart';
+import '../widgets/traka_l10n_scope.dart';
 import '../services/permission_service.dart';
 import '../services/verification_service.dart';
 import 'active_liveness_screen.dart';
+import '../services/performance_trace_service.dart';
 
 /// Layar verifikasi wajah ulang: pengguna lama wajib verifikasi setiap 6 bulan.
 /// User harus menyelesaikan sebelum bisa masuk ke home.
@@ -32,6 +36,12 @@ class ReverifyFaceScreen extends StatefulWidget {
 class _ReverifyFaceScreenState extends State<ReverifyFaceScreen> {
   bool _loading = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(PerformanceTraceService.stopStartupToInteractive());
+  }
 
   Future<void> _startVerification() async {
     final cameraOk = await PermissionService.requestCameraPermission(context);
@@ -95,6 +105,39 @@ class _ReverifyFaceScreenState extends State<ReverifyFaceScreen> {
 
     try {
       if (!mounted) return;
+      if (mounted) {
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            content: Row(
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(TrakaL10n.of(context).checkingFaceUniqueness),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+      final dup = await FaceDuplicateCheckService.isDuplicateFace(
+        file.path,
+        widget.role,
+        excludeUserId: user.uid,
+      );
+      if (mounted) Navigator.of(context).pop();
+      if (dup) {
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _error = TrakaL10n.of(context).duplicateFaceDetected;
+          });
+        }
+        return;
+      }
+      if (!mounted) return;
       final compressedPath = await ImageCompressionService.compressForUpload(file.path);
       if (!mounted) return;
       final fileToUpload = File(compressedPath);
@@ -121,6 +164,11 @@ class _ReverifyFaceScreenState extends State<ReverifyFaceScreen> {
       if (!mounted) return;
       widget.onSuccess();
     } catch (e) {
+      if (mounted) {
+        try {
+          Navigator.of(context).pop();
+        } catch (_) {}
+      }
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null) {
         VerificationLogService.log(

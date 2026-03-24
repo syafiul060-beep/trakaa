@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
@@ -64,6 +65,13 @@ class DriverEarningsPdfService {
     final pageHeight = page.getClientSize().height;
     PdfPage currentPage = page;
     PdfGraphics currentGraphics = page.graphics;
+
+    // Aksen merek (biru Traka) — strip tipis di atas halaman pertama
+    final brandBlue = PdfColor(37, 99, 235);
+    currentGraphics.drawRectangle(
+      brush: PdfSolidBrush(brandBlue),
+      bounds: Rect.fromLTWH(0, 0, pageWidth, 3),
+    );
     // Font mesin ketik (Courier) agar ringkas dan profesional
     final font = PdfStandardFont(PdfFontFamily.courier, 10);
     final fontBold = PdfStandardFont(PdfFontFamily.courier, 10, style: PdfFontStyle.bold);
@@ -71,7 +79,8 @@ class DriverEarningsPdfService {
     final fontSmall = PdfStandardFont(PdfFontFamily.courier, 9);
     final black = PdfSolidBrush(PdfColor(0, 0, 0));
     final grey = PdfSolidBrush(PdfColor(100, 100, 100));
-    double y = 0;
+    const logoTop = 6.0;
+    double y = logoTop;
 
     // Logo Traka - ukuran lebih besar, jarak dekat ke nama driver
     const logoSize = 130.0;
@@ -80,17 +89,17 @@ class DriverEarningsPdfService {
       final data = await rootBundle.load('assets/images/pdf.png');
       final bytes = data.buffer.asUint8List();
       final image = PdfBitmap(bytes);
-      currentGraphics.drawImage(image, Rect.fromLTWH(0, 0, logoSize, logoSize));
-      y = logoSize + logoToNameGap;
+      currentGraphics.drawImage(image, Rect.fromLTWH(0, logoTop, logoSize, logoSize));
+      y = logoTop + logoSize + logoToNameGap;
     } catch (_) {
       try {
         final data = await rootBundle.load('assets/images/logo_traka.png');
         final bytes = data.buffer.asUint8List();
         final image = PdfBitmap(bytes);
-        currentGraphics.drawImage(image, Rect.fromLTWH(0, 0, logoSize, logoSize));
-        y = logoSize + logoToNameGap;
+        currentGraphics.drawImage(image, Rect.fromLTWH(0, logoTop, logoSize, logoSize));
+        y = logoTop + logoSize + logoToNameGap;
       } catch (_) {
-        y = 10;
+        y = 50;
       }
     }
 
@@ -99,14 +108,14 @@ class DriverEarningsPdfService {
       'LAPORAN PENDAPATAN DRIVER',
       fontTitle,
       brush: black,
-      bounds: Rect.fromLTWH(pageWidth - 200, 0, 200, 20),
+      bounds: Rect.fromLTWH(pageWidth - 200, logoTop, 200, 20),
       format: PdfStringFormat(alignment: PdfTextAlignment.right),
     );
     currentGraphics.drawString(
       'Aplikasi Traka - Travel & Kirim Barang Kalimantan',
       fontSmall,
       brush: grey,
-      bounds: Rect.fromLTWH(pageWidth - 200, 22, 200, 14),
+      bounds: Rect.fromLTWH(pageWidth - 200, logoTop + 22, 200, 14),
       format: PdfStringFormat(alignment: PdfTextAlignment.right),
     );
     if (y < 50) y = 50; // Tanpa logo: mulai info driver di y=50
@@ -127,15 +136,16 @@ class DriverEarningsPdfService {
       currentGraphics.drawString('Tidak ada pendapatan pada periode ini.', font, brush: grey, bounds: Rect.fromLTWH(0, y, pageWidth, 12));
       y += 20;
     } else {
-      // Tabel ringkas: tanpa kolom Jenis/Rute
+      // Tabel: jenis order (travel / kirim barang) untuk kejelasan bukti
       final grid = PdfGrid();
-      grid.columns.add(count: 4);
+      grid.columns.add(count: 5);
       grid.headers.add(1);
       final headerRow = grid.headers[0];
       headerRow.cells[0].value = 'No';
       headerRow.cells[1].value = 'Tanggal';
-      headerRow.cells[2].value = 'No. Pesanan';
-      headerRow.cells[3].value = 'Nominal';
+      headerRow.cells[2].value = 'Jenis';
+      headerRow.cells[3].value = 'No. Pesanan';
+      headerRow.cells[4].value = 'Nominal';
       headerRow.style.backgroundBrush = PdfSolidBrush(PdfColor(220, 220, 220));
 
       for (var i = 0; i < earnings.length; i++) {
@@ -143,14 +153,16 @@ class DriverEarningsPdfService {
         final row = grid.rows.add();
         row.cells[0].value = '${i + 1}';
         row.cells[1].value = _fmtDate(o.completedAt);
-        row.cells[2].value = _sanitize(o.orderNumber);
-        row.cells[3].value = _fmtRupiah(o.amountRupiah);
+        row.cells[2].value = _sanitize(o.typeLabel);
+        row.cells[3].value = _sanitize(o.orderNumber);
+        row.cells[4].value = _fmtRupiah(o.amountRupiah);
       }
       final subtotalRow = grid.rows.add();
       subtotalRow.cells[0].value = 'Subtotal';
       subtotalRow.cells[1].value = '';
       subtotalRow.cells[2].value = '';
-      subtotalRow.cells[3].value = _fmtRupiah(totalEarnings);
+      subtotalRow.cells[3].value = '';
+      subtotalRow.cells[4].value = _fmtRupiah(totalEarnings);
       subtotalRow.style.backgroundBrush = PdfSolidBrush(PdfColor(240, 240, 240));
       subtotalRow.style.font = fontBold;
 
@@ -330,21 +342,57 @@ class DriverEarningsPdfService {
       format: PdfStringFormat(alignment: PdfTextAlignment.center),
     );
 
+    _drawPageFooters(document);
     return document;
   }
 
-  /// Share/save PDF via system share sheet.
-  static Future<void> sharePdf(PdfDocument document, {String? name}) async {
+  static void _drawPageFooters(PdfDocument document) {
+    final footerFont = PdfStandardFont(PdfFontFamily.courier, 8);
+    final brush = PdfSolidBrush(PdfColor(110, 110, 110));
+    final total = document.pages.count;
+    for (var i = 0; i < total; i++) {
+      final page = document.pages[i];
+      final g = page.graphics;
+      final size = page.getClientSize();
+      final text = 'Halaman ${i + 1} / $total';
+      g.drawString(
+        text,
+        footerFont,
+        brush: brush,
+        bounds: Rect.fromLTWH(0, size.height - 22, size.width, 14),
+        format: PdfStringFormat(alignment: PdfTextAlignment.center),
+      );
+    }
+  }
+
+  /// Simpan PDF ke file sementara dan [dispose] dokumen.
+  static Future<File> savePdfToFile(PdfDocument document, {String? name}) async {
     final bytes = await document.save();
     document.dispose();
     final filename = name ?? 'laporan_pendapatan_traka.pdf';
     final tempDir = await getTemporaryDirectory();
     final file = File('${tempDir.path}/$filename');
     await file.writeAsBytes(bytes);
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      subject: 'Laporan Pendapatan Traka',
-      text: 'Laporan pendapatan driver dari Aplikasi Traka. Diverifikasi oleh Traka.',
+    return file;
+  }
+
+  /// Buka PDF dengan aplikasi pembaca default (viewer sistem).
+  static Future<OpenResult> openPdfFile(File file) => OpenFilex.open(file.path);
+
+  /// Bagikan file PDF lewat sheet sistem.
+  static Future<void> sharePdfFile(File file) async {
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(file.path)],
+        subject: 'Laporan Pendapatan Traka',
+        text: 'Laporan pendapatan driver dari Aplikasi Traka. Diverifikasi oleh Traka.',
+      ),
     );
+  }
+
+  /// Simpan lalu buka sheet share (alur lama; prefer [savePdfToFile] + [sharePdfFile]).
+  static Future<void> sharePdf(PdfDocument document, {String? name}) async {
+    final file = await savePdfToFile(document, name: name);
+    await sharePdfFile(file);
   }
 }

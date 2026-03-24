@@ -13,12 +13,17 @@ class BiometricLockService {
 
   static const _keyEnabled = 'biometric_lock_enabled';
 
-  /// Grace period: jika user kembali ke app dalam waktu ini, tidak perlu verifikasi lagi.
-  /// Mis. HP baru dibuka kunci → buka app → tidak ribet minta sidik jari lagi.
-  static const Duration lockGracePeriod = Duration(seconds: 20);
+  /// Setelah app tidak terlihat ([AppLifecycleState.paused]) lebih lama dari ini,
+  /// saat kembali [resumed] wajib verifikasi biometric (jika fitur aktif).
+  ///
+  /// Di bawah ambang ini: cukup unlock HP — tidak menampilkan overlay lagi
+  /// (mengurangi rasa "double unlock" setelah layar kunci singkat).
+  static const Duration requireLockAfterBackground = Duration(minutes: 15);
 
   static final LocalAuthentication _auth = LocalAuthentication();
-  static Timer? _lockDelayTimer;
+
+  /// Waktu terakhir app masuk [paused] (benar-benar ke background).
+  static DateTime? _lastPausedAt;
 
   static bool _isLocked = false;
   static bool get isLocked => _isLocked;
@@ -27,6 +32,9 @@ class BiometricLockService {
 
   static bool get _isMobile =>
       !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  /// Menit untuk copy teks bantuan di pengaturan (sinkron dengan [requireLockAfterBackground]).
+  static int get requireLockAfterMinutes => requireLockAfterBackground.inMinutes;
 
   /// Apakah device mendukung biometric (fingerprint/face).
   static Future<bool> get canUseBiometric async {
@@ -71,35 +79,60 @@ class BiometricLockService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyEnabled, value);
     if (!value) {
-      _lockDelayTimer?.cancel();
-      _lockDelayTimer = null;
+      _lastPausedAt = null;
       _isLocked = false;
       lockStateNotifier.value = false;
     }
   }
 
-  /// Kunci app (dipanggil saat app ke background).
-  /// Tidak langsung kunci — gunakan grace period: jika user kembali dalam lockGracePeriod,
-  /// tidak perlu verifikasi (HP baru dibuka kunci = sudah cukup).
+  /// Catat masuk background (hanya panggil dari [AppLifecycleState.paused]).
+  /// Jangan panggil dari [inactive] agar panel notifikasi singkat tidak menggeser waktu.
   static Future<void> lockIfEnabled() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final enabled = await isEnabled;
     if (!enabled) return;
-
-    _lockDelayTimer?.cancel();
-    _lockDelayTimer = Timer(lockGracePeriod, () {
-      _lockDelayTimer = null;
-      _isLocked = true;
-      lockStateNotifier.value = true;
-    });
+    _lastPausedAt = DateTime.now();
   }
 
-  /// Batalkan lock yang akan datang (dipanggil saat app resume dalam grace period).
-  static void cancelLockIfInGracePeriod() {
-    if (_lockDelayTimer != null) {
-      _lockDelayTimer!.cancel();
-      _lockDelayTimer = null;
+  /// Dipanggil saat app [resumed]: kunci hanya jika sudah lama di background.
+  static void onAppResumed() {
+    unawaited(_applyResumePolicy());
+  }
+
+  /// @nodoc — kompatibilitas nama lama; gunakan [onAppResumed].
+  static void cancelLockIfInGracePeriod() => onAppResumed();
+
+  static Future<void> _applyResumePolicy() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _lastPausedAt = null;
+      return;
+    }
+
+    final enabled = await isEnabled;
+    if (!enabled) {
+      _lastPausedAt = null;
+      _isLocked = false;
+      lockStateNotifier.value = false;
+      return;
+    }
+
+    final pausedAt = _lastPausedAt;
+    _lastPausedAt = null;
+
+    if (pausedAt == null) {
+      // Hanya inactive / tidak lewat paused — jangan ubah state kunci.
+      return;
+    }
+
+    final elapsed = DateTime.now().difference(pausedAt);
+    if (elapsed >= requireLockAfterBackground) {
+      _isLocked = true;
+      lockStateNotifier.value = true;
+    } else {
+      _isLocked = false;
+      lockStateNotifier.value = false;
     }
   }
 
@@ -131,8 +164,7 @@ class BiometricLockService {
 
   /// Paksa unlock (mis. user logout).
   static void forceUnlock() {
-    _lockDelayTimer?.cancel();
-    _lockDelayTimer = null;
+    _lastPausedAt = null;
     _isLocked = false;
     lockStateNotifier.value = false;
   }

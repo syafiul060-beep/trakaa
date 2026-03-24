@@ -48,6 +48,65 @@ Ganti `https://SERVICE-ANDA.up.railway.app` dengan URL publik API Anda (contoh: 
 
 ---
 
+## Tiga yang sering belum: UptimeRobot, Sentry, QA (panduan konkret)
+
+**URL health produksi (salin persis):**  
+`https://trakaa-production.up.railway.app/health`
+
+### 1) UptimeRobot — monitor uptime
+
+1. Buka [uptimerobot.com](https://uptimerobot.com) → daftar/login (gratis).
+2. **Add New Monitor** (tombol hijau / **+**).
+3. Isi:
+   - **Monitor Type:** HTTP(s)
+   - **Friendly Name:** `Traka API /health`
+   - **URL (https):** `https://trakaa-production.up.railway.app/health`
+   - **Monitoring Interval:** 5 minutes (gratis)
+4. **Alert contacts:** **Add alert contact** → email Anda → verifikasi email dari inbox (wajib sebelum alert jalan).
+5. **Create Monitor**.
+6. Tunggu 1–2 siklus (~5–10 menit) → status harus **Up** (hijau).  
+   - Jika **Down**: cek typo URL, apakah Railway service masih **Online**, dan apakah `/health` di browser masih `ok: true`.
+
+**Catatan:** UptimeRobot hanya cek **HTTP status** (200 vs 503). Isi JSON tidak diparsing; itu sudah cukup untuk Tahap 1.
+
+### 2) Sentry — error API
+
+1. Buka [sentry.io](https://sentry.io) → login → **Projects** → **Create Project**.
+2. Pilih **Node.js** (atau Express) → beri nama mis. `traka-api` → **Create Project**.
+3. Salin **DSN** (string `https://...@....ingest.sentry.io/...`).
+4. **Railway** → project → service **trakaa** → **Variables** → **New Variable**:
+   - `SENTRY_DSN` = tempel DSN
+   - `SENTRY_ENVIRONMENT` = `production`
+5. Simpan → tunggu **redeploy** selesai (Deployments).
+6. **Verifikasi (pilih salah satu):**
+   - **A — Wizard Sentry:** setelah create project, ikuti langkah onboarding; jika ada **“Send test event”** / **“Capture error”** → klik agar satu event masuk **Issues**.
+   - **B — Tunggu error alami** dari traffic (bisa lama).
+   - **C — Uji di staging** lebih aman (service lain + DSN berbeda + `SENTRY_ENVIRONMENT=staging`).
+   - **D — Minimal:** **Deploy logs** Railway tidak error saat start; variabel `SENTRY_DSN` tersimpan (Sentry aktif jika DSN ada, lihat `instrument.js`).
+7. Di Sentry: **Alerts** → buat aturan bawaan (mis. spike error rate).
+
+**Jangan** commit DSN ke Git atau kirim ke chat publik.
+
+### 3) QA sekali + catatan (minimal untuk Tutup Tahap 1)
+
+Tidak wajib selesaikan **semua** baris di `QA_REGRESI_ALUR_UTAMA.md` untuk Tahap 1. Cukup **satu sesi** dengan **metadata** + **smoke test** + **catatan**.
+
+**Cara tercepat:** buka [`../../traka/docs/QA_BASELINE_TAHAP1_CATATAN.md`](../../traka/docs/QA_BASELINE_TAHAP1_CATATAN.md) (F1 sudah diisi; lengkapi **Versi app**, **Tester**, opsional **A1**) atau template kosong [`../../traka/docs/QA_BASELINE_TAHAP1_TEMPLATE.md`](../../traka/docs/QA_BASELINE_TAHAP1_TEMPLATE.md).
+
+Atau manual:
+
+1. Buka [`../../traka/docs/QA_REGRESI_ALUR_UTAMA.md`](../../traka/docs/QA_REGRESI_ALUR_UTAMA.md).
+2. Salin tabel **Metadata** → isi: tanggal, versi app, platform, **API: on**, tester.
+3. **Minimal centang / catat:**
+   - **F1:** `GET /health` → `ok: true` (sudah Anda bukti di browser — tulis “lulus” + tanggal).
+   - **A1** (jika sempat): login penumpang → beranda peta → langkah singkat sesuai kemampuan waktu.
+   - Atau ganti dengan **satu alur** yang paling penting untuk Anda (mis. hanya driver C1) — yang penting ada **catatan tertulis** “baseline Tahap 1”.
+4. Simpan ke Notion / file teks / screenshot spreadsheet.
+
+**Gate Tahap 1 penuh:** UptimeRobot **Up** + Sentry **DSN terpasang** (dan idealnya satu event uji atau alert siap) + **satu lembar catatan QA** dengan metadata.
+
+---
+
 ## 1. Versi deploy (`APP_VERSION`)
 
 1. Di panel hosting (Railway, Render, VPS, dll.), tambahkan environment variable:

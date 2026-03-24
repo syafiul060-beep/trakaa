@@ -12,14 +12,24 @@ class FaceDuplicateCheckService {
   /// Threshold lebih rendah agar wajah yang sama (sesama role) terdeteksi duplikat.
   static const double matchThreshold = 0.50;
 
-  static Future<bool> isDuplicateFace(String photoPath, String role) async {
-    return _isDuplicateUsingImages(photoPath, role);
+  /// [excludeUserId]: abaikan foto wajah user ini (mis. upload foto baru di profil sendiri).
+  static Future<bool> isDuplicateFace(
+    String photoPath,
+    String role, {
+    String? excludeUserId,
+  }) async {
+    return _isDuplicateUsingImages(
+      photoPath,
+      role,
+      excludeUserId: excludeUserId,
+    );
   }
 
   static Future<bool> _isDuplicateUsingImages(
     String photoPath,
-    String role,
-  ) async {
+    String role, {
+    String? excludeUserId,
+  }) async {
     try {
       final firestore = FirebaseFirestore.instance;
       final usersQuery = await firestore
@@ -34,6 +44,7 @@ class FaceDuplicateCheckService {
 
       for (final doc in usersQuery.docs) {
         final uid = doc.id;
+        if (excludeUserId != null && uid == excludeUserId) continue;
         try {
           final ref = FirebaseStorage.instance.ref().child(
             'users/$uid/face_verification.jpg',

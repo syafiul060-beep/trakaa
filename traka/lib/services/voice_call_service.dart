@@ -4,8 +4,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'app_config_service.dart';
+
+/// Hasil mulai/terima panggilan (pesan untuk pengguna jika gagal).
+class VoiceCallOutcome {
+  const VoiceCallOutcome._({required this.success, this.message});
+  final bool success;
+  final String? message;
+
+  static const VoiceCallOutcome ok = VoiceCallOutcome._(success: true);
+  static VoiceCallOutcome fail(String message) =>
+      VoiceCallOutcome._(success: false, message: message);
+}
 
 /// Signaling untuk panggilan suara in-app via Firestore.
 /// voice_calls/{orderId} = state panggilan
@@ -28,7 +40,42 @@ class VoiceCallService {
   static void Function()? onCallEnded;
   static void Function(bool muted)? onMuteChange;
 
+  /// Dipanggil saat koneksi WebRTC gagal (mis. NAT/jaringan) sebelum layar ditutup.
+  static void Function(String userMessage)? onConnectionError;
+
   static bool _isMuted = false;
+
+  static Future<VoiceCallOutcome> _ensureMicPermission() async {
+    var status = await Permission.microphone.status;
+    if (!status.isGranted) {
+      status = await Permission.microphone.request();
+    }
+    if (status.isGranted) return VoiceCallOutcome.ok;
+    if (status.isPermanentlyDenied) {
+      return VoiceCallOutcome.fail(
+        'Akses mikrofon ditolak permanen. Buka Pengaturan > Traka > Izin, lalu aktifkan Mikrofon.',
+      );
+    }
+    return VoiceCallOutcome.fail(
+      'Izin mikrofon diperlukan untuk panggilan suara. Izinkan akses saat diminta.',
+    );
+  }
+
+  static String _mapMediaError(Object e) {
+    final s = e.toString().toLowerCase();
+    if (s.contains('permission') ||
+        s.contains('denied') ||
+        s.contains('notallowed')) {
+      return 'Mikrofon tidak dapat diakses. Periksa izin aplikasi di pengaturan perangkat.';
+    }
+    if (s.contains('notfound') || s.contains('no device')) {
+      return 'Tidak ada mikrofon yang terdeteksi di perangkat ini.';
+    }
+    if (s.contains('network') || s.contains('timeout')) {
+      return 'Koneksi bermasalah. Periksa internet dan coba lagi.';
+    }
+    return 'Gagal menghubungkan panggilan. Periksa koneksi dan coba lagi.';
+  }
 
   /// Apakah mikrofon saat ini dimute.
   static bool get isMuted => _isMuted;
@@ -44,14 +91,19 @@ class VoiceCallService {
   }
 
   /// Mulai panggilan keluar (caller).
-  static Future<bool> startCall({
+  static Future<VoiceCallOutcome> startCall({
     required String orderId,
     required String callerUid,
     required String calleeUid,
     required String callerName,
     required String calleeName,
   }) async {
-    if (_currentOrderId != null) return false;
+    if (_currentOrderId != null) {
+      return VoiceCallOutcome.fail('Panggilan lain sedang berlangsung.');
+    }
+    final perm = await _ensureMicPermission();
+    if (!perm.success) return perm;
+
     try {
       final col = FirebaseFirestore.instance.collection(_collection);
       await col.doc(orderId).set({
@@ -83,32 +135,45 @@ class VoiceCallService {
       _listenForAnswer(orderId);
       _listenForIce(orderId);
       onCallStateChange?.call('ringing');
-      return true;
+      return VoiceCallOutcome.ok;
     } catch (e, st) {
       if (kDebugMode) debugPrint('VoiceCallService.startCall error: $e\n$st');
       await endCall(orderId);
-      return false;
+      return VoiceCallOutcome.fail(_mapMediaError(e));
     }
   }
 
   /// Terima panggilan (callee).
-  static Future<bool> acceptCall({
+  static Future<VoiceCallOutcome> acceptCall({
     required String orderId,
     required String calleeUid,
   }) async {
-    if (_currentOrderId != null) return false;
+    if (_currentOrderId != null) {
+      return VoiceCallOutcome.fail('Panggilan lain sedang berlangsung.');
+    }
+    final perm = await _ensureMicPermission();
+    if (!perm.success) return perm;
+
     try {
       final doc = await FirebaseFirestore.instance
           .collection(_collection)
           .doc(orderId)
           .get();
-      if (!doc.exists) return false;
+      if (!doc.exists) {
+        return VoiceCallOutcome.fail('Panggilan tidak ditemukan atau sudah berakhir.');
+      }
       final d = doc.data()!;
-      if ((d['calleeUid'] as String?) != calleeUid) return false;
-      if ((d['status'] as String?) != 'ringing') return false;
+      if ((d['calleeUid'] as String?) != calleeUid) {
+        return VoiceCallOutcome.fail('Panggilan ini bukan untuk akun Anda.');
+      }
+      if ((d['status'] as String?) != 'ringing') {
+        return VoiceCallOutcome.fail('Panggilan sudah tidak aktif.');
+      }
 
       final offerMap = d['offer'] as Map<String, dynamic>?;
-      if (offerMap == null) return false;
+      if (offerMap == null) {
+        return VoiceCallOutcome.fail('Sinyal panggilan tidak lengkap. Coba minta panggilan ulang.');
+      }
       final offer = RTCSessionDescription(
         offerMap['sdp'] as String,
         offerMap['type'] as String,
@@ -137,11 +202,11 @@ class VoiceCallService {
 
       _listenForIce(orderId);
       onCallStateChange?.call('connected');
-      return true;
+      return VoiceCallOutcome.ok;
     } catch (e, st) {
       if (kDebugMode) debugPrint('VoiceCallService.acceptCall error: $e\n$st');
       await endCall(orderId);
-      return false;
+      return VoiceCallOutcome.fail(_mapMediaError(e));
     }
   }
 
@@ -212,8 +277,17 @@ class VoiceCallService {
     };
 
     pc.onConnectionState = (state) {
+      if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
+        onConnectionError?.call(
+          'Koneksi panggilan gagal. Periksa internet atau coba lagi dari area sinyal lebih baik.',
+        );
+        _cleanup();
+        if (onConnectionError == null) {
+          onCallEnded?.call();
+        }
+        return;
+      }
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
-          state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
           state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
         _cleanup();
         onCallEnded?.call();

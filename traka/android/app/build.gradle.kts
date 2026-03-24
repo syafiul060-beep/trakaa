@@ -16,6 +16,39 @@ val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(keystorePropertiesFile.inputStream())
 }
+val hasReleaseSigning =
+    !keystoreProperties["keyAlias"]?.toString().isNullOrBlank() &&
+    !keystoreProperties["keyPassword"]?.toString().isNullOrBlank() &&
+    !keystoreProperties["storeFile"]?.toString().isNullOrBlank() &&
+    !keystoreProperties["storePassword"]?.toString().isNullOrBlank()
+
+val releaseKeystoreFile = keystoreProperties["storeFile"]?.toString()?.let { rootProject.file(it) }
+val releaseKeystoreExists = releaseKeystoreFile != null && releaseKeystoreFile.exists()
+
+// Play Store / AAB-APK release: wajib keystore lengkap — tidak ada fallback ke debug.
+val isPlayStoreReleaseTask = gradle.startParameter.taskNames.any { task ->
+    val t = task.lowercase()
+    t.contains("bundlerelease") ||
+        t.contains("assemblerelease") ||
+        t.contains("signreleasebundle") ||
+        t.contains("signreleasebuild")
+}
+if (isPlayStoreReleaseTask) {
+    if (!hasReleaseSigning) {
+        error(
+            "Release Play Store: isi lengkap android/key.properties dengan:\n" +
+                "  storePassword=...\n  keyPassword=...\n  keyAlias=...\n" +
+                "  storeFile=path/relatif/dari/folder/android/ke/upload-keystore.jks\n" +
+                "(MAPS_API_KEY tetap boleh di file yang sama.)",
+        )
+    }
+    if (!releaseKeystoreExists) {
+        error(
+            "Release: file keystore tidak ditemukan: ${keystoreProperties["storeFile"]}\n" +
+                "Path relatif terhadap folder android/ (bukan traka/).",
+        )
+    }
+}
 
 android {
     namespace = "id.traka.app"
@@ -53,7 +86,7 @@ android {
 
     signingConfigs {
         create("release") {
-            if (keystorePropertiesFile.exists()) {
+            if (hasReleaseSigning) {
                 keyAlias = keystoreProperties["keyAlias"]?.toString()
                 keyPassword = keystoreProperties["keyPassword"]?.toString()
                 storeFile = keystoreProperties["storeFile"]?.toString()?.let { rootProject.file(it) }
@@ -63,15 +96,19 @@ android {
     }
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            // Selalu release keystore untuk AAB/APK release (bukan debug).
+            signingConfig = signingConfigs.getByName("release")
+            // R8: menghasilkan mapping.txt untuk deobfuscation di Play Console + Crashlytics.
+            // shrinkResources=false: kurangi risiko resource hilang (Flutter/plugin); ukuran tetap turun dari minify.
+            isMinifyEnabled = true
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            firebaseCrashlytics {
+                mappingFileUploadEnabled = true
+            }
         }
     }
 }
@@ -99,6 +136,11 @@ dependencies {
   // Add the dependencies for any other desired Firebase products
   // https://firebase.google.com/docs/android/setup#available-libraries
 
+  // Google Play Services — wajib untuk FirebaseApp.initializeApp (StringResourceValueReader memakai
+  // com.google.android.gms.common.R$string). Tanpa base/basement eksplisit, beberapa device crash
+  // NoClassDefFoundError saat splash (terlihat di logcat: FATAL EXCEPTION main).
+  implementation("com.google.android.gms:play-services-base:18.9.0")
+  implementation("com.google.android.gms:play-services-basement:18.9.0")
   // Google Play Services Location (untuk deteksi mock location)
   implementation("com.google.android.gms:play-services-location:21.3.0")
   implementation("com.google.firebase:firebase-crashlytics")

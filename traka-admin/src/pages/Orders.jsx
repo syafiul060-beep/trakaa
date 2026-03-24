@@ -94,9 +94,9 @@ export default function Orders() {
 
   const statusLabel = (s) => {
     const map = {
-      pending_agreement: 'Pending',
-      agreed: 'Agreed',
-      picked_up: 'Di Jalan',
+      pending_agreement: 'Menunggu kesepakatan',
+      agreed: 'Disepakati',
+      picked_up: 'Di jalan',
       completed: 'Selesai',
       cancelled: 'Dibatalkan',
     }

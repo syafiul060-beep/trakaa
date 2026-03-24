@@ -1,13 +1,23 @@
+import 'dart:math' as math;
 import 'dart:math' show cos, sin, atan2;
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-/// Utility functions untuk operasi rute dan polyline.
+/// Operasi rute / polyline. **Matching penumpang–driver «searah»** memakai buffer
+/// [defaultToleranceMeters] (jemput) dan [passengerDropoffToleranceMeters] (turun)
+/// terhadap **gabungan** jalur alternatif OD driver — bukan hanya garis yang dipilih di peta.
+/// Dokumen: `traka/docs/MATCHING_OD_KORIDOR_PENUMPANG.md`.
 class RouteUtils {
   /// Toleransi jarak untuk mengecek apakah titik berada di dekat polyline (dalam meter).
-  /// Default: 10 km = 10000 meter.
+  /// Default: 10 km = 10000 meter (titik jemput / umum).
   static const double defaultToleranceMeters = 10000;
+
+  /// Koridor tujuan penumpang ke polyline rute driver — lebih longgar dari jemput,
+  /// agar titik tujuan sedikit di luar jalur utama (mis. permukiman) tetap lolos.
+  /// Rentang produk 15–25 km; batas atas 25 km.
+  static const double passengerDropoffToleranceMeters = 25000;
 
   /// Hitung jarak terdekat dari suatu titik ke polyline (dalam meter).
   /// Menggunakan algoritma untuk mencari jarak minimum dari titik ke setiap segmen garis.
@@ -108,6 +118,21 @@ class RouteUtils {
   }
 
   /// Bearing (derajat 0-360) dari titik A ke B. 0=utara, 90=timur, 180=selatan, 270=barat.
+  /// Interpolasi bearing agar rotasi marker tidak patah (jarak sudut terpendek).
+  static double smoothBearingDegrees(
+    double currentDeg,
+    double targetDeg, {
+    double alpha = 0.15,
+  }) {
+    var diff = (targetDeg - currentDeg) % 360;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    var next = currentDeg + diff * alpha;
+    next %= 360;
+    if (next < 0) next += 360;
+    return next;
+  }
+
   static double bearingBetween(LatLng from, LatLng to) {
     const toRad = 3.14159265359 / 180;
     const toDeg = 180 / 3.14159265359;
@@ -363,27 +388,33 @@ class RouteUtils {
   /// [driverRoutePolyline]: Polyline rute driver (dari origin ke destination).
   /// [passengerOrigin]: Lokasi awal penumpang.
   /// [passengerDest]: Lokasi tujuan penumpang.
-  /// [toleranceMeters]: Toleransi jarak dalam meter. Default: 10 km.
+  /// [toleranceMeters]: Toleransi bila [originToleranceMeters]/[destToleranceMeters] tidak diisi.
+  /// [originToleranceMeters] / [destToleranceMeters]: selaras dengan peta penumpang (jemput vs turun).
   static bool doesRoutePassThrough(
     List<LatLng> driverRoutePolyline,
     LatLng passengerOrigin,
     LatLng passengerDest, {
     double toleranceMeters = defaultToleranceMeters,
+    double? originToleranceMeters,
+    double? destToleranceMeters,
   }) {
     if (driverRoutePolyline.isEmpty) return false;
+
+    final oTol = originToleranceMeters ?? toleranceMeters;
+    final dTol = destToleranceMeters ?? toleranceMeters;
 
     // Cek apakah rute melewati lokasi awal penumpang
     final passesOrigin = isPointNearPolyline(
       passengerOrigin,
       driverRoutePolyline,
-      toleranceMeters: toleranceMeters,
+      toleranceMeters: oTol,
     );
 
     // Cek apakah rute melewati lokasi tujuan penumpang
     final passesDest = isPointNearPolyline(
       passengerDest,
       driverRoutePolyline,
-      toleranceMeters: toleranceMeters,
+      toleranceMeters: dTol,
     );
 
     // Jika rute melewati kedua titik, cek urutan: origin harus sebelum dest
@@ -392,7 +423,8 @@ class RouteUtils {
         driverRoutePolyline,
         passengerOrigin,
         passengerDest,
-        toleranceMeters: toleranceMeters,
+        originToleranceMeters: oTol,
+        destToleranceMeters: dTol,
       );
     }
 
@@ -405,7 +437,8 @@ class RouteUtils {
     List<LatLng> polyline,
     LatLng origin,
     LatLng dest, {
-    double toleranceMeters = defaultToleranceMeters,
+    double originToleranceMeters = defaultToleranceMeters,
+    double destToleranceMeters = defaultToleranceMeters,
   }) {
     int originIndex = -1;
     int destIndex = -1;
@@ -429,11 +462,11 @@ class RouteUtils {
         point.longitude,
       );
 
-      if (originDist < minOriginDist && originDist <= toleranceMeters) {
+      if (originDist < minOriginDist && originDist <= originToleranceMeters) {
         minOriginDist = originDist;
         originIndex = i;
       }
-      if (destDist < minDestDist && destDist <= toleranceMeters) {
+      if (destDist < minDestDist && destDist <= destToleranceMeters) {
         minDestDist = destDist;
         destIndex = i;
       }
@@ -618,4 +651,143 @@ class RouteUtils {
 
     return nearestIndex;
   }
+
+  /// Sama seperti [findNearestRouteIndex], tetapi untuk polyline besar dijalankan di isolate
+  /// agar tidak memblokir UI (auto-switch rute driver).
+  static Future<int> findNearestRouteIndexAsync(
+    LatLng driverPosition,
+    List<List<LatLng>> alternativeRoutes, {
+    double toleranceMeters = defaultToleranceMeters,
+  }) async {
+    if (alternativeRoutes.isEmpty) return -1;
+    var totalPoints = 0;
+    for (final r in alternativeRoutes) {
+      totalPoints += r.length;
+    }
+    const isolateThresholdTotalPoints = 600;
+    if (totalPoints < isolateThresholdTotalPoints) {
+      return findNearestRouteIndex(
+        driverPosition,
+        alternativeRoutes,
+        toleranceMeters: toleranceMeters,
+      );
+    }
+    final polylines = <List<double>>[];
+    for (final r in alternativeRoutes) {
+      final flat = <double>[];
+      for (final p in r) {
+        flat.add(p.latitude);
+        flat.add(p.longitude);
+      }
+      polylines.add(flat);
+    }
+    return compute(
+      findNearestRouteIndexIsolate,
+      RouteNearestComputeInput(
+        driverLat: driverPosition.latitude,
+        driverLng: driverPosition.longitude,
+        toleranceMeters: toleranceMeters,
+        polylinesAsLatLngPairs: polylines,
+      ),
+    );
+  }
+}
+
+/// Data untuk [findNearestRouteIndexIsolate] (harus bisa dikirim ke isolate).
+class RouteNearestComputeInput {
+  const RouteNearestComputeInput({
+    required this.driverLat,
+    required this.driverLng,
+    required this.toleranceMeters,
+    required this.polylinesAsLatLngPairs,
+  });
+  final double driverLat;
+  final double driverLng;
+  final double toleranceMeters;
+  /// Tiap elemen: [lat, lng, lat, lng, ...] satu polyline.
+  final List<List<double>> polylinesAsLatLngPairs;
+}
+
+double _computeHaversineMeters(
+  double lat1,
+  double lon1,
+  double lat2,
+  double lon2,
+) {
+  const r = 6371000.0;
+  final p = math.pi / 180.0;
+  final a1 = lat1 * p;
+  final a2 = lat2 * p;
+  final dLat = (lat2 - lat1) * p;
+  final dLon = (lon2 - lon1) * p;
+  final sinDLat = math.sin(dLat / 2);
+  final sinDLon = math.sin(dLon / 2);
+  final a =
+      sinDLat * sinDLat + math.cos(a1) * math.cos(a2) * sinDLon * sinDLon;
+  return 2 * r * math.asin(math.min(1.0, math.sqrt(a)));
+}
+
+double _computeDistancePointToSegmentMeters(
+  double plat,
+  double plng,
+  double lat1,
+  double lng1,
+  double lat2,
+  double lng2,
+) {
+  final dx = lng2 - lng1;
+  final dy = lat2 - lat1;
+  if (dx == 0 && dy == 0) {
+    return _computeHaversineMeters(plat, plng, lat1, lng1);
+  }
+  final px = plng - lng1;
+  final py = plat - lat1;
+  final t = ((px * dx) + (py * dy)) / ((dx * dx) + (dy * dy));
+  final clampedT = t < 0 ? 0.0 : (t > 1 ? 1.0 : t);
+  final closestLat = lat1 + clampedT * dy;
+  final closestLng = lng1 + clampedT * dx;
+  return _computeHaversineMeters(plat, plng, closestLat, closestLng);
+}
+
+double _computeDistanceToPolylineFlat(
+  double plat,
+  double plng,
+  List<double> flat,
+) {
+  if (flat.isEmpty) return double.infinity;
+  if (flat.length == 2) {
+    return _computeHaversineMeters(plat, plng, flat[0], flat[1]);
+  }
+  var minD = double.infinity;
+  for (var i = 0; i < flat.length - 2; i += 2) {
+    final d = _computeDistancePointToSegmentMeters(
+      plat,
+      plng,
+      flat[i],
+      flat[i + 1],
+      flat[i + 2],
+      flat[i + 3],
+    );
+    if (d < minD) minD = d;
+  }
+  return minD;
+}
+
+/// Top-level untuk [compute] — tanpa Geolocator/Google Maps (aman di isolate).
+int findNearestRouteIndexIsolate(RouteNearestComputeInput input) {
+  var nearestIndex = -1;
+  var minDistance = double.infinity;
+  for (var i = 0; i < input.polylinesAsLatLngPairs.length; i++) {
+    final flat = input.polylinesAsLatLngPairs[i];
+    final distance = _computeDistanceToPolylineFlat(
+      input.driverLat,
+      input.driverLng,
+      flat,
+    );
+    if (distance < minDistance && distance <= input.toleranceMeters) {
+      minDistance = distance;
+      nearestIndex = i;
+    }
+  }
+  return nearestIndex;
 }

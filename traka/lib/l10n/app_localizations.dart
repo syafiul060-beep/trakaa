@@ -1,3 +1,5 @@
+import '../config/app_constants.dart';
+
 /// Lokalisasi untuk Traka – default Bahasa Indonesia.
 enum AppLocale { id, en }
 
@@ -97,6 +99,15 @@ class AppLocalizations {
   String get help => locale == AppLocale.id ? 'Bantuan' : 'Help';
   String get other => locale == AppLocale.id ? 'Lainnya' : 'Other';
   String get verifyData => locale == AppLocale.id ? 'Verifikasi Data' : 'Verify Data';
+  /// Kartu menu profil penumpang (selaras hitungan 3 langkah verifikasi).
+  String get verifyFacePhoto =>
+      locale == AppLocale.id ? 'Foto wajah' : 'Face photo';
+  String get profileTapPhotoToChangeHint => locale == AppLocale.id
+      ? 'Ketuk foto profil atau kartu Foto wajah untuk memperbarui.'
+      : 'Tap your profile photo or Face photo card to update.';
+  String photoLockedForDays(int days) => locale == AppLocale.id
+      ? 'Foto profil dapat diubah setelah $days hari lagi.'
+      : 'Profile photo can be changed in $days days.';
   String get emailAndPhone => locale == AppLocale.id ? 'Email & No.Telp' : 'Email & Phone';
   String get changePassword => locale == AppLocale.id ? 'Ubah Password' : 'Change Password';
   String get paymentHistory => locale == AppLocale.id ? 'Riwayat Pembayaran' : 'Payment History';
@@ -121,15 +132,73 @@ class AppLocalizations {
   String get contributionTariffButtonLabel => locale == AppLocale.id ? 'Jenis harga kontribusi' : 'Contribution rates';
   String get contributionTariffTravelLabel => locale == AppLocale.id ? 'Travel (1 penumpang)' : 'Travel (1 passenger)';
   String contributionTariffTravelRates(String t1, String t2, String t3, String min) => locale == AppLocale.id
-      ? 'Tarif: dalam provinsi Rp $t1/km, beda provinsi Rp $t2/km, beda pulau Rp $t3/km. Min Rp $min.'
-      : 'Rate: same province Rp $t1/km, different province Rp $t2/km, different island Rp $t3/km. Min Rp $min.';
+      ? 'Tarif travel per km: sama provinsi Rp $t1/km, beda provinsi (satu pulau) Rp $t2/km, beda pulau Rp $t3/km. Min per penumpang Rp $min.'
+      : 'Travel per km: same province Rp $t1/km, different province (same island) Rp $t2/km, different island Rp $t3/km. Min per passenger Rp $min.';
   String contributionTariffExampleTravel(int km) => locale == AppLocale.id
       ? 'Contoh: 1 penumpang, jarak $km km'
       : 'Example: 1 passenger, $km km distance';
   String get contributionTariffBarangLabel => locale == AppLocale.id ? 'Kirim barang' : 'Send goods';
   String contributionTariffBarangRates(String b1, String b2, String b3) => locale == AppLocale.id
-      ? 'Tarif: dalam provinsi Rp $b1/km, beda provinsi Rp $b2/km, >1 provinsi Rp $b3/km.'
-      : 'Rate: same province Rp $b1/km, different province Rp $b2/km, >1 province Rp $b3/km.';
+      ? 'Tarif kargo: sama provinsi Rp $b1/km, beda provinsi (satu pulau) Rp $b2/km, beda pulau Rp $b3/km.'
+      : 'Cargo rate: same province Rp $b1/km, different province (same island) Rp $b2/km, different island Rp $b3/km.';
+  String get contributionTariffDialogIntro => locale == AppLocale.id
+      ? 'Kontribusi dihitung per order (travel / kirim barang) dan dibayar per rute. Tarif per km tergantung tier rute di bawah.'
+      : 'Contribution is calculated per order (travel / goods) and paid per route. The rate per km depends on the route tier below.';
+  String get contributionTariffTierTableTitle => locale == AppLocale.id
+      ? 'Kategori rute (tier) — sama dengan perhitungan di sistem'
+      : 'Route category (tier) — matches how the app calculates';
+  String get contributionTariffTier1Desc => locale == AppLocale.id
+      ? 'Tier 1: asal & tujuan dalam satu provinsi (termasuk antar kabupaten/kota dalam provinsi yang sama).'
+      : 'Tier 1: origin & destination in the same province (including between regencies/cities in that province).';
+  String get contributionTariffTier2Desc => locale == AppLocale.id
+      ? 'Tier 2: beda provinsi, masih satu pulau.'
+      : 'Tier 2: different provinces, same island.';
+  String get contributionTariffTier3Desc => locale == AppLocale.id
+      ? 'Tier 3: beda pulau (lintas pulau / nasional).'
+      : 'Tier 3: different islands (inter-island / national).';
+  String get contributionTariffSameProvinceNote => locale == AppLocale.id
+      ? 'Label peta seperti “Dalam Kota” dan “Antar Kabupaten” tetap satu tier jika masih satu provinsi.'
+      : 'Map labels like “Within city” and “Between regencies” stay one tier if still one province.';
+  String get contributionTariffTravelSectionTitle => locale == AppLocale.id ? '1. Travel' : '1. Travel';
+  String get contributionTariffTravelFormula => locale == AppLocale.id
+      ? 'Rumus: (jarak km × tarif/km tier) per penumpang, lalu dijumlahkan. Minimal per penumpang mengikuti pengaturan. Total kontribusi travel semua penumpang di satu order = jumlah penumpang × dasar per orang (termasuk kerabat).'
+      : 'Formula: (km × tier rate per km) per passenger, then summed. Minimum per passenger follows settings. Total travel contribution for an order = number of passengers × base per person (including relatives).';
+  String contributionTariffTravelCapPerRoute(String maxFormatted) => locale == AppLocale.id
+      ? 'Total kontribusi travel untuk satu rute (semua order travel di rute itu) dibatasi maksimal Rp $maxFormatted.'
+      : 'Total travel contribution for one route (all travel orders on that route) is capped at Rp $maxFormatted.';
+  String get contributionTariffBarangSectionTitle => locale == AppLocale.id ? '2. Kirim barang' : '2. Goods delivery';
+  String contributionTariffBarangDokumenRates(String d1, String d2, String d3) => locale == AppLocale.id
+      ? 'Dokumen (surat/amplop): sama provinsi Rp $d1/km, beda provinsi (satu pulau) Rp $d2/km, beda pulau Rp $d3/km.'
+      : 'Documents (letters/envelopes): same province Rp $d1/km, different province (same island) Rp $d2/km, different island Rp $d3/km.';
+  String get contributionTariffBarangFormula => locale == AppLocale.id
+      ? 'Rumus: jarak km × tarif/km (kargo atau dokumen sesuai jenis pesanan).'
+      : 'Formula: km × rate per km (cargo or document, per order type).';
+  String get contributionTariffViolationNote => locale == AppLocale.id
+      ? '3. Pelanggaran: satu nominal per kejadian (mis. tidak scan), tidak tergantung tier atau jenis order. Dibayar bersama kontribusi via Google Play.'
+      : '3. Violations: one fee per incident (e.g. no scan), not tied to tier or order type. Paid together with contribution via Google Play.';
+  String get contributionTariffGeocodingNote => locale == AppLocale.id
+      ? 'Jika provinsi asal/tujuan tidak terbaca dari peta, tier bisa memakai default sistem — cek di riwayat order jika nominal tampak tidak wajar.'
+      : 'If origin/destination province cannot be read from the map, the tier may use a system default — check order history if amounts look wrong.';
+  String get contributionTariffGooglePlayNominals => locale == AppLocale.id
+      ? '4. Pembayaran via Google Play: pilih nominal terdekat (mis. Rp 5.000 s.d. Rp 50.000).'
+      : '4. Payment via Google Play: pick the nearest amount (e.g. Rp 5,000–50,000).';
+  String contributionTariffExTravelBase(String km, String perKm, String byDist, String min, String base) => locale == AppLocale.id
+      ? 'Dasar per penumpang: $km km × Rp $perKm/km = Rp $byDist → min Rp $min = Rp $base'
+      : 'Base per passenger: $km km × Rp $perKm/km = Rp $byDist → min Rp $min = Rp $base';
+  String contributionTariffExTravelOnePax(String base) => locale == AppLocale.id
+      ? '1 penumpang: Rp $base'
+      : '1 passenger: Rp $base';
+  String contributionTariffExTravelFourPax(String total) => locale == AppLocale.id
+      ? '4 penumpang (1 + 3 kerabat): Rp $total'
+      : '4 passengers (1 + 3 relatives): Rp $total';
+  String contributionTariffExBarangTier(String tierLabel, String km, String rate, String total) => locale == AppLocale.id
+      ? '$tierLabel: $km km × Rp $rate/km = Rp $total'
+      : '$tierLabel: $km km × Rp $rate/km = Rp $total';
+  String get contributionTariffExBarangTier1 => locale == AppLocale.id ? 'Kargo tier 1' : 'Cargo tier 1';
+  String get contributionTariffExBarangTier1Doc => locale == AppLocale.id ? 'Dokumen tier 1' : 'Document tier 1';
+  String contributionTariffTravelExampleTitle(int km, String rpk) => locale == AppLocale.id
+      ? 'Contoh travel: $km km, tier 1 (Rp $rpk/km)'
+      : 'Travel example: $km km, tier 1 (Rp $rpk/km)';
   String contributionTariffExampleBarang(int km) => locale == AppLocale.id
       ? 'Contoh: 1 kirim barang, jarak $km km'
       : 'Example: 1 send goods, $km km distance';
@@ -139,6 +208,72 @@ class AppLocalizations {
   String get contributionTariffTapHint => locale == AppLocale.id
       ? 'Ketuk untuk lihat contoh: 1 penumpang, jarak 50 km = Rp berapa'
       : 'Tap to see example: 1 passenger, 50 km = amount';
+
+  String get contributionPayScreenTitle => locale == AppLocale.id ? 'Bayar Kontribusi Traka' : 'Pay Traka Contribution';
+  String get contributionPayScreenHeadline => locale == AppLocale.id ? 'Bayar Kewajiban Driver' : 'Pay driver obligations';
+  String get contributionPayScreenIntro => locale == AppLocale.id
+      ? 'Bayar kontribusi travel, kirim barang, dan denda pelanggaran (jika ada) sekaligus via Google Play.'
+      : 'Pay travel and goods contribution and violation fees (if any) in one step via Google Play.';
+  String get contributionGuideCardTitle => locale == AppLocale.id ? 'Panduan Tarif Kontribusi' : 'Contribution rate guide';
+  String get contributionGuideTravelTitle => locale == AppLocale.id ? 'Travel (antar kota)' : 'Travel (intercity)';
+  String contributionGuideTravelDesc(String t1, String t2, String t3, String min, String maxRute) => locale == AppLocale.id
+      ? 'Tarif per km: sama provinsi Rp $t1, beda provinsi (satu pulau) Rp $t2, beda pulau Rp $t3. Min per penumpang Rp $min, maks Rp $maxRute per rute.'
+      : 'Per km: same province Rp $t1, different province (same island) Rp $t2, different island Rp $t3. Min per passenger Rp $min, max Rp $maxRute per route.';
+  String contributionGuideTravelExample(String amount) => locale == AppLocale.id
+      ? 'Contoh: 50 km tier 1, 1 penumpang → Rp $amount'
+      : 'Example: 50 km tier 1, 1 passenger → Rp $amount';
+  String get contributionGuideGoodsTitle => locale == AppLocale.id ? 'Kirim barang (kargo)' : 'Goods (cargo)';
+  String contributionGuideGoodsDesc(String b1, String b2, String b3) => locale == AppLocale.id
+      ? 'Tarif kargo per km: sama provinsi Rp $b1, beda provinsi (satu pulau) Rp $b2, beda pulau Rp $b3. Dokumen: tarif terpisah (buka panduan).'
+      : 'Cargo per km: same province Rp $b1, different province (same island) Rp $b2, different island Rp $b3. Documents: separate rates (open guide).';
+  String contributionGuideGoodsExample(String amount) => locale == AppLocale.id
+      ? 'Contoh: 30 km kargo tier 1 → Rp $amount'
+      : 'Example: 30 km cargo tier 1 → Rp $amount';
+  String get contributionGuideLoadingTariffs => locale == AppLocale.id ? 'Memuat tarif...' : 'Loading rates...';
+  String get contributionGuideTapFullDetail => locale == AppLocale.id ? 'Ketuk untuk detail lengkap dan contoh' : 'Tap for full details and examples';
+  String contributionLineTravelContribution(String rp) => locale == AppLocale.id ? 'Kontribusi travel: Rp $rp' : 'Travel contribution: Rp $rp';
+  String contributionTravelHintFull(String t1, String t2, String t3, String maxR) => locale == AppLocale.id
+      ? 'Dihitung dari jarak × tarif per km (sama provinsi Rp $t1/km, beda provinsi (satu pulau) Rp $t2/km, beda pulau Rp $t3/km). Maks Rp $maxR per rute.'
+      : 'From distance × rate per km (same province Rp $t1/km, different province (same island) Rp $t2/km, different island Rp $t3/km). Max Rp $maxR per route.';
+  String get contributionTravelHintShort => locale == AppLocale.id ? 'Dihitung dari jarak × tarif per km (lihat Panduan Tarif).' : 'Distance × rate per km (see guide).';
+  String contributionLineGoodsContribution(String rp) => locale == AppLocale.id ? 'Kontribusi kirim barang: Rp $rp' : 'Goods contribution: Rp $rp';
+  String contributionGoodsHintFull(String b1, String b2, String b3) => locale == AppLocale.id
+      ? 'Dihitung dari jarak × tarif per km — kargo: sama provinsi Rp $b1/km, beda provinsi (satu pulau) Rp $b2/km, beda pulau Rp $b3/km. Dokumen punya tarif terpisah (buka Panduan).'
+      : 'Distance × rate per km — cargo: same province Rp $b1/km, different province (same island) Rp $b2/km, different island Rp $b3/km. Documents have separate rates (open guide).';
+  String get contributionGoodsHintShort => locale == AppLocale.id ? 'Dihitung dari jarak × tarif per km (lihat Panduan Tarif).' : 'Distance × rate per km (see guide).';
+  String contributionLineViolation(String rp) => locale == AppLocale.id ? 'Denda pelanggaran: Rp $rp' : 'Violation fee: Rp $rp';
+  String contributionTotalLine(String rp) => locale == AppLocale.id ? 'Total: Rp $rp' : 'Total: Rp $rp';
+  String contributionUnpaidTravelLine(String rp) => locale == AppLocale.id ? 'Total kontribusi travel (rute belum lunas): Rp $rp' : 'Travel contribution (unpaid routes): Rp $rp';
+  String get contributionRoutesAllPaid => locale == AppLocale.id ? 'Status rute: semua sudah lunas' : 'Routes: all paid';
+  String contributionRoutesUnpaidCount(int n) => locale == AppLocale.id ? 'Status rute: ada $n rute belum lunas' : 'Routes: $n unpaid route(s)';
+  String get contributionUnpaidRoutesHeader => locale == AppLocale.id ? 'Rute belum lunas:' : 'Unpaid routes:';
+  String contributionRouteBullet(String origin, String dest, String rp) => '• $origin → $dest: Rp $rp';
+  String contributionGooglePlayPrice(String price) => locale == AppLocale.id ? 'Harga di Google Play: $price' : 'Google Play price: $price';
+  String contributionPayObligationNearest(String rp) => locale == AppLocale.id
+      ? 'Kewajiban Rp $rp. Bayar nominal terdekat (produk Play punya harga tetap).'
+      : 'Amount owed Rp $rp. Pay the nearest nominal (Play products have fixed prices).';
+  String get contributionProcessing => locale == AppLocale.id ? 'Memproses...' : 'Processing...';
+  String contributionPayWithPrice(String price) => locale == AppLocale.id ? 'Bayar $price via Google Play' : 'Pay $price via Google Play';
+  String get contributionPayGeneric => locale == AppLocale.id ? 'Bayar via Google Play' : 'Pay via Google Play';
+  String get contributionReloadProducts => locale == AppLocale.id ? 'Muat ulang produk' : 'Reload products';
+  String get contributionNoObligation => locale == AppLocale.id ? 'Tidak ada kewajiban yang perlu dibayar.' : 'No payment due.';
+  String get contributionConfirmPaymentTitle => locale == AppLocale.id ? 'Konfirmasi Pembayaran' : 'Confirm payment';
+  String contributionConfirmPaymentBody(String priceLabel) => locale == AppLocale.id
+      ? 'Anda akan membayar $priceLabel untuk kewajiban driver (travel + kirim barang + pelanggaran). Pembayaran melalui Google Play. Lanjutkan?'
+      : 'You will pay $priceLabel for driver obligations (travel + goods + violations). Payment via Google Play. Continue?';
+  String get contributionNominalWord => locale == AppLocale.id ? 'nominal' : 'amount';
+  String get contributionDialogContinue => locale == AppLocale.id ? 'Lanjutkan' : 'Continue';
+  String get contributionErrorStoreUnavailable => locale == AppLocale.id ? 'Toko aplikasi tidak tersedia' : 'Store unavailable';
+  String contributionErrorProductNotConfigured(String productId, String rpFormatted) => locale == AppLocale.id
+      ? 'Produk belum dikonfigurasi di Play Console (ID: $productId). Buat produk untuk Rp $rpFormatted.'
+      : 'Product not configured in Play Console (ID: $productId). Create product for Rp $rpFormatted.';
+  String get contributionErrorPaymentFailed => locale == AppLocale.id ? 'Pembayaran gagal' : 'Payment failed';
+  String get contributionErrorIncompletePurchase => locale == AppLocale.id ? 'Data pembayaran tidak lengkap' : 'Incomplete payment data';
+  String get contributionNotificationTitle => locale == AppLocale.id ? 'Kontribusi' : 'Contribution';
+  String get contributionSuccessBody => locale == AppLocale.id ? 'Kontribusi berhasil. Anda dapat menerima order dan balas chat.' : 'Contribution paid. You can receive orders and reply in chat.';
+  String get contributionSuccessSnackBar => contributionSuccessBody;
+  String contributionVerifyFailed(String detail) => locale == AppLocale.id ? 'Gagal memverifikasi: $detail' : 'Verification failed: $detail';
+
   String driverEarningsViolationCount(int count) => locale == AppLocale.id
       ? 'Pelanggaran ($count kali)'
       : 'Violations ($count times)';
@@ -238,12 +373,34 @@ class AppLocalizations {
   String get agreedPrice => locale == AppLocale.id ? 'Harga kesepakatan' : 'Agreed price';
   String get activeTravelOrderTitle =>
       locale == AppLocale.id ? 'Pesanan Travel Aktif' : 'Active Travel Order';
+  /// Satu baris: alasan beranda tidak bisa dipakai (selaras status agreed/picked_up).
+  String get activeTravelOrderSubtitle => locale == AppLocale.id
+      ? 'Beranda diblokir karena travel sudah ada kesepakatan harga.'
+      : 'Home is blocked: you have a travel order with an agreed price.';
   String get activeTravelOrderMessage => locale == AppLocale.id
-      ? 'Anda punya pesanan travel aktif. Selesaikan atau batalkan untuk pesan lagi.'
-      : 'You have an active travel order. Complete or cancel it to place another.';
+      ? 'Anda punya pesanan travel yang sudah ada kesepakatan harga (disetujui atau sedang jalan). Selesaikan atau batalkan untuk memesan perjalanan baru dari beranda.'
+      : 'You have a travel order with an agreed price (confirmed or in progress). Complete or cancel it to book another trip from home.';
   String get activeTravelOrderHint => locale == AppLocale.id
-      ? 'Buka tab Pesanan untuk melihat pesanan Anda.'
-      : 'Open the Orders tab to view your order.';
+      ? 'Gunakan tombol di bawah atau tab Pesanan untuk detail, chat, dan lacak.'
+      : 'Use the button below or the Orders tab for details, chat, and tracking.';
+  String get activeTravelOrderOpenOrders => locale == AppLocale.id
+      ? 'Buka Pesanan'
+      : 'Open orders';
+
+  /// Tab Pesan → jadwal driver: travel dari jadwal dinonaktifkan jika sudah ada travel agreed (kirim barang tetap boleh).
+  String get scheduleTravelBlockedWhileTravelAgreed => locale == AppLocale.id
+      ? 'Anda punya pesanan travel dengan kesepakatan harga. Pesan travel dari jadwal tidak tersedia. Kirim barang (terjadwal) tetap boleh.'
+      : 'You have a travel order with an agreed price. Scheduled travel booking is unavailable. Scheduled send-goods is still allowed.';
+
+  /// Penumpang: sesi tampilan driver di peta berakhir otomatis (belum ada kesepakatan harga travel).
+  String get passengerDriverSearchSessionExpiredBody => locale == AppLocale.id
+      ? 'Tampilan driver di peta dihentikan setelah ${AppConstants.passengerDriverSearchSessionMaxMinutes} menit. Ketuk Cari atau Driver sekitar untuk memperbarui.'
+      : 'Drivers on the map were hidden after ${AppConstants.passengerDriverSearchSessionMaxMinutes} minutes. Tap Search or Nearby drivers to refresh.';
+
+  /// List Pesan: travel pending dengan driver lain saat sudah ada kesepakatan dengan driver lain.
+  String get chatTravelLockedOtherDriver => locale == AppLocale.id
+      ? 'Ada pesanan travel dengan kesepakatan harga. Chat travel dengan driver lain tidak bisa dihapus dari sini. Kirim barang tidak dibatasi. Selesaikan atau batalkan di tab Pesanan.'
+      : 'You have a travel order with an agreed price. You can’t delete other drivers’ travel chats here. Send-goods chats are not affected. Finish or cancel in Orders.';
   String get reject => locale == AppLocale.id ? 'Tolak' : 'Reject';
   String get agree => locale == AppLocale.id ? 'Setuju' : 'Agree';
   String get sos => 'SOS';
@@ -256,6 +413,38 @@ class AppLocalizations {
   String get etaToYourLocation => locale == AppLocale.id
       ? 'Estimasi tiba di lokasi Anda'
       : 'Estimated arrival at your location';
+  String get driverDetailRecommended => locale == AppLocale.id
+      ? 'Direkomendasikan'
+      : 'Recommended';
+  String get loadingRouteCategory => locale == AppLocale.id
+      ? 'Memuat info rute...'
+      : 'Loading route info...';
+  String get travelFullTryOtherDriver => locale == AppLocale.id
+      ? 'Travel penuh — pilih driver lain di peta untuk penumpang.'
+      : 'Travel full — choose another driver on the map for passengers.';
+  String get etaLoadingShort => locale == AppLocale.id ? 'Memuat...' : 'Loading…';
+  String get etaCalculatingProminent => locale == AppLocale.id
+      ? 'Menghitung waktu tempuh...'
+      : 'Calculating travel time…';
+  String get etaDirectionsUnavailable => locale == AppLocale.id
+      ? 'Tidak bisa menghitung waktu tempuh. Periksa koneksi atau coba lagi.'
+      : 'Could not calculate travel time. Check your connection or try again.';
+  /// ETA dari cache saat API/kuota bermasalah (penumpang).
+  String get etaApproximateCachedHint => locale == AppLocale.id
+      ? 'Perkiraan dari cache (koneksi atau kuota API terbatas).'
+      : 'Approximate ETA from cache (limited network or API quota).';
+  /// Snackbar driver: polyline navigasi dari cache.
+  String get routeFromCacheNavHint => locale == AppLocale.id
+      ? 'Rute dari cache (koneksi/kuota terbatas). Periksa garis di peta.'
+      : 'Route from cache (limited connection/quota). Check the line on the map.';
+  /// Tooltip tombol peta: mode utara ke atas — ketuk untuk ikut arah (heading-up).
+  String get mapHeadingTooltipNorthUp => locale == AppLocale.id
+      ? 'Utara ke atas — ketuk untuk ikut arah jalan'
+      : 'North up — tap to follow your direction of travel';
+  /// Tooltip tombol peta: mode ikut bearing — ketuk untuk kembali utara ke atas.
+  String get mapHeadingTooltipFollow => locale == AppLocale.id
+      ? 'Mengikuti arah — ketuk untuk utara ke atas'
+      : 'Following heading — tap for north up';
   String get back => locale == AppLocale.id ? 'Kembali' : 'Back';
   String get rateDriver => locale == AppLocale.id ? 'Beri rating driver' : 'Rate driver';
   String get later => locale == AppLocale.id ? 'Nanti' : 'Later';
@@ -263,11 +452,95 @@ class AppLocalizations {
 
   // ——— Driver
   String get vehicleData => locale == AppLocale.id ? 'Data Kendaraan' : 'Vehicle Data';
-  String get driverVerification => locale == AppLocale.id ? 'Verifikasi Driver' : 'Driver Verification';
+  String get vehicleDataLockedTitle => locale == AppLocale.id
+      ? 'Data kendaraan terkunci'
+      : 'Vehicle data is locked';
+  String get vehicleDataLockedBody => locale == AppLocale.id
+      ? 'Plat, merek, dan tipe hanya bisa diubah oleh admin. '
+          'Kirim foto STNK; admin akan memperbarui data setelah memeriksa.'
+      : 'Plate, brand, and model can only be changed by admin. '
+          'Send an STNK photo; admin will update your data after review.';
+  String get vehicleChangeRequestSentTitle => locale == AppLocale.id
+      ? 'Permintaan perubahan terkirim'
+      : 'Change request sent';
+  String get vehicleChangeRequestSentBody => locale == AppLocale.id
+      ? 'Admin dapat melihat foto STNK Anda dan akan mengubah data kendaraan jika disetujui.'
+      : 'Admin can see your STNK photo and will update vehicle data if approved.';
+  String get vehicleSendStnkForChange => locale == AppLocale.id
+      ? 'Kirim foto STNK untuk perubahan'
+      : 'Send STNK photo to request changes';
+  String get vehicleStnkUploading => locale == AppLocale.id
+      ? 'Mengunggah foto STNK...'
+      : 'Uploading STNK photo...';
+  String get vehicleStnkUploadSuccess => locale == AppLocale.id
+      ? 'Foto STNK terkirim. Tunggu pembaruan dari admin.'
+      : 'STNK photo sent. Wait for admin to update.';
+  String get vehicleChangeNoteOptional => locale == AppLocale.id
+      ? 'Keterangan (opsional)'
+      : 'Note (optional)';
+  /// Kartu menu SIM (terpisah dari Data Kendaraan).
+  String get driverVerification => locale == AppLocale.id ? 'Verifikasi SIM' : 'License (SIM)';
+  /// Penjelasan singkat di bawah judul «Verifikasi» pada profil driver.
+  String get driverVerificationSubtitle => locale == AppLocale.id
+      ? 'Wajib melengkapi: foto wajah, data kendaraan (mobil), foto SIM, dan no. telepon terverifikasi.'
+      : 'Required: face photo, vehicle data, driver license (SIM), and verified phone number.';
+  /// Dialog jika belum ada foto wajah — sebelum alur SIM.
+  String get driverFaceRequiredBeforeSimTitle => locale == AppLocale.id
+      ? 'Foto wajah diperlukan'
+      : 'Face photo required';
+  /// Dialog sebelum foto SIM: ingatkan data mobil di menu Data Kendaraan.
+  String get driverSimVerificationExplain => locale == AppLocale.id
+      ? 'Pastikan menu «Data Kendaraan» sudah berisi plat dan data mobil Anda. '
+          'Lalu ambil foto SIM — foto dipakai untuk membaca nama dan nomor SIM.'
+      : 'Make sure «Vehicle Data» includes your plate and vehicle details. '
+          'Then take a SIM photo to read name and license number.';
+  /// Dialog setelah SIM + kendaraan lengkap (tanpa edit liar).
+  String get driverVerificationCompleteDialogTitle => locale == AppLocale.id
+      ? 'Verifikasi SIM & kendaraan'
+      : 'License & vehicle verified';
+  String get driverVerificationCompleteDialogBody => locale == AppLocale.id
+      ? 'Data kendaraan dan SIM Anda sudah tercatat. Untuk perubahan, hubungi admin.'
+      : 'Your vehicle and license data are on file. Contact admin for changes.';
   String get route => locale == AppLocale.id ? 'Rute' : 'Route';
   String get schedule => locale == AppLocale.id ? 'Jadwal' : 'Schedule';
   String get startWork => locale == AppLocale.id ? 'Mulai bekerja' : 'Start work';
   String get finishWork => locale == AppLocale.id ? 'Selesai bekerja' : 'Finish work';
+  /// [finishWorkButtonLabel] = [finishWork] agar sama dengan teks di tombol driver.
+  String driverCannotFinishWorkBoth(
+    int passengerCount,
+    int goodsCount,
+    String finishWorkButtonLabel,
+  ) =>
+      locale == AppLocale.id
+          ? 'Anda belum bisa menekan tombol $finishWorkButtonLabel. Masih ada $passengerCount penumpang dan $goodsCount kirim barang yang belum selesai. Selesaikan semua pesanan terlebih dahulu.'
+          : 'You cannot tap $finishWorkButtonLabel yet. $passengerCount passenger(s) and $goodsCount goods shipment(s) are still open. Finish all orders first.';
+  String driverCannotFinishWorkPassengersOnly(
+    int passengerCount,
+    String finishWorkButtonLabel,
+  ) =>
+      locale == AppLocale.id
+          ? 'Anda belum bisa menekan tombol $finishWorkButtonLabel. Masih ada $passengerCount penumpang yang belum selesai. Selesaikan semua pesanan terlebih dahulu.'
+          : 'You cannot tap $finishWorkButtonLabel yet. $passengerCount passenger(s) are still open. Finish all orders first.';
+  String driverCannotFinishWorkGoodsOnly(
+    int goodsCount,
+    String finishWorkButtonLabel,
+  ) =>
+      locale == AppLocale.id
+          ? 'Anda belum bisa menekan tombol $finishWorkButtonLabel. Masih ada $goodsCount kirim barang yang belum selesai. Selesaikan semua pesanan terlebih dahulu.'
+          : 'You cannot tap $finishWorkButtonLabel yet. $goodsCount goods shipment(s) are still open. Finish all orders first.';
+  String driverNearMainRouteDestFinishWorkBlockedHint(String finishWorkButtonLabel) =>
+      locale == AppLocale.id
+          ? 'Anda sudah di dekat tujuan rute utama. Masih ada penumpang atau kirim barang yang belum selesai — lanjutkan jemput/pengantaran. Tombol $finishWorkButtonLabel hanya bisa dipakai setelah semua pesanan selesai.'
+          : 'You are near the main route destination. Passengers or goods are still incomplete — continue pickups or deliveries. The $finishWorkButtonLabel button is only available after all orders are complete.';
+  /// Tooltip tombol [finishWork] saat masih ada order aktif (sama arah dengan SnackBar).
+  String get driverFinishWorkBlockedTooltip => locale == AppLocale.id
+      ? 'Masih ada penumpang atau kirim barang yang belum selesai. Selesaikan semua pesanan terlebih dahulu.'
+      : 'Passengers or goods are still open. Finish all orders first.';
+  /// Fallback bila order aktif terdeteksi tetapi hitungan penumpang/barang belum terisi (race stream).
+  String driverCannotFinishWorkPendingGeneric(String finishWorkButtonLabel) =>
+      locale == AppLocale.id
+          ? 'Anda belum bisa menekan tombol $finishWorkButtonLabel. Masih ada pesanan yang belum selesai. Selesaikan semua pesanan terlebih dahulu.'
+          : 'You cannot tap $finishWorkButtonLabel yet. Some orders are still open. Finish all orders first.';
   String get routeSelected => locale == AppLocale.id ? 'Rute dipilih' : 'Route selected';
   String get readyToWork => locale == AppLocale.id ? 'Siap Kerja' : 'Ready to work';
   String get pickUpPassenger => locale == AppLocale.id ? 'Ambil pemesan' : 'Pick up passenger';
@@ -294,6 +567,14 @@ class AppLocalizations {
   String get navigatingToPassengerHint => locale == AppLocale.id
       ? 'Setelah scan barcode/konfirmasi otomatis, Anda akan kembali ke rute utama.'
       : 'After scanning barcode/auto confirmation, you will return to the main route.';
+  /// Tab driver — pelengkap info barcode & live lokasi penumpang.
+  String get pickupOperationalDriverNavigateLive => locale == AppLocale.id
+      ? 'Setelah kesepakatan, buka Beranda → ketuk «Ya, arahkan» agar lokasi live penumpang aktif. Scan barcode PICKUP lebih akurat dan menghindari denda konfirmasi otomatis.'
+      : 'After agreeing, open Home → tap «Yes, navigate» so passenger live location is active. Scanning the PICKUP barcode is more accurate and avoids auto‑confirm fees.';
+  /// Chat penumpang — izin lokasi & cadangan update posisi.
+  String get pickupOperationalPassengerKeepApp => locale == AppLocale.id
+      ? 'Jangan tutup paksa app; izinkan lokasi (Selalu / Saat dipakai). Chat membantu memperbarui posisi jika Anda bergerak ≥50 m (cadangan bila live tidak ada).'
+      : 'Do not force‑stop the app; allow location (Always / While in use). Chat helps refresh your position if you move ≥50 m (backup when live is unavailable).';
 
   // ——— Umum
   String get search => locale == AppLocale.id ? 'Cari' : 'Search';
@@ -344,8 +625,8 @@ class AppLocalizations {
       : 'Trusted travel and delivery app in Kalimantan. Book travel tickets or send goods easily.';
   String get onboardingVerify => locale == AppLocale.id ? 'Verifikasi untuk keamanan' : 'Verify for security';
   String get onboardingVerifyBody => locale == AppLocale.id
-      ? 'Lengkapi verifikasi data (foto wajah, KTP/SIM) dan nomor telepon di profil untuk menggunakan semua fitur.'
-      : 'Complete verification (face photo, ID/driver license) and phone number in profile to use all features.';
+      ? 'Lengkapi verifikasi data (foto wajah, KTP atau SIM, data kendaraan untuk driver) dan nomor telepon di profil untuk menggunakan semua fitur.'
+      : 'Complete verification (face photo, ID or driver license, vehicle data for drivers) and phone number in profile to use all features.';
   String get onboardingReady => locale == AppLocale.id ? 'Siap memulai' : 'Ready to start';
   String get onboardingReadyBody => locale == AppLocale.id
       ? 'Jelajahi rute travel, pesan tiket, atau kirim barang. Semua dalam satu aplikasi.'
@@ -570,17 +851,23 @@ class AppLocalizations {
       ? 'Lengkapi data verifikasi terlebih dahulu untuk memesan travel atau kirim barang.'
       : 'Complete verification first to book travel or send goods.';
   String get completeDataVerificationPromptDriver => locale == AppLocale.id
-      ? 'Lengkapi data verifikasi terlebih dahulu untuk memilih rute, mulai kerja, atau menambah jadwal travel.'
-      : 'Complete verification first to select route, start work, or add travel schedule.';
+      ? 'Lengkapi verifikasi: foto wajah, data kendaraan (mobil), foto SIM, dan no. telepon — untuk memilih rute, mulai kerja, atau menambah jadwal travel.'
+      : 'Complete verification: face photo, vehicle data, driver license (SIM), and phone — to select route, start work, or add schedule.';
   String get completeDataVerificationPromptPesan => locale == AppLocale.id
       ? 'Lengkapi data verifikasi terlebih dahulu untuk memesan travel terjadwal.'
       : 'Complete verification first to book scheduled travel.';
   String get completeDataHint => locale == AppLocale.id
-      ? 'Lengkapi data Anda: Verifikasi Data (KTP), Email & No. Telepon agar dapat menggunakan semua fitur.'
-      : 'Complete your data: Verify Data (ID), Email & Phone to use all features.';
+      ? 'Lengkapi data Anda: Foto wajah, Verifikasi Data (KTP), dan No. Telepon terverifikasi (SMS). Email saja tidak cukup untuk verifikasi penuh.'
+      : 'Complete your data: Face photo, ID verification (KTP), and a verified phone number (SMS). Email alone is not enough for full verification.';
   String verificationCompleteCount(int done, int total) => locale == AppLocale.id
       ? 'Verifikasi: $done/$total lengkap'
       : 'Verification: $done/$total complete';
+  String get checkingFaceUniqueness => locale == AppLocale.id
+      ? 'Memeriksa keunikan wajah...'
+      : 'Checking face uniqueness...';
+  String get duplicateFaceDetected => locale == AppLocale.id
+      ? 'Wajah ini terdaftar pada akun lain. Gunakan foto wajah Anda sendiri.'
+      : 'This face matches another account. Use your own face photo.';
   String get fetchingLocation => locale == AppLocale.id ? 'Mengambil lokasi...' : 'Fetching location...';
   String get completeNow => locale == AppLocale.id ? 'Lengkapi Sekarang' : 'Complete Now';
   String get notLoggedIn => locale == AppLocale.id ? 'Anda belum login.' : 'You are not logged in.';
@@ -589,6 +876,32 @@ class AppLocalizations {
   String get noActiveDriversForRoute => locale == AppLocale.id
       ? 'Tidak ada driver aktif yang sesuai dengan rute tujuan. Coba Pesan nanti untuk jadwal terjadwal.'
       : 'No active drivers matching your route. Try Book later for scheduled travel.';
+  /// Penjelasan singkat cara matching (UI beranda / form).
+  String get passengerRouteMatchExplanationShort => locale == AppLocale.id
+      ? 'Memeriksa beberapa jalur alternatif; tujuan boleh sampai ~25 km dari garis jalan utama.'
+      : 'We check multiple route alternatives; destination may be up to ~25 km from the main road line.';
+  /// Kalimat kedua snackbar saat pencarian rute kosong (bukan bug data).
+  String get noRouteMatchSnackHintLine => locale == AppLocale.id
+      ? 'Tujuan sudah memakai koridor lebih lebar (~25 km). Driver lain mungkin masih aktif dalam radius 40 km — coba Driver sekitar.'
+      : 'Destination already uses a wider corridor (~25 km). Other drivers may still be active within 40 km — try Nearby drivers.';
+  /// Banner peta: mode sekitar (bukan hasil A→B).
+  String get mapNearbyModeBannerHint => locale == AppLocale.id
+      ? 'Menampilkan driver terdekat (bukan filter rute).'
+      : 'Showing nearest drivers (not route-matched).';
+  /// Dialog jika Directions gagal untuk semua kandidat rute.
+  String get routeDirectionsAllFailedTitle => locale == AppLocale.id
+      ? 'Rute driver tidak dimuat'
+      : 'Could not load driver routes';
+  String get routeDirectionsAllFailedBody => locale == AppLocale.id
+      ? 'Layanan rute tidak mengembalikan jalur untuk driver aktif. Tampilkan driver terdekat saja?'
+      : 'The routing service returned no path for active drivers. Show nearest drivers instead?';
+  /// Cari Travel: geocode teks gagal sebagian.
+  String get cariTravelGeocodeOriginFailed => locale == AppLocale.id
+      ? 'Alamat asal tidak dikenali. Periksa ejaan atau pilih dari saran.'
+      : 'Could not find origin address. Check spelling or pick a suggestion.';
+  String get cariTravelGeocodeDestFailed => locale == AppLocale.id
+      ? 'Alamat tujuan tidak dikenali. Periksa ejaan atau pilih dari saran.'
+      : 'Could not find destination address. Check spelling or pick a suggestion.';
   String get driverNearby => locale == AppLocale.id ? 'Driver sekitar' : 'Nearby drivers';
   String get driverNearbyRadius => locale == AppLocale.id ? 'Dalam 40 km' : 'Within 40 km';
   String get pesanNanti => locale == AppLocale.id ? 'Pesan nanti' : 'Book later';
@@ -598,6 +911,10 @@ class AppLocalizations {
   String get noNearbyDrivers => locale == AppLocale.id
       ? 'Tidak ada driver aktif dalam 40 km. Coba cari dengan rute spesifik.'
       : 'No active drivers within 40 km. Try searching with a specific route.';
+  /// Aksi snackbar setelah pencarian rute kosong: beralih ke mode driver sekitar.
+  String get showNearbyDriversAction => locale == AppLocale.id
+      ? 'Driver sekitar'
+      : 'Nearby drivers';
   String get failedToFindDestination => locale == AppLocale.id ? 'Gagal menemukan tujuan' : 'Failed to find destination';
   String failedToFindDestinationDetail(Object e) => locale == AppLocale.id
       ? 'Gagal menemukan tujuan: $e'
@@ -605,9 +922,37 @@ class AppLocalizations {
   String get destinationNotFound => locale == AppLocale.id ? 'Tujuan tidak ditemukan' : 'Destination not found';
   String get searchingDriver => locale == AppLocale.id ? 'Mencari driver...' : 'Searching for driver...';
   String get checkingDriverRoutes => locale == AppLocale.id ? 'Memeriksa rute driver yang sesuai' : 'Checking matching driver routes';
+  /// Subjudul banner pencarian mode rute (bukan driver sekitar).
+  String get checkingDriverRoutesSub => locale == AppLocale.id
+      ? 'Beberapa alternatif dari Google + koridor tujuan ~25 km dari jalan'
+      : 'Several Google alternatives + ~25 km destination corridor from the road';
   String get checkingNearbyDrivers => locale == AppLocale.id ? 'Memeriksa driver dalam radius 40 km' : 'Checking drivers within 40 km';
   String get failedToCreateOrder => locale == AppLocale.id ? 'Gagal membuat pesanan. Silakan coba lagi.' : 'Failed to create order. Please try again.';
   String get failedToCreateOrderTryAgain => locale == AppLocale.id ? 'Gagal membuat pesanan. Coba lagi.' : 'Failed to create order. Try again.';
+  /// Penumpang sudah punya kirim barang pending (belum sepakat / tunggu penerima) ke driver yang sama.
+  String get passengerPendingKirimBarangDuplicateTitle => locale == AppLocale.id
+      ? 'Sudah ada pesanan kirim barang'
+      : 'Send-goods order already open';
+  String get passengerPendingKirimBarangDuplicateBody => locale == AppLocale.id
+      ? 'Anda masih punya pesanan kirim barang ke driver ini yang belum disepakati. Lanjutkan di chat yang sama, atau batalkan atau hapus dari menu Pesan jika ingin mulai baru.'
+      : 'You already have a pending send-goods request with this driver. Continue in the same chat, or cancel or remove it from Messages to start a new one.';
+  String get passengerOpenExistingChat => locale == AppLocale.id ? 'Buka chat' : 'Open chat';
+  String get passengerPendingKirimBarangDuplicateShort => locale == AppLocale.id
+      ? 'Sudah ada kirim barang ke driver ini yang belum selesai. Buka dari menu Pesan atau batalkan dulu.'
+      : 'You already have an unfinished send-goods request with this driver. Open it from Messages or cancel first.';
+  String get passengerPendingTravelDuplicateTitle => locale == AppLocale.id
+      ? 'Sudah ada pesanan travel'
+      : 'Travel request already open';
+  String get passengerPendingTravelDuplicateBody => locale == AppLocale.id
+      ? 'Anda masih punya pesanan travel ke driver ini yang belum disepakati harga. Lanjutkan di chat yang sama, atau pilih buat pesanan baru jika memang ingin thread terpisah.'
+      : 'You still have a travel request with this driver that has not been agreed on. Continue in the same chat, or create a new order if you want a separate thread.';
+  String get passengerForceCreateNewOrderAnyway => locale == AppLocale.id
+      ? 'Tetap buat pesanan baru'
+      : 'Create new order anyway';
+  /// Setelah buat order baru meski sudah ada thread pra-sepakat (dua chat ke driver sama).
+  String get passengerNewOrderThreadSnack => locale == AppLocale.id
+      ? 'Pesanan baru dibuat. Cek tab Pesan jika ada beberapa chat ke driver yang sama.'
+      : 'New order created. Check Messages if you have multiple chats with the same driver.';
   String get failedToSend => locale == AppLocale.id ? 'Gagal mengirim' : 'Failed to send';
   String failedToSendDetail(Object e) => locale == AppLocale.id ? 'Gagal mengirim: $e' : 'Failed to send: $e';
   String get failedToCancel => locale == AppLocale.id ? 'Gagal membatalkan. Coba lagi.' : 'Failed to cancel. Try again.';
@@ -624,8 +969,65 @@ class AppLocalizations {
   String get workStarted => locale == AppLocale.id ? 'Pekerjaan dimulai. Status: Berhenti Kerja.' : 'Work started. Status: Stop work.';
   String get originOrDestinationNotFound => locale == AppLocale.id ? 'Lokasi awal atau tujuan tidak ditemukan.' : 'Origin or destination not found.';
   String get noAlternativeRoute => locale == AppLocale.id ? 'Tidak ada rute alternatif tersedia' : 'No alternative route available';
+  String get loadingGeneric =>
+      locale == AppLocale.id ? 'Memuat...' : 'Loading...';
   String get loadingAlternativeRoute => locale == AppLocale.id ? 'Memuat rute alternatif...' : 'Loading alternative route...';
   String get routeUpdated => locale == AppLocale.id ? 'Rute diperbarui untuk kembali ke tujuan.' : 'Route updated to return to destination.';
+  /// Banner atas peta saat hitung ulang rute (Directions API).
+  String get routeRecalculating =>
+      locale == AppLocale.id ? 'Menyesuaikan rute…' : 'Recalculating route…';
+  /// Banner keluar jalur (driver — rute kerja utama).
+  String get driverOffRouteBannerTitle => locale == AppLocale.id
+      ? 'Anda keluar dari rute. Ikuti garis untuk kembali.'
+      : 'You are off route. Follow the line to return.';
+  String get driverOffRouteBannerSubtitle => locale == AppLocale.id
+      ? 'Rute bisa diperbarui otomatis dari posisi Anda, atau ketuk di bawah.'
+      : 'The route can refresh from your position automatically, or tap below.';
+  String get driverRefreshRouteFromHere => locale == AppLocale.id
+      ? 'Perbarui rute dari sini'
+      : 'Refresh route from here';
+
+  /// Form rute driver: penjelasan matching ke penumpang (koridor + alternatif).
+  String get driverRoutePassengerMatchingHint => locale == AppLocale.id
+      ? 'Penumpang dicocokkan ke koridor rute Anda dan beberapa jalur alternatif (bukan hanya nama kota di peta).'
+      : 'Passengers are matched to your route corridor and alternatives (not only city names on the map).';
+
+  /// Profil → Notifikasi (tahap 1–4 dokumentasi + pengaturan sistem).
+  String get notificationSettingsTitle =>
+      locale == AppLocale.id ? 'Notifikasi' : 'Notifications';
+  String get notificationSettingsIntro => locale == AppLocale.id
+      ? 'Traka memakai notifikasi lokal (Android) dan push dari server (chat, order, jadwal). '
+          'Anda bisa mematikan per jenis di pengaturan sistem.'
+      : 'Traka uses local notifications (Android) and server push (chat, orders, schedule). '
+          'You can turn off each type in system settings.';
+  String get notificationSettingsAndroidLocal => locale == AppLocale.id
+      ? 'Android — notifikasi lokal (app):'
+      : 'Android — local notifications (in-app):';
+  String get notificationSettingsAndroidLocalBullets => locale == AppLocale.id
+      ? '• Rute Aktif — pengingat rute driver masih berjalan\n'
+          '• Driver Mendekati — kesepakatan & jarak ke penjemputan\n'
+          '• Lacak Barang — driver mendekati penerima\n'
+          '• Pembayaran — hasil transaksi / pengingat\n'
+          '• Pengingat Jadwal — pesanan terjadwal (H-1)'
+      : '• Active route — driver route reminder\n'
+          '• Driver approaching — agreement & pickup distance\n'
+          '• Track goods — driver near receiver\n'
+          '• Payment — transaction / reminders\n'
+          '• Schedule reminder — scheduled orders (H-1)';
+  String get notificationSettingsPushNote => locale == AppLocale.id
+      ? 'Push (Firebase): chat, pesanan (setuju/batal/scan), panggilan suara, '
+          'pengingat kontribusi/jadwal — dikirim saat data berubah di server.'
+      : 'Push (Firebase): chat, orders (agreed/cancel/scan), voice calls, '
+          'contribution/schedule reminders — sent when server data changes.';
+  String get notificationSettingsIosNote => locale == AppLocale.id
+      ? 'iOS: banyak notifikasi lokal jarak/rute hanya di Android; push tetap jika izin diberikan. '
+          'Gunakan tombol di bawah untuk pengaturan notifikasi aplikasi (iOS 16+).'
+      : 'iOS: many distance/route local notifications are Android-only; push still works if allowed. '
+          'Use the button below for app notification settings (iOS 16+).';
+  String get notificationSettingsOpenSystem => locale == AppLocale.id
+      ? 'Buka pengaturan notifikasi'
+      : 'Open notification settings';
+
   String get driverLocationUnavailable => locale == AppLocale.id ? 'Lokasi driver belum tersedia.' : 'Driver location not available yet.';
   String get driverEnRoute => locale == AppLocale.id ? 'Driver sedang dalam perjalanan' : 'Driver is on the way';
   String get shareLinkSuccess => locale == AppLocale.id ? 'Link berhasil dibagikan. Keluarga bisa buka di browser.' : 'Link shared. Family can open in browser.';
@@ -653,6 +1055,12 @@ class AppLocalizations {
   String get failedToSendImage => locale == AppLocale.id ? 'Gagal mengirim gambar. Periksa koneksi dan coba lagi.' : 'Failed to send image. Check connection and try again.';
   String get failedToSendVideo => locale == AppLocale.id ? 'Gagal mengirim video. Periksa koneksi dan coba lagi.' : 'Failed to send video. Check connection and try again.';
   String failedToCreatePdf(Object e) => locale == AppLocale.id ? 'Gagal membuat PDF: $e' : 'Failed to create PDF: $e';
+  String get pdfReportReadyTitle => locale == AppLocale.id ? 'Laporan PDF siap' : 'PDF report ready';
+  String get pdfReportReadyHint => locale == AppLocale.id ? 'Lihat di aplikasi pembaca PDF atau bagikan ke aplikasi lain.' : 'Open in a PDF viewer or share to another app.';
+  String get viewPdf => locale == AppLocale.id ? 'Lihat PDF' : 'View PDF';
+  String failedToOpenPdf(String message) => locale == AppLocale.id ? 'Tidak dapat membuka PDF: $message' : 'Could not open PDF: $message';
+  String get driverEarningsPdfButtonLabel => locale == AppLocale.id ? 'Laporan PDF' : 'PDF report';
+  String get driverEarningsPdfMaking => locale == AppLocale.id ? 'Membuat PDF...' : 'Creating PDF...';
   String get failedToUploadPhoto => locale == AppLocale.id ? 'Gagal mengunggah foto' : 'Failed to upload photo';
   String failedToUploadPhotoDetail(Object e) => locale == AppLocale.id ? 'Gagal mengunggah foto: $e' : 'Failed to upload photo: $e';
   String get passwordMin8CharsHint => locale == AppLocale.id ? 'Password baru minimal 8 karakter.' : 'New password must be at least 8 characters.';
@@ -663,7 +1071,9 @@ class AppLocalizations {
       : 'Verification link sent to $email. Check inbox (or Spam) and click link to activate new email.';
   String get failedToSendVerificationEmail => locale == AppLocale.id ? 'Gagal mengirim verifikasi email.' : 'Failed to send verification email.';
   String get phoneAddedSuccess => locale == AppLocale.id ? 'No. telepon berhasil ditambahkan. Login bisa dengan email atau no. telepon.' : 'Phone number added. You can login with email or phone.';
-  String get faceVerificationSuccess => locale == AppLocale.id ? 'Foto verifikasi wajah berhasil. Lanjut ambil foto SIM.' : 'Face verification successful. Next: take SIM photo.';
+  String get faceVerificationSuccess => locale == AppLocale.id
+      ? 'Foto verifikasi wajah berhasil. Lanjut lengkapi data di profil (kendaraan, SIM/KTP, telepon).'
+      : 'Face verification successful. Continue in profile (vehicle, ID/license, phone).';
   String get failedToReadSim => locale == AppLocale.id ? 'Gagal membaca data SIM. Pastikan foto SIM jelas dan lengkap.' : 'Failed to read SIM data. Ensure photo is clear and complete.';
   String get failedToSendFeedback => locale == AppLocale.id ? 'Gagal mengirim. Coba lagi.' : 'Failed to send. Try again.';
   String get profilePhotoUpdated => locale == AppLocale.id ? 'Foto profil berhasil diubah.' : 'Profile photo updated successfully.';
@@ -673,6 +1083,36 @@ class AppLocalizations {
   String get cancellationConfirmed => locale == AppLocale.id ? 'Pembatalan telah dikonfirmasi. Pesanan dibatalkan.' : 'Cancellation confirmed. Order cancelled.';
   String get cancellationRequestSent => locale == AppLocale.id ? 'Permintaan pembatalan telah dikirim. Menunggu konfirmasi driver.' : 'Cancellation request sent. Waiting for driver confirmation.';
   String get cancellationRequestSentPassenger => locale == AppLocale.id ? 'Permintaan pembatalan telah dikirim. Menunggu konfirmasi penumpang.' : 'Cancellation request sent. Waiting for passenger confirmation.';
+
+  /// Chat pertama penumpang→driver: baris jarak (km sudah diformat).
+  String chatPreviewDistanceStraightKm(String km) => locale == AppLocale.id
+      ? '📏 Perkiraan jarak asal–tujuan: ~$km km (garis lurus).'
+      : '📏 Estimated origin–destination distance: ~$km km (straight line).';
+
+  String chatPreviewFerrySegmentKm(String km) => locale == AppLocale.id
+      ? '🛳️ Estimasi segmen laut (dikurangi dari tarif): ~$km km.'
+      : '🛳️ Estimated sea segment (deducted from fare): ~$km km.';
+
+  /// [rpFormatted] sudah berisi pemisah ribuan (titik).
+  String chatPreviewDriverContributionRupiah(String rpFormatted) =>
+      locale == AppLocale.id
+          ? '💵 Estimasi kontribusi driver: Rp $rpFormatted.'
+          : '💵 Estimated driver contribution: Rp $rpFormatted.';
+
+  /// Koordinat ada tetapi estimasi tidak dihitung (jarak terlalu pendek, dll.).
+  String get chatPreviewEstimateUnavailable => locale == AppLocale.id
+      ? '📌 Estimasi jarak/kontribusi tidak tersedia untuk rute ini.'
+      : '📌 No distance/contribution estimate for this route.';
+
+  /// Pesanan terjadwal tanpa koordinat di order.
+  String get chatScheduledEstimateNote => locale == AppLocale.id
+      ? '📌 Estimasi jarak dan kontribusi mengikuti lokasi pasti saat hari keberangkatan.'
+      : '📌 Distance and contribution estimates follow the actual locations on the travel day.';
+
+  /// Dialog / fase setelah order dibuat: menghitung estimasi jarak & kontribusi.
+  String get calculatingEstimate => locale == AppLocale.id
+      ? 'Menghitung estimasi jarak dan kontribusi…'
+      : 'Calculating distance and contribution estimate…';
 
   AppLocalizations copyWith({AppLocale? locale}) {
     return AppLocalizations(locale: locale ?? this.locale);

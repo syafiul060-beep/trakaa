@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../services/voice_call_ringtone_service.dart';
 import '../services/voice_call_service.dart';
@@ -47,6 +48,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     VoiceCallService.onCallStateChange = _onCallStateChange;
     VoiceCallService.onCallEnded = _onCallEnded;
     VoiceCallService.onMuteChange = _onMuteChange;
+    VoiceCallService.onConnectionError = (msg) {
+      Future.microtask(() => _showFailureAndExit('Panggilan terputus', msg));
+    };
 
     if (widget.isCaller) {
       _startCall();
@@ -85,6 +89,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     VoiceCallService.onCallStateChange = null;
     VoiceCallService.onCallEnded = null;
     VoiceCallService.onMuteChange = null;
+    VoiceCallService.onConnectionError = null;
     super.dispose();
   }
 
@@ -117,20 +122,55 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     });
   }
 
+  Future<void> _showFailureAndExit(String title, String message) async {
+    if (!mounted) return;
+    final settingsHint = message.toLowerCase().contains('pengaturan');
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          if (settingsHint)
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await openAppSettings();
+              },
+              child: const Text('Buka pengaturan'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    if (mounted) {
+      _hasPopped = true;
+      Navigator.of(context).pop();
+    }
+  }
+
   Future<void> _startCall() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       _onCallEnded();
       return;
     }
-    final ok = await VoiceCallService.startCall(
+    final outcome = await VoiceCallService.startCall(
       orderId: widget.orderId,
       callerUid: uid,
       calleeUid: widget.remoteUid,
       callerName: widget.callerName ?? 'Saya',
       calleeName: widget.remoteName,
     );
-    if (!ok && mounted) _onCallEnded();
+    if (!outcome.success && mounted) {
+      await _showFailureAndExit(
+        'Panggilan tidak dapat dilanjutkan',
+        outcome.message ?? 'Terjadi kesalahan. Coba lagi atau gunakan chat.',
+      );
+    }
   }
 
   Future<void> _acceptCall() async {
@@ -139,11 +179,16 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
       _onCallEnded();
       return;
     }
-    final ok = await VoiceCallService.acceptCall(
+    final outcome = await VoiceCallService.acceptCall(
       orderId: widget.orderId,
       calleeUid: uid,
     );
-    if (!ok && mounted) _onCallEnded();
+    if (!outcome.success && mounted) {
+      await _showFailureAndExit(
+        'Panggilan tidak dapat dilanjutkan',
+        outcome.message ?? 'Terjadi kesalahan. Coba lagi atau gunakan chat.',
+      );
+    }
   }
 
   void _onCallStateChange(String status) {
@@ -238,6 +283,19 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
               style: TextStyle(
                 fontSize: 16,
                 color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Text(
+                'Panggilan lewat aplikasi Traka. Nomor HP tidak ditampilkan ke lawan bicara.',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.35,
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.9),
+                ),
+                textAlign: TextAlign.center,
               ),
             ),
             const Spacer(),

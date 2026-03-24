@@ -224,8 +224,8 @@ class _BiometricToggleWidgetState extends State<BiometricToggleWidget> {
                         const SizedBox(height: 4),
                         Text(
                           isId
-                              ? 'Minta verifikasi saat buka app dari background'
-                              : 'Require verification when opening app from background',
+                              ? 'Sidik jari/wajah hanya setelah app ditinggal ±${BiometricLockService.requireLockAfterMinutes} menit; kembali cepat dari kunci layar tidak perlu verifikasi lagi.'
+                              : 'Biometric only after leaving the app ~${BiometricLockService.requireLockAfterMinutes} min; quick return from screen lock needs no extra step.',
                           style: TextStyle(
                             fontSize: 12,
                             color: colorScheme.onSurfaceVariant,

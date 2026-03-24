@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -8,16 +7,102 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../config/marker_assets.dart';
 
-/// Marker lokasi driver ala Grab: Dot (idle) + Arrow (moving).
-/// Pakai MarkerAssets (central config) + adaptive berdasarkan speed.
+/// Marker lokasi driver: dot (diam) + cone (bergerak).
+/// Pakai MarkerAssets (central config) + kecepatan untuk dot vs cone.
 class DriverCarMarkerService {
   DriverCarMarkerService._();
 
-  static const double _iconSize = 42.0;
-  static const double _labelHeight = 18.0;
+  /// Naikkan saat ubah ukuran layout agar cache marker di driver_screen tidak pakai bitmap lama.
+  static const int layoutVersion = 6;
+
+  /// Ukuran icon dot/arrow di peta (travel jauh / zoom tinggi tetap terbaca).
+  static const double _iconSize = 92.0;
+  static const double _labelHeight = 24.0;
   static const double _labelPadding = 4.0;
-  static const double _totalWidth = 90.0;
+  static const double _totalWidth = 148.0;
   static const double _totalHeight = _iconSize + _labelHeight;
+
+  /// Elips bayangan di "tanah" (gaya Google Maps) — di bawah kaki panah / dot.
+  static void _paintGroundShadow(
+    Canvas canvas, {
+    required double centerX,
+    required double centerY,
+    required double iconSize,
+    required bool isMoving,
+  }) {
+    final shadowY = centerY + iconSize * (isMoving ? 0.34 : 0.20);
+    final baseW = iconSize * (isMoving ? 0.72 : 0.52);
+    final baseH = iconSize * (isMoving ? 0.26 : 0.22);
+    final layers = <(double scale, double a)>[
+      (1.12, 0.065),
+      (1.0, 0.10),
+      (0.82, 0.15),
+    ];
+    for (final L in layers) {
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(centerX, shadowY),
+          width: baseW * L.$1,
+          height: baseH * L.$1,
+        ),
+        Paint()..color = Color.fromRGBO(18, 22, 28, L.$2),
+      );
+    }
+  }
+
+  /// Panah asset saja (beranda non-aktif) + bayangan; tanpa label jalan.
+  static Future<BitmapDescriptor> createArrowAssetWithShadow({
+    String assetPath = MarkerAssets.movingBasic,
+    double canvasSize = 96,
+  }) async {
+    ui.Image? iconImage;
+    try {
+      final data = await rootBundle.load(assetPath);
+      iconImage = await _decodeImage(data.buffer.asUint8List());
+    } catch (_) {}
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final cx = canvasSize / 2;
+    final cy = canvasSize / 2;
+    final iconDraw = canvasSize * 0.82;
+
+    if (iconImage != null) {
+      _paintGroundShadow(
+        canvas,
+        centerX: cx,
+        centerY: cy,
+        iconSize: iconDraw,
+        isMoving: true,
+      );
+      final rect = Rect.fromCenter(
+        center: Offset(cx, cy),
+        width: iconDraw,
+        height: iconDraw,
+      );
+      paintImage(
+        canvas: canvas,
+        rect: rect,
+        image: iconImage,
+        fit: BoxFit.contain,
+      );
+    } else {
+      _paintGroundShadow(
+        canvas,
+        centerX: cx,
+        centerY: cy,
+        iconSize: 48,
+        isMoving: true,
+      );
+      _drawFallback(canvas, cx, cy, true);
+    }
+
+    final picture = recorder.endRecording();
+    final image =
+        await picture.toImage(canvasSize.round(), canvasSize.round());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+  }
 
   /// Buat marker: dot (idle) atau arrow (moving) + label nama jalan.
   /// [speedKmh]: kecepatan km/jam untuk adaptive asset (idle/basic/premium).
@@ -26,9 +111,10 @@ class DriverCarMarkerService {
     required String streetName,
     double speedKmh = 0,
   }) async {
-    final assetPath = isMoving
-        ? MarkerAssets.forSpeed(speedKmh)
-        : MarkerAssets.idle;
+    // Jangan pakai [MarkerAssets.forSpeed] saat bergerak: di Android [Position.speed]
+    // sering 0 → forSpeed mengembalikan titik merah padahal driver sudah jalan.
+    final assetPath =
+        isMoving ? MarkerAssets.movingPremium : MarkerAssets.idle;
 
     ui.Image? iconImage;
     try {
@@ -46,6 +132,13 @@ class DriverCarMarkerService {
     final centerY = _iconSize / 2;
 
     if (iconImage != null) {
+      _paintGroundShadow(
+        canvas,
+        centerX: centerX,
+        centerY: centerY,
+        iconSize: _iconSize,
+        isMoving: isMoving,
+      );
       final rect = Rect.fromCenter(
         center: Offset(centerX, centerY),
         width: _iconSize,
@@ -58,6 +151,13 @@ class DriverCarMarkerService {
         fit: BoxFit.contain,
       );
     } else {
+      _paintGroundShadow(
+        canvas,
+        centerX: centerX,
+        centerY: centerY,
+        iconSize: _iconSize,
+        isMoving: isMoving,
+      );
       _drawFallback(canvas, centerX, centerY, isMoving);
     }
 
@@ -70,7 +170,7 @@ class DriverCarMarkerService {
           text: displayName,
           style: const TextStyle(
             color: Color(0xFF212121),
-            fontSize: 11,
+            fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -99,8 +199,8 @@ class DriverCarMarkerService {
     final color = isMoving ? const Color(0xFF2F80ED) : const Color(0xFFEB5757);
     if (isMoving) {
       final path = Path();
-      final w = 24.0;
-      final h = 28.0;
+      final w = 41.0;
+      final h = 48.0;
       final left = cx - w / 2;
       final top = cy - h / 2;
       path.moveTo(cx, top);
@@ -111,7 +211,7 @@ class DriverCarMarkerService {
       path.close();
       canvas.drawPath(path, Paint()..color = color);
     } else {
-      canvas.drawCircle(Offset(cx, cy), 12, Paint()..color = color);
+      canvas.drawCircle(Offset(cx, cy), 21, Paint()..color = color);
     }
   }
 

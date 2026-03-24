@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../models/order_model.dart';
+import 'app_analytics_service.dart';
 import 'driver_status_service.dart';
 import 'order_service.dart';
 import 'route_notification_service.dart';
@@ -91,12 +92,20 @@ class ReceiverProximityNotificationService {
         body: 'Driver dalam radius 500 m – siap terima barang',
         notificationId: base + 1000,
       );
+      AppAnalyticsService.logLocalProximityNotificationShown(
+        flow: 'receiver_goods',
+        band: '500m',
+      );
     } else if (distanceMeters <= _threshold1km &&
         !notified.contains(_threshold1km)) {
       notified.add(_threshold1km);
       RouteNotificationService.showReceiverProximityNotification(
         body: 'Barang hampir sampai – driver 1 km dari lokasi Anda',
         notificationId: base + 500,
+      );
+      AppAnalyticsService.logLocalProximityNotificationShown(
+        flow: 'receiver_goods',
+        band: '1km',
       );
     }
   }

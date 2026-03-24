@@ -601,8 +601,9 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'Scan barcode driver saat sampai tujuan. Jika tidak scan dan sudah menjauh, akan selesai otomatis dan dikenakan denda Rp $feeStr.',
-                                style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
+                                'Travel: scan barcode di tujuan. Tanpa scan, bisa selesai otomatis saat menjauh — denda Rp $feeStr.\n'
+                                'Kirim barang: selesai lewat scan penerima; tidak ada auto selesai menjauh seperti travel.',
+                                style: TextStyle(fontSize: 12, color: Colors.orange.shade900, height: 1.35),
                               ),
                             ),
                           ],
@@ -1588,6 +1589,66 @@ class _DataOrderScreenState extends State<DataOrderScreen>
   static const Duration _driverArrivedAutoConfirmDuration = Duration(minutes: 15);
 
   Widget _buildDriverArrivedBanner(OrderModel order) {
+    if (order.isKirimBarang) {
+      return Container(
+        padding: EdgeInsets.all(context.responsive.spacing(10)),
+        decoration: BoxDecoration(
+          color: Colors.amber.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.amber.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.location_on, color: Colors.amber.shade700, size: 20),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Driver sudah berada di titik penjemputan.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.amber.shade900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Penjemputan: wajib scan barcode (bukan auto 15 menit/1 km seperti travel).',
+              style: TextStyle(fontSize: 12, color: Colors.amber.shade900, height: 1.35),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Masalah? Chat atau minta konfirmasi manual lewat tombol di bawah.',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.amber.shade800,
+                fontWeight: FontWeight.w500,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => _onMintaKonfirmasiDijemput(order),
+                icon: const Icon(Icons.check_circle_outline, size: 18),
+                label: const Text('Minta konfirmasi dijemput'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.amber.shade700,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final arrivedAt = order.driverArrivedAtPickupAt!;
     final autoConfirmAt = arrivedAt.add(_driverArrivedAutoConfirmDuration);
     final now = DateTime.now();
@@ -1612,7 +1673,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'Driver sudah berada di titik penjemputan.',
+                  'Driver sudah berada di titik penjemputan (travel).',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -1624,8 +1685,8 @@ class _DataOrderScreenState extends State<DataOrderScreen>
           ),
           const SizedBox(height: 6),
           Text(
-            'Tanpa perlu tombol: terkonfirmasi otomatis dalam 15 menit berdekatan atau perpindahan 1 km dari titik penjemputan. Notifikasi akan dikirim ke HP Anda.',
-            style: TextStyle(fontSize: 12, color: Colors.amber.shade900),
+            'Tanpa tombol: auto dalam 15 menit berdekatan atau setelah 1 km dari titik pertama berdekatan. Notifikasi dapat dikirim ke HP Anda.',
+            style: TextStyle(fontSize: 12, color: Colors.amber.shade900, height: 1.35),
           ),
           const SizedBox(height: 4),
           FutureBuilder<int>(
@@ -1638,7 +1699,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                     )
                   : '5.000';
               return Text(
-                'Jika tidak scan barcode, akan terkonfirmasi otomatis dan dikenakan denda Rp $feeStr.',
+                'Jika tidak scan barcode, akan terkonfirmasi otomatis dan dikenakan denda Rp $feeStr (khusus travel).',
                 style: TextStyle(fontSize: 11, color: Colors.amber.shade800, fontWeight: FontWeight.w500),
               );
             },
@@ -2083,7 +2144,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
       final url = await TrackShareService.generateShareUrl(order, isReceiver: isReceiver);
       final subject = order.isKirimBarang ? 'Lacak kirim barang Traka' : 'Lacak perjalanan Traka';
       final message = order.isKirimBarang
-          ? 'Keluarga bisa lacak kirim barang di: $url\n\nLink tidak berlaku setelah barang diterima.'
+          ? 'Lacak kirim barang Traka (posisi driver + titik pengirim & penerima di peta):\n$url\n\nTautan tidak berlaku setelah barang diterima atau pesanan selesai.'
           : 'Keluarga bisa lacak perjalanan saya di: $url\n\nLink tidak berlaku setelah sampai tujuan.';
       await Share.share(message, subject: subject);
       if (context.mounted) {

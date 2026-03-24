@@ -1,7 +1,12 @@
 /// Konfigurasi Traka Backend API (hybrid Redis + PostgreSQL).
 ///
-/// Set [useHybrid] = true untuk mengalihkan driver_status ke API.
-/// Set [apiBaseUrl] ke URL backend yang sudah di-deploy.
+/// **Aktif jika** `--dart-define=TRAKA_USE_HYBRID=true` **dan**
+/// `--dart-define=TRAKA_API_BASE_URL=https://...` (lihat `scripts/run_hybrid.ps1` /
+/// `scripts/build_hybrid.ps1`). Tanpa itu, app hanya memakai Firestore untuk
+/// `driver_status` / matching (tetap aman, tapi tanpa Redis).
+///
+/// Fitur saat [isApiEnabled]: lokasi & status driver → API + dual-write Firestore;
+/// matching penumpang → `/api/match/drivers` + fallback; lacak → polling API.
 class TrakaApiConfig {
   TrakaApiConfig._();
 
@@ -29,6 +34,16 @@ class TrakaApiConfig {
 
   /// Apakah API tersedia (base URL terisi dan hybrid aktif).
   static bool get isApiEnabled => apiBaseUrl.isNotEmpty && useHybrid;
+
+  /// Jika true, pembuatan order penumpang memakai `POST /api/orders` (dual-write server)
+  /// dengan fallback Firestore bila API error (bukan 409/403/400).
+  /// `--dart-define=TRAKA_CREATE_ORDER_VIA_API=true`
+  static const bool createOrderViaApi = bool.fromEnvironment(
+    'TRAKA_CREATE_ORDER_VIA_API',
+    defaultValue: false,
+  );
+
+  static bool get shouldCreateOrderViaApi => isApiEnabled && createOrderViaApi;
 
   /// Apakah certificate pinning aktif (fingerprint terisi dan API enabled).
   static bool get isCertificatePinningEnabled =>

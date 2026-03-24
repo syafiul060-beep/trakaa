@@ -29,7 +29,7 @@ const CARD_CONFIG = [
   },
   {
     key: 'ordersPending',
-    label: 'Pesanan Pending',
+    label: 'Pesanan menunggu',
     icon: '⏳',
     bg: 'bg-white',
     border: 'border-slate-100',
@@ -81,6 +81,8 @@ export default function Dashboard() {
   const [trendPct, setTrendPct] = useState({})
   const [recentOrders, setRecentOrders] = useState([])
   const [loading, setLoading] = useState(true)
+  /** Peringatan jika hybrid API gagal (bukan sekadar 0 driver). */
+  const [hybridApiWarning, setHybridApiWarning] = useState(null)
 
   const loadingRef = useRef(false)
 
@@ -206,6 +208,15 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
+      {hybridApiWarning && (
+        <div
+          role="alert"
+          className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          <strong className="font-semibold">API hybrid: </strong>
+          {hybridApiWarning}
+        </div>
+      )}
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
         {CARD_CONFIG.map((card) => {

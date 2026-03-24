@@ -104,7 +104,10 @@ CREATE TABLE IF NOT EXISTS orders (
   "barangBeratKg" DOUBLE PRECISION,
   "barangPanjangCm" DOUBLE PRECISION,
   "barangLebarCm" DOUBLE PRECISION,
-  "barangTinggiCm" DOUBLE PRECISION
+  "barangTinggiCm" DOUBLE PRECISION,
+  "passengerAppLocale" TEXT,
+  "barangFotoUrl" TEXT,
+  "lacakBarangIapFeeRupiah" INT
 );
 
 CREATE INDEX IF NOT EXISTS idx_orders_driver ON orders("driverUid");

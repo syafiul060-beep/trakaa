@@ -45,6 +45,7 @@ class _LacakDriverPaymentScreenState extends State<LacakDriverPaymentScreen> {
   @override
   void initState() {
     super.initState();
+    PaymentContextService.setPaymentScreenActive(true);
     _listenPurchases();
     _loadConfigAndProducts();
   }
@@ -155,6 +156,10 @@ class _LacakDriverPaymentScreenState extends State<LacakDriverPaymentScreen> {
       }
     } catch (e) {
       AppAnalyticsService.logPaymentTrackDriver(success: false);
+      AppAnalyticsService.logPaymentVerifyRejected(
+        flow: 'lacak_driver',
+        detail: e.toString(),
+      );
       if (mounted) {
         setState(() {
           _purchasing = false;

@@ -60,6 +60,10 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
   StreamSubscription<DriverContributionStatus>? _contributionSub;
   bool _mustPayContribution = false;
   StreamSubscription<OrderModel?>? _orderSub;
+  /// Satu subscription pesan per order — jangan buat ulang tiap setState.
+  Stream<List<ChatMessageModel>>? _messagesStream;
+  /// Cegah double-tap «Kirim» di dialog kesepakatan → dua pesan Ongkosnya ke penumpang.
+  bool _sendingKesepakatanHarga = false;
 
   @override
   void initState() {
@@ -97,6 +101,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
   void _startOrderStream() {
     _orderSub?.cancel();
     if (_order == null) return;
+    _messagesStream = ChatService.streamMessages(_order!.id);
     _orderSub = OrderService.streamOrderById(_order!.id).listen((order) {
       if (mounted) setState(() => _order = order);
     });
@@ -105,7 +110,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
   Future<void> _markReceivedMessagesAsDeliveredAndRead() async {
     if (_order == null) return;
     ChatBadgeService.instance.markAsReadOptimistic(_order!.id);
-    await OrderService.setDriverLastReadAt(_order!.id);
+    await OrderService.setDriverLastReadAtReliable(_order!.id);
     unawaited(ChatService.markAsDelivered(_order!.id));
     Future.delayed(const Duration(milliseconds: 600)).then((_) async {
       if (!mounted) return;
@@ -453,62 +458,68 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
             FilledButton(
               onPressed: hargaDisepakati
                   ? () async {
-                      if (!formKey.currentState!.validate()) return;
-                      final priceText = priceController.text.replaceAll(
-                        RegExp(r'[^\d]'),
-                        '',
-                      );
-                      final price = double.tryParse(priceText);
-                      if (price == null || price < 0) return;
-                      Navigator.pop(dialogContext);
+                      if (_sendingKesepakatanHarga) return;
+                      _sendingKesepakatanHarga = true;
+                      try {
+                        if (!formKey.currentState!.validate()) return;
+                        final priceText = priceController.text.replaceAll(
+                          RegExp(r'[^\d]'),
+                          '',
+                        );
+                        final price = double.tryParse(priceText);
+                        if (price == null || price < 0) return;
+                        Navigator.pop(dialogContext);
 
-                      // Kirim harga ke order
-                      final ok = await OrderService.setDriverAgreedPrice(
-                        order.id,
-                        price,
-                      );
-                      if (!mounted) return;
+                        // Kirim harga ke order
+                        final ok = await OrderService.setDriverAgreedPrice(
+                          order.id,
+                          price,
+                        );
+                        if (!mounted) return;
 
-                      if (ok) {
-                        // Format harga untuk pesan (titik pemisah ribuan)
-                        final hargaFormatted = price
-                            .toStringAsFixed(0)
-                            .replaceAllMapped(
-                              RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
-                              (Match m) => '${m[1]}.',
-                            );
-                        // Kategori: Travel (1 orang) / Travel (X orang - dengan kerabat) / Kirim Barang
-                        final String kategoriPesan = order.isKirimBarang
-                            ? 'Kirim Barang'
-                            : order.isTravelKerabat
-                            ? 'Travel (${1 + (order.jumlahKerabat ?? 1)} orang - dengan kerabat)'
-                            : 'Travel (1 orang)';
-                        // Pesan otomatis 5 baris; baris kelima "Ongkosnya Rp ..." ditampilkan hijau tebal di chat
-                        final messageText =
-                            '${order.passengerName}\n'
-                            'Untuk pesan $kategoriPesan\n'
-                            'Dari ${order.originText}\n'
-                            'Tujuan ${order.destText}\n'
-                            'Ongkosnya Rp $hargaFormatted';
-                        await ChatService.sendMessage(order.id, messageText);
+                        if (ok) {
+                          // Format harga untuk pesan (titik pemisah ribuan)
+                          final hargaFormatted = price
+                              .toStringAsFixed(0)
+                              .replaceAllMapped(
+                                RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+                                (Match m) => '${m[1]}.',
+                              );
+                          // Kategori: Travel (1 orang) / Travel (X orang - dengan kerabat) / Kirim Barang
+                          final String kategoriPesan = order.isKirimBarang
+                              ? 'Kirim Barang'
+                              : order.isTravelKerabat
+                              ? 'Travel (${1 + (order.jumlahKerabat ?? 1)} orang - dengan kerabat)'
+                              : 'Travel (1 orang)';
+                          // Pesan otomatis 5 baris; baris kelima "Ongkosnya Rp ..." ditampilkan hijau tebal di chat
+                          final messageText =
+                              '${order.passengerName}\n'
+                              'Untuk pesan $kategoriPesan\n'
+                              'Dari ${order.originText}\n'
+                              'Tujuan ${order.destText}\n'
+                              'Ongkosnya Rp $hargaFormatted';
+                          await ChatService.sendMessage(order.id, messageText);
 
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Harga kesepakatan telah dikirim. Menunggu penumpang setuju.',
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Harga kesepakatan telah dikirim. Menunggu penumpang setuju.',
+                              ),
+                              behavior: SnackBarBehavior.floating,
                             ),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                        _loadOrder();
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(TrakaL10n.of(context).failedToSendPrice),
-                            backgroundColor: Colors.red,
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
+                          );
+                          _loadOrder();
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(TrakaL10n.of(context).failedToSendPrice),
+                              backgroundColor: Colors.red,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      } finally {
+                        _sendingKesepakatanHarga = false;
                       }
                     }
                   : null,
@@ -1085,7 +1096,9 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                   if (!canUse) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('$reason. Gunakan telepon biasa jika penumpang punya no. telepon.'),
+                        content: Text(
+                          '$reason Gunakan chat atau telepon jika nomor tersedia di profil.',
+                        ),
                         backgroundColor: Colors.orange,
                       ),
                     );
@@ -1231,8 +1244,19 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                   children: [
                     Expanded(
                       child: StreamBuilder<List<ChatMessageModel>>(
-                        stream: ChatService.streamMessages(_order!.id),
+                        stream: _messagesStream!,
                         builder: (context, snap) {
+                          if (snap.hasError) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  'Gagal memuat pesan: ${snap.error}',
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            );
+                          }
                           // Loading hanya saat benar-benar masih waiting pertama kali dan belum ada data
                           if (snap.connectionState == ConnectionState.waiting &&
                               !snap.hasData) {
@@ -1341,6 +1365,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                                             _toggleAudioPlayback,
                                         onOpenFullScreenImage: (url) =>
                                             _openFullScreenImage(url),
+                                        driverUid: user?.uid ?? '',
                                       ),
                                     ],
                                   ),

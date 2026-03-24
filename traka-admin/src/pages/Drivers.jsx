@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { isApiEnabled } from '../config/apiConfig'
@@ -10,39 +10,50 @@ export default function Drivers() {
   const [exemptUids, setExemptUids] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [hybridApiWarning, setHybridApiWarning] = useState(null)
+
+  const load = useCallback(async () => {
+    try {
+      let driverList = []
+      if (isApiEnabled) {
+        const { status: listStatus, drivers: apiDrivers, httpStatus } = await getDriverStatusList()
+        if (listStatus === 'network' || listStatus === 'error') {
+          setHybridApiWarning(
+            listStatus === 'network'
+              ? 'Tidak dapat menghubungi API driver. Daftar di bawah mungkin kosong padahal driver ada.'
+              : `API driver error${httpStatus ? ` (${httpStatus})` : ''}. Coba muat ulang atau cek backend.`
+          )
+        } else {
+          setHybridApiWarning(null)
+        }
+        driverList = apiDrivers.map((d) => ({ ...d, id: d.uid || d.id }))
+      } else {
+        setHybridApiWarning(null)
+        const statusSnap = await getDocs(collection(db, 'driver_status'))
+        driverList = statusSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      }
+
+      const exemptSnap = await getDoc(doc(db, 'app_config', 'contribution_exempt_drivers'))
+      const exemptData = exemptSnap.exists() ? exemptSnap.data() : {}
+      setExemptUids(Array.isArray(exemptData.driverUids) ? exemptData.driverUids : [])
+
+      const usersSnap = await getDocs(collection(db, 'users'))
+      const map = {}
+      usersSnap.docs.forEach((d) => {
+        map[d.id] = d.data()
+      })
+      setUsersMap(map)
+      setDrivers(driverList)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    async function load() {
-      try {
-        let driverList = []
-        if (isApiEnabled) {
-          const apiDrivers = await getDriverStatusList()
-          driverList = apiDrivers.map((d) => ({ ...d, id: d.uid || d.id }))
-        } else {
-          const statusSnap = await getDocs(collection(db, 'driver_status'))
-          driverList = statusSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
-        }
-
-        const exemptSnap = await getDoc(doc(db, 'app_config', 'contribution_exempt_drivers'))
-        const uids = [...new Set(driverList.map((d) => d.id || d.uid))]
-        const exemptData = exemptSnap.exists() ? exemptSnap.data() : {}
-        setExemptUids(Array.isArray(exemptData.driverUids) ? exemptData.driverUids : [])
-
-        const usersSnap = await getDocs(collection(db, 'users'))
-        const map = {}
-        usersSnap.docs.forEach((d) => {
-          map[d.id] = d.data()
-        })
-        setUsersMap(map)
-        setDrivers(driverList)
-      } catch (err) {
-        console.error(err)
-      } finally {
-        setLoading(false)
-      }
-    }
     load()
-  }, [])
+  }, [load])
 
   const searchLower = searchQuery.trim().toLowerCase()
   const filteredDrivers = searchLower
@@ -57,6 +68,24 @@ export default function Drivers() {
 
   return (
     <div className="space-y-6">
+      {hybridApiWarning && (
+        <div
+          role="alert"
+          className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+        >
+          <span>{hybridApiWarning}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setLoading(true)
+              load()
+            }}
+            className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-100 text-amber-900 text-xs font-semibold hover:bg-amber-200"
+          >
+            Coba lagi
+          </button>
+        </div>
+      )}
       <div className="flex justify-end">
         <input
           type="text"

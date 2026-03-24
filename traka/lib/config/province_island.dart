@@ -136,6 +136,37 @@ class ProvinceIsland {
     return List<String>.from(_islandToProvinces[island] ?? []);
   }
 
+  /// Gabungan nama provinsi yang dianggap satu (untuk perbandingan "sama provinsi").
+  static const Set<String> _jakartaNameKeys = {
+    'Jakarta',
+    'DKI Jakarta',
+    'Daerah Khusus Ibukota Jakarta',
+  };
+
+  static const Set<String> _yogyakartaNameKeys = {
+    'Daerah Istimewa Yogyakarta',
+    'DI Yogyakarta',
+    'Yogyakarta',
+  };
+
+  /// Normalisasi nama provinsi dari geocoding ke satu label per provinsi (untuk filter rute dalam provinsi).
+  /// Mengembalikan null jika tidak cocok dengan key di [_provinceToIsland].
+  static String? resolveProvinceCanonical(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final t = raw.trim();
+    String? key;
+    for (final k in _provinceToIsland.keys) {
+      if (k.toLowerCase() == t.toLowerCase()) {
+        key = k;
+        break;
+      }
+    }
+    if (key == null) return null;
+    if (_jakartaNameKeys.contains(key)) return 'DKI Jakarta';
+    if (_yogyakartaNameKeys.contains(key)) return 'Daerah Istimewa Yogyakarta';
+    return key;
+  }
+
   /// Cek apakah [placemarkProvince] (dari geocoding) satu pulau dengan driver.
   /// [provincesInIsland] = daftar provinsi di pulau driver (dari [getProvincesInSameIsland]).
   static bool isProvinceInList(

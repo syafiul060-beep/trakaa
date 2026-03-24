@@ -40,6 +40,7 @@ class _LacakBarangPaymentScreenState extends State<LacakBarangPaymentScreen> {
   @override
   void initState() {
     super.initState();
+    PaymentContextService.setPaymentScreenActive(true);
     _listenPurchases();
     _loadConfigAndProducts();
   }
@@ -142,6 +143,10 @@ class _LacakBarangPaymentScreenState extends State<LacakBarangPaymentScreen> {
       AppAnalyticsService.logPaymentLacakBarang(
         success: false,
         payerType: widget.isPengirim ? 'passenger' : 'receiver',
+      );
+      AppAnalyticsService.logPaymentVerifyRejected(
+        flow: 'lacak_barang',
+        detail: e.toString(),
       );
       if (mounted) {
         setState(() {

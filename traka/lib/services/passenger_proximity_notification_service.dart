@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../models/order_model.dart';
+import 'app_analytics_service.dart';
 import 'driver_status_service.dart';
 import 'location_service.dart';
 import 'order_service.dart';
@@ -39,8 +40,7 @@ class PassengerProximityNotificationService {
 
     _ordersSub = OrderService.streamOrdersForPassenger().listen((orders) {
       final active = orders.where((o) {
-        if (o.status != OrderService.statusAgreed &&
-            o.status != OrderService.statusPickedUp) return false;
+        if (!OrderService.isOrderAgreedOrPickedUp(o)) return false;
         if (o.driverUid.isEmpty) return false;
         if (o.originLat == null || o.originLng == null) return false;
         return true;
@@ -142,11 +142,19 @@ class PassengerProximityNotificationService {
         distanceLabel: '500 m',
         notificationId: base + 1000,
       );
+      AppAnalyticsService.logLocalProximityNotificationShown(
+        flow: 'passenger_pickup',
+        band: '500m',
+      );
     } else if (distanceMeters <= _threshold1km && !notified.contains(_threshold1km)) {
       notified.add(_threshold1km);
       RouteNotificationService.showDriverProximityNotification(
         distanceLabel: '1 km',
         notificationId: base + 500,
+      );
+      AppAnalyticsService.logLocalProximityNotificationShown(
+        flow: 'passenger_pickup',
+        band: '1km',
       );
     }
   }

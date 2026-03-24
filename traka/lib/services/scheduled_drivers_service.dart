@@ -227,12 +227,13 @@ class ScheduledDriversService {
             final passengerDest = LatLng(passengerDestLat, passengerDestLng);
 
             if (driverRoutePoints != null && driverRoutePoints.length >= 2) {
-              // Rute tersimpan: cek hanya rute itu
+              // Rute tersimpan: cek hanya rute itu (selaras peta penumpang: jemput 10 km, turun 25 km)
               passesThroughSameDirection = RouteUtils.doesRoutePassThrough(
                 driverRoutePoints,
                 passengerOrigin,
                 passengerDest,
-                toleranceMeters: RouteUtils.defaultToleranceMeters,
+                originToleranceMeters: RouteUtils.defaultToleranceMeters,
+                destToleranceMeters: RouteUtils.passengerDropoffToleranceMeters,
               );
             } else {
               // Fallback: fetch alternatif, cek jika salah satu melewati
@@ -248,7 +249,8 @@ class ScheduledDriversService {
                   route.points,
                   passengerOrigin,
                   passengerDest,
-                  toleranceMeters: RouteUtils.defaultToleranceMeters,
+                  originToleranceMeters: RouteUtils.defaultToleranceMeters,
+                  destToleranceMeters: RouteUtils.passengerDropoffToleranceMeters,
                 )) {
                   passesThroughSameDirection = true;
                   break;

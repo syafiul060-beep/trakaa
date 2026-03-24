@@ -18,7 +18,11 @@ Web admin panel untuk aplikasi Traka (Android/iOS). Berbasis React + Vite + Tail
    - Di Firestore, buka `users/{uid}`
    - Tambah field `role: "admin"` (atau edit jika sudah ada)
 
-4. **Pastikan app_config ada**
+4. **Keamanan: jangan mengandalkan UI saja**
+   - Panel admin memang mengecek `role === 'admin'` di klien untuk menyembunyikan menu, **tetapi** akses data sebenarnya harus dibatasi di **Firestore Security Rules** (dan Cloud Functions jika dipakai): user non-admin tidak boleh membaca/menulis koleksi sensitif meskipun membuka URL atau memodifikasi JS di browser.
+   - Setelah deploy, uji dengan akun non-admin bahwa query ke `orders`, `users`, dll. ditolak aturan.
+
+5. **Pastikan app_config ada**
    - Buat document `app_config/settings` dengan field `tarifPerKm: 70` (untuk halaman Settings)
 
 ## Menjalankan
@@ -50,6 +54,11 @@ VITE_TRAKA_USE_HYBRID=true
 
 Tanpa ini, halaman Drivers/Dashboard/Users akan baca driver_status dari Firestore (kosong saat hybrid aktif).
 
+## Sesi admin (idle & keluar)
+
+- **Idle 30 menit** tanpa aktivitas (klik, ketik, scroll, sentuh) → logout otomatis + pesan di halaman login.
+- **Keluar** memakai dialog (bukan `confirm` bawaan browser) agar lebih ramah keyboard dan pembaca layar.
+
 ## Struktur
 
 - `src/pages/` - Halaman (Dashboard, Orders, Users, dll)
@@ -60,5 +69,6 @@ Tanpa ini, halaman Drivers/Dashboard/Users akan baca driver_status dari Firestor
 
 ## Dokumentasi
 
+- `docs/PERBAIKAN_ADMIN_UI_2025-03.md` - Ringkasan perbaikan UI/sesi/API hybrid (Maret 2025)
 - `RANCANGAN_ADMIN_TRAKA.md` - Rancangan lengkap
 - `WIREFRAME_UI.md` - Wireframe UI

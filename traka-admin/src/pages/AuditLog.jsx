@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react'
 import { getAuditLogs } from '../utils/auditLog'
 
 const ACTION_LABELS = {
-  user_edit: 'Edit User',
-  cancel_deletion: 'Batalkan Penghapusan',
-  settings_save: 'Simpan Settings',
-  admin_cancel_order: 'Batalkan Pesanan',
-  broadcast: 'Broadcast Notifikasi',
-  recovery_code_generated: 'Generate Kode Recovery',
+  user_edit: 'Ubah pengguna',
+  cancel_deletion: 'Batalkan penghapusan',
+  settings_save: 'Simpan pengaturan',
+  admin_cancel_order: 'Batalkan pesanan',
+  broadcast: 'Siaran notifikasi',
+  recovery_code_generated: 'Buat kode pemulihan',
 }
 
 export default function AuditLog() {
@@ -30,7 +30,7 @@ export default function AuditLog() {
     <div className="space-y-6">
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100">
-          <h3 className="font-semibold text-gray-800">Audit Log</h3>
+          <h3 className="font-semibold text-gray-800">Log audit</h3>
           <p className="text-sm text-gray-500 mt-0.5">Riwayat aksi admin</p>
         </div>
         <div className="overflow-x-auto">
