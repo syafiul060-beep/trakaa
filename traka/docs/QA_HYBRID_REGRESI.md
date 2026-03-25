@@ -101,6 +101,7 @@ Jika langkah 1 gagal, uji app hybrid akan mengecewakan — perbaiki deploy dulu,
 | 3.1 | Tambah / edit / hapus | Simpan jadwal | Sheet tutup cepat; snackbar; daftar konsisten; gagal upload → merah + rollback daftar. | | |
 | 3.2 | Background recovery | ±5 s background → buka tab Jadwal atau Chat | Data tidak “nyangkut” (HybridForegroundRecovery). | | |
 | 3.3 | Sinkron manual | Profil driver → sinkronkan data (jika tersedia) | Jadwal/chat/order terasa segar. | | |
+| 3.4 | Simpan berulang cepat | Buka layar Jadwal tunggu load selesai → tambah/edit simpan 2–3× dalam kurang dari ~1 menit | Daftar/snackbar tetap konsisten; tidak “nyangkut”. Build dev boleh log `[JadwalLoad] skip deferred cleanup` — perilaku sengaja (kurangi panggilan cleanup berurutan). | | |
 
 ---
 
@@ -145,6 +146,7 @@ Jika langkah 1 gagal, uji app hybrid akan mengecewakan — perbaiki deploy dulu,
 ## Catatan teknis
 
 - Crashlytics: breadcrumb `[DriverHybrid]` untuk operasi jadwal di lapangan.
+- Setelah **load penuh** jadwal (+ `cleanupPastSchedules`), app menunda **cleanup tunda** pasca-simpan jika pemanggilan cleanup sukses terakhir masih dalam jendela singkat (~2 menit) — mengurangi GET/query order berulang; tidak mengubah data yang disimpan.
 - Satu lembar ini = satu kombinasi **Build app + API URL**; ganti build → duplikat blok **Sesi uji** atau buat baris baru di dokumen salinan.
 
 ## Tautan terkait
