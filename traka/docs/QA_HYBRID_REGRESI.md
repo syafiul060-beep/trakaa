@@ -26,6 +26,8 @@ _Isi **Pass/Fail** di tabel dengan `PASS` / `FAIL` / `N/A`. **Catatan** untuk no
 
 ## Smoke API pasca-deploy (~5 menit)
 
+Jika driver massal uji **Siap kerja**: API membatasi `POST /api/driver/location` per **UID** (default ±120/menit, env `DRIVER_LOCATION_RATE_LIMIT_PER_MIN`). **429** = penyesuaian load test, bukan bug app.
+
 Langkah singkat **setelah** API di-deploy (sebelum / bersamaan dengan QA app):
 
 1. **Health:** `GET {TRAKA_API_BASE_URL}/health` → respons sukses (bukan 5xx / timeout).

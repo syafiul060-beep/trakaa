@@ -1,4 +1,6 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
+const { RedisStore } = require('rate-limit-redis');
 const router = express.Router();
 const { getRedis, scanKeysPaginated, geoAddDriver, geoRemoveDriver } = require('../lib/redis.js');
 const { verifyToken } = require('../lib/auth.js');
@@ -40,7 +42,7 @@ router.get('/status', async (req, res) => {
   }
 });
 
-router.post('/location', verifyToken, async (req, res) => {
+router.post('/location', verifyToken, (req, res, next) => driverLocationPerUidLimiter()(req, res, next), async (req, res) => {
   try {
     const redis = getRedis();
     if (!redis) return res.status(503).json({ error: 'Redis not available' });

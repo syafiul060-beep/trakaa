@@ -24,6 +24,7 @@ Authorization: Bearer <Firebase ID Token>
 - `GET /api/driver/:uid/status` - Status driver tertentu
 - `POST /api/driver/location` - Update lokasi driver (auth required)
   - Body: `{ latitude, longitude, status?, routeOriginLat?, ... }`
+  - **429** jika melebihi batas per menit per UID (env `DRIVER_LOCATION_RATE_LIMIT_PER_MIN`, default 120); limiter pakai Redis prefix `rl:drvloc:` bila `REDIS_URL` ada.
 
 ### Users
 - `GET /api/users/:uid` - Data user (auth required)
