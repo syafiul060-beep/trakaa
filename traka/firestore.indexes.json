@@ -1,5 +1,6 @@
 {
   "indexes": [
+    {"collectionGroup":"driver_status","queryScope":"COLLECTION","fields":[{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"lastUpdated","order":"DESCENDING"}]},
     {"collectionGroup":"users","queryScope":"COLLECTION","fields":[{"fieldPath":"deviceId","order":"ASCENDING"},{"fieldPath":"role","order":"ASCENDING"}]},
     {"collectionGroup":"orders","queryScope":"COLLECTION","fields":[{"fieldPath":"passengerUid","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"updatedAt","order":"DESCENDING"}]},
     {"collectionGroup":"orders","queryScope":"COLLECTION","fields":[{"fieldPath":"driverUid","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"createdAt","order":"DESCENDING"}]},

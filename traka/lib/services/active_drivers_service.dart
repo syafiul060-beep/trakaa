@@ -152,6 +152,7 @@ class ActiveDriversService {
   static const double maxDriverDistanceFromPickupMeters = 40000; // 40 km
 
   /// Plafon dokumen saat fallback Firestore untuk `siap_kerja` — cegah baca koleksi tanpa batas (mode degradasi).
+  /// Diurutkan [lastUpdated] menurun agar subset memakai driver yang paling baru terlihat aktif (perlu indeks komposit).
   static const int _firestoreFallbackMaxDocs = 400;
 
   /// Radius «Driver sekitar» jika penumpang baru saja mencari rute jarak jauh (OD meter); memperluas jangkauan.
@@ -166,11 +167,30 @@ class ActiveDriversService {
 
   static Future<({List<Map<String, dynamic>> list, bool hitCap})>
       _fetchDriverStatusFromFirestore() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection(_collectionDriverStatus)
-        .where('status', isEqualTo: _statusSiapKerja)
-        .limit(_firestoreFallbackMaxDocs)
-        .get();
+    late final QuerySnapshot<Map<String, dynamic>> snapshot;
+    try {
+      snapshot = await FirebaseFirestore.instance
+          .collection(_collectionDriverStatus)
+          .where('status', isEqualTo: _statusSiapKerja)
+          .orderBy('lastUpdated', descending: true)
+          .limit(_firestoreFallbackMaxDocs)
+          .get();
+    } on FirebaseException catch (e) {
+      if (e.code == 'failed-precondition') {
+        if (kDebugMode) {
+          debugPrint(
+            'ActiveDriversService: firestore index missing (?), unordered siap_kerja fallback',
+          );
+        }
+        snapshot = await FirebaseFirestore.instance
+            .collection(_collectionDriverStatus)
+            .where('status', isEqualTo: _statusSiapKerja)
+            .limit(_firestoreFallbackMaxDocs)
+            .get();
+      } else {
+        rethrow;
+      }
+    }
     final hitCap = snapshot.docs.length >= _firestoreFallbackMaxDocs;
     final list = snapshot.docs.map((doc) {
       final data = doc.data();
