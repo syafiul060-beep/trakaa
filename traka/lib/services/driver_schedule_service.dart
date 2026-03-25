@@ -472,7 +472,11 @@ class DriverScheduleService {
       });
       return result;
     } catch (e, st) {
-      DriverHybridDiagnostics.recordError('jadwal.pindah.targets', e, st);
+      if (e is TimeoutException) {
+        DriverHybridDiagnostics.breadcrumb('jadwal.pindah.targets.timeout_after_retry');
+      } else {
+        DriverHybridDiagnostics.recordError('jadwal.pindah.targets', e, st);
+      }
       return [];
     }
   }
