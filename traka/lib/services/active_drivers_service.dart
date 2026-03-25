@@ -6,7 +6,9 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../config/app_constants.dart';
 import '../config/traka_api_config.dart';
 import '../utils/retry_utils.dart';
+import 'app_analytics_service.dart';
 import 'directions_service.dart';
+import 'driver_hybrid_diagnostics.dart';
 import 'traka_api_service.dart';
 import 'rating_service.dart';
 import 'route_utils.dart';
@@ -212,8 +214,11 @@ class ActiveDriversService {
     int? limit,
   }) async {
     List<Map<String, dynamic>> driverStatusList = [];
+    var activeDriversSource = 'firestore';
+    String? activeDriversReason;
 
     if (TrakaApiConfig.isApiEnabled) {
+      activeDriversSource = 'geo_match';
       if (pickupLat != null && pickupLng != null) {
         try {
           var matchList = await TrakaApiService.getMatchDrivers(
@@ -248,9 +253,14 @@ class ActiveDriversService {
           }
         } catch (e) {
           if (kDebugMode) debugPrint('ActiveDriversService: match API error, fallback: $e');
+          activeDriversReason = 'match_error';
         }
+      } else {
+        activeDriversReason = 'no_pickup_coords';
+        activeDriversSource = 'api_list';
       }
       if (driverStatusList.isEmpty) {
+        activeDriversSource = 'api_list';
         try {
           driverStatusList = await TrakaApiService.getDriverStatusList();
           driverStatusList = driverStatusList
@@ -258,16 +268,32 @@ class ActiveDriversService {
               .toList();
         } catch (e) {
           if (kDebugMode) debugPrint('ActiveDriversService: API error, fallback Firestore: $e');
+          activeDriversReason = activeDriversReason == null
+              ? 'api_list_error'
+              : '$activeDriversReason|api_list_error';
         }
       }
       if (driverStatusList.isEmpty) {
         if (kDebugMode) debugPrint('ActiveDriversService: API kosong, fallback ke Firestore');
         driverStatusList = await _fetchDriverStatusFromFirestore();
+        activeDriversSource = 'firestore';
+        activeDriversReason ??= 'exhausted_geo_and_api';
+        DriverHybridDiagnostics.breadcrumb(
+          'passenger.activeDrivers.firestore_fallback n=${driverStatusList.length}',
+        );
         if (kDebugMode) debugPrint('ActiveDriversService: Firestore mengembalikan ${driverStatusList.length} driver');
       }
     } else {
       driverStatusList = await _fetchDriverStatusFromFirestore();
+      activeDriversSource = 'firestore';
+      activeDriversReason = 'hybrid_off';
     }
+
+    AppAnalyticsService.logPassengerActiveDriversSource(
+      source: activeDriversSource,
+      reason: activeDriversReason,
+      resultCount: driverStatusList.length,
+    );
 
     final list = <ActiveDriverRoute>[];
     for (final d in driverStatusList) {

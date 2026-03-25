@@ -276,4 +276,24 @@ class AppAnalyticsService {
       },
     );
   }
+
+  /// Sumber data driver aktif (Cari travel): pantau fallback Firestore vs Redis/geo.
+  /// [source]: `geo_match` | `api_list` | `firestore`
+  static void logPassengerActiveDriversSource({
+    required String source,
+    String? reason,
+    int resultCount = 0,
+  }) {
+    final r = reason == null || reason.isEmpty
+        ? null
+        : (reason.length > 99 ? reason.substring(0, 99) : reason);
+    _analytics.logEvent(
+      name: 'passenger_active_drivers_source',
+      parameters: {
+        'source': source,
+        'result_count': resultCount.clamp(0, 500).toString(),
+        if (r != null) 'reason': r,
+      },
+    );
+  }
 }
