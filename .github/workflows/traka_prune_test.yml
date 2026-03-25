@@ -1,0 +1,28 @@
+# Regresi cepat logika prune jadwal (tanpa Firebase / perangkat).
+name: Traka prune tests
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "traka/**"
+      - ".github/workflows/traka_prune_test.yml"
+  pull_request:
+    paths:
+      - "traka/**"
+      - ".github/workflows/traka_prune_test.yml"
+
+jobs:
+  prune-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: traka
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter test test/driver_schedule_prune_test.dart

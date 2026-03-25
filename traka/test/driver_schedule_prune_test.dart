@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:traka/services/driver_schedule_service.dart';
-import 'package:traka/services/schedule_id_util.dart';
 
 void main() {
   const driverUid = 'test_driver_prune';
