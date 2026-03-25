@@ -119,6 +119,9 @@ class DriverScheduleService {
   ///
   /// [persistPruned]: jika `false`, hitung daftar yang dipertahankan tetapi **jangan** `update` dokumen
   /// (dipakai saat membuka sheet pindah jadwal — sama secara logika, tanpa menulis prune ke Firestore).
+  ///
+  /// [schedulesSnapshot]: jika diisi, lewati GET [Source.server] dan pakai daftar ini (biasanya dari
+  /// [readSchedulesRawFromServer]) — mengurangi round-trip ganda saat sortir logika sama dengan prune.
   static const Duration _getSchedulesTimeout = Duration(seconds: 35);
   /// Baca cepat setelah simpan jadwal: `serverAndCache` + plafon pendek (hindari antrean `Source.server` 10+ menit).
   static const Duration _readSchedulesRawTimeout = Duration(seconds: 14);
@@ -171,6 +174,7 @@ class DriverScheduleService {
   static Future<List<Map<String, dynamic>>> cleanupPastSchedules(
     String driverUid, {
     bool persistPruned = true,
+    List<Map<String, dynamic>>? schedulesSnapshot,
   }) async {
     Stopwatch? sw;
     if (kDebugMode) sw = Stopwatch()..start();
@@ -181,26 +185,40 @@ class DriverScheduleService {
     }
 
     try {
-      trace('start (driver_schedules server read)');
-      // Selalu server: cache sering bikin daftar jadwal “nyangkut” (hybrid / multi-perangkat).
-      final doc = await _firestore
-          .collection('driver_schedules')
-          .doc(driverUid)
-          .get(const GetOptions(source: Source.server))
-          .timeout(_getSchedulesTimeout);
+      late final List<Map<String, dynamic>> mapsList;
+      if (schedulesSnapshot != null) {
+        trace('start (schedulesSnapshot count=${schedulesSnapshot.length})');
+        mapsList = schedulesSnapshot;
+      } else {
+        trace('start (driver_schedules server read)');
+        // Selalu server: cache sering bikin daftar jadwal “nyangkut” (hybrid / multi-perangkat).
+        final doc = await _firestore
+            .collection('driver_schedules')
+            .doc(driverUid)
+            .get(const GetOptions(source: Source.server))
+            .timeout(_getSchedulesTimeout);
 
-      if (!doc.exists || doc.data() == null) {
-        trace('get: no doc → []');
+        if (!doc.exists || doc.data() == null) {
+          trace('get: no doc → []');
+          return [];
+        }
+
+        final data = doc.data()!;
+        final list = data['schedules'] as List<dynamic>?;
+        if (list == null || list.isEmpty) {
+          trace('get: empty schedules → []');
+          return [];
+        }
+        mapsList = [
+          for (final e in list)
+            Map<String, dynamic>.from(e as Map<dynamic, dynamic>),
+        ];
+      }
+      if (mapsList.isEmpty) {
+        trace('empty schedules → []');
         return [];
       }
-
-      final data = doc.data()!;
-      final list = data['schedules'] as List<dynamic>?;
-      if (list == null || list.isEmpty) {
-        trace('get: empty schedules → []');
-        return [];
-      }
-      trace('get: rawCount=${list.length}');
+      trace('rawCount=${mapsList.length}');
 
       Set<String>? activeScheduleIds;
       try {
@@ -212,8 +230,8 @@ class DriverScheduleService {
       }
 
       final kept = <Map<String, dynamic>>[];
-      for (final e in list) {
-        final map = Map<String, dynamic>.from(e as Map<dynamic, dynamic>);
+      for (final raw in mapsList) {
+        final map = Map<String, dynamic>.from(raw);
         final prune =
             isScheduleDepartureInThePast(map) ||
                 _isCalendarOutsideBookingWindowFromMap(map);
@@ -262,9 +280,9 @@ class DriverScheduleService {
         }
       }
 
-      if (kept.length < list.length) {
+      if (kept.length < mapsList.length) {
         if (persistPruned) {
-          trace('firestore update: removing ${list.length - kept.length} stale/out-of-window slot(s)');
+          trace('firestore update: removing ${mapsList.length - kept.length} stale/out-of-window slot(s)');
           await _firestore.collection('driver_schedules').doc(driverUid).update({
             'schedules': kept,
             'updatedAt': FieldValue.serverTimestamp(),
@@ -272,7 +290,7 @@ class DriverScheduleService {
           trace('firestore update: ok');
         } else if (kDebugMode) {
           trace(
-            'skip firestore update (would remove ${list.length - kept.length} slot(s); persistPruned=false)',
+            'skip firestore update (would remove ${mapsList.length - kept.length} slot(s); persistPruned=false)',
           );
         }
       } else {
@@ -374,14 +392,17 @@ class DriverScheduleService {
   /// Daftar jadwal driver untuk pindah pesanan: semua jadwal yang masih valid,
   /// kecuali [excludeScheduleId]. Setiap item punya scheduleId, scheduledDate, label.
   /// Cleanup logika sama dengan [cleanupPastSchedules] tetapi tanpa menulis prune ke Firestore.
+  /// Satu baca [readSchedulesRawFromServer] + sortir (tanpa GET [Source.server] kedua).
   static Future<List<Map<String, dynamic>>> getOtherSchedulesForPindah(
     String driverUid, {
     required String excludeScheduleId,
   }) async {
     try {
+      final maps = await readSchedulesRawFromServer(driverUid);
       final kept = await cleanupPastSchedules(
         driverUid,
         persistPruned: false,
+        schedulesSnapshot: maps,
       );
       final result = <Map<String, dynamic>>[];
       for (final map in kept) {

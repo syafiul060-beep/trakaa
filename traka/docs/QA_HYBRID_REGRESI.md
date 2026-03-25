@@ -102,6 +102,7 @@ Jika langkah 1 gagal, uji app hybrid akan mengecewakan — perbaiki deploy dulu,
 | 3.2 | Background recovery | ±5 s background → buka tab Jadwal atau Chat | Data tidak “nyangkut” (HybridForegroundRecovery). | | |
 | 3.3 | Sinkron manual | Profil driver → sinkronkan data (jika tersedia) | Jadwal/chat/order terasa segar. | | |
 | 3.4 | Simpan berulang cepat | Buka layar Jadwal tunggu load selesai → tambah/edit simpan 2–3× dalam kurang dari ~1 menit | Daftar/snackbar tetap konsisten; tidak “nyangkut”. Build dev boleh log `[JadwalLoad] skip deferred cleanup` — perilaku sengaja (kurangi panggilan cleanup berurutan). | | |
+| 3.5 | Pindah jadwal | Dari pesanan terjadwal → pindah ke jadwal lain | Sheet memuat daftar target; pindah sukses; kapasitas penuh tetap ditolak dengan snackbar. | | |
 
 ---
 
