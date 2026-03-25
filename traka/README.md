@@ -42,6 +42,7 @@ flutter run
 - [Halaman web profil Traka](hosting/profil.html) — setelah deploy hosting: `/profil.html` (ilustrasi/brosur SVG + strip visual; tambah foto promo lewat [hosting/assets/README-PROFIL-GAMBAR.txt](hosting/assets/README-PROFIL-GAMBAR.txt))
 - [Halaman lacak keluarga](hosting/track.html) — `/track.html?t=…` (peta + status; **Authentication → Sign-in method → Anonymous** harus aktif di Firebase agar pembacaan `driver_status` berhasil untuk pengunjung tanpa akun). Status `completed`/`cancelled` di dokumen `track_share_links` saat ini hanya terlihat jika nilai itu diperbarui di backend (mis. Function) — UI siap menampilkan layar selesai saat field tersebut berubah. **Kirim barang:** setelah update aturan `track_share_links` di Firestore, deploy **`firebase deploy --only firestore:rules`** sebelum/saat rilis app agar penerima yang membagikan link tetap lolos validasi create (field `passengerUid`/`receiverUid` mengacu ke pesanan, bukan UID pembuat link).
 - [QA regresi alur utama](docs/QA_REGRESI_ALUR_UTAMA.md) – skenario manual sebelum rilis
+- [QA regresi mode hybrid](docs/QA_HYBRID_REGRESI.md) – API + Firestore, order, driver status, jadwal, admin
 - [Rute alternatif driver & matching penumpang](docs/ROUTING_ALTERNATIF_DRIVER_DAN_MATCH_PENUMPANG.md) – kapan garis biru/auto-switch, re-route, vs filter “cari driver”
 - [Notifikasi jarak penumpang ↔ driver](docs/NOTIFIKASI_JARAK_PENUMPANG_DRIVER.md) – tanpa tap “arahkan”, live tracking saat agreed menunggu jemput
 - [Notifikasi aplikasi (tahap 1–4)](docs/NOTIFIKASI_APLIKASI_TRAKA.md) – channel Android, push FCM, layar Profil → Notifikasi, roadmap
@@ -51,6 +52,7 @@ flutter run
 - [Setup Config Lokal](../docs/CEGAH_API_KEY_TEREKSPOS.md#setup-untuk-developer-baru-setelah-clone-repo) – file config setelah clone (Keys.plist, firebase-config.js, dll)
 - [Build dan Jalankan](docs/BUILD_DAN_JALANKAN.md) – troubleshooting build
 - [Firebase Setup](docs/FIREBASE_DAN_SETUP.md) – konfigurasi Firebase
+- [Deploy Firebase cepat](docs/FIREBASE_DEPLOY_CEPAT.md) – `firebase deploy` dari `traka/`, admin terpisah di `traka-admin/`, catatan Node 20 & `firebase-functions`
 - [Google Maps](docs/SETUP_GOOGLE_MAPS.md) – API key Maps
 - [Cloud Functions](docs/LANGKAH_SETUP_MANUAL.md) – setup Functions
 - [Deploy Play Store](docs/BUILD_PLAY_STORE.md) – publish Android

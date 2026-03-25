@@ -133,6 +133,8 @@ class _LoginEmailOtpScreenState extends State<LoginEmailOtpScreen> {
               ] else ...[
                 TextField(
                   controller: _otpController,
+                  autocorrect: false,
+                  enableSuggestions: false,
                   keyboardType: TextInputType.number,
                   maxLength: 6,
                   decoration: const InputDecoration(

@@ -145,9 +145,19 @@ class ActiveDriversService {
   /// Disesuaikan untuk Kalimantan: jarak jauh, sinyal terbatas.
   static const int maxLastUpdatedHours = 6;
 
-  /// Jarak maksimal (meter) driver dari titik penjemputan agar ditampilkan di map.
-  /// Driver lebih jauh dari ini tidak ditampilkan.
+  /// Jarak maksimal (meter) driver dari titik penjemputan — mode «Driver sekitar» & lini dasar OD pendek.
+  /// Untuk pencarian «searah» jarak jauh, dipakai nilai dari [_matchingParamsForPassengerOd].
   static const double maxDriverDistanceFromPickupMeters = 40000; // 40 km
+
+  /// Radius «Driver sekitar» jika penumpang baru saja mencari rute jarak jauh (OD meter); memperluas jangkauan.
+  static double nearbySearchRadiusMetersForPriorOd(double? priorPassengerOdMeters) {
+    if (priorPassengerOdMeters == null || priorPassengerOdMeters < 30000) {
+      return maxDriverDistanceFromPickupMeters;
+    }
+    if (priorPassengerOdMeters < 80000) return 55000;
+    if (priorPassengerOdMeters < 150000) return 70000;
+    return 85000;
+  }
 
   static Future<List<Map<String, dynamic>>> _fetchDriverStatusFromFirestore() async {
     final snapshot = await FirebaseFirestore.instance
@@ -206,7 +216,7 @@ class ActiveDriversService {
     if (TrakaApiConfig.isApiEnabled) {
       if (pickupLat != null && pickupLng != null) {
         try {
-          final matchList = await TrakaApiService.getMatchDrivers(
+          var matchList = await TrakaApiService.getMatchDrivers(
             lat: pickupLat,
             lng: pickupLng,
             destLat: matchDestLat,
@@ -216,6 +226,22 @@ class ActiveDriversService {
             limit: limit ?? 50,
             minCapacity: 1,
           );
+          // Driver GEO di Redis memakai slug kab/kota; query tanpa city memakai "default".
+          // Bila penumpang dan driver beda bucket GEO, coba lagi tanpa slug (default).
+          if (matchList.isEmpty &&
+              city != null &&
+              city.isNotEmpty) {
+            matchList = await TrakaApiService.getMatchDrivers(
+              lat: pickupLat,
+              lng: pickupLng,
+              destLat: matchDestLat,
+              destLng: matchDestLng,
+              city: null,
+              radiusKm: radiusKm ?? 30,
+              limit: limit ?? 50,
+              minCapacity: 1,
+            );
+          }
           if (matchList.isNotEmpty) {
             driverStatusList = matchList;
             if (kDebugMode) debugPrint('ActiveDriversService: match API mengembalikan ${driverStatusList.length} driver');
@@ -388,13 +414,15 @@ class ActiveDriversService {
   /// Logika luas (cross-route): pickup dan dropoff boleh di rute alternatif berbeda.
   /// Contoh: driver Batulicin-Banjarmasin (biru), penumpang Satui-Banjarbaru;
   /// Satui di rute biru, Banjarbaru di rute kuning → tetap match.
-  /// Filter driver dalam radius [maxDriverDistanceFromPickupMeters] dari center.
-  /// Dipakai saat penumpang belum isi asal/tujuan – pakai lokasi saat ini sebagai center.
+  /// Filter driver dalam radius dari center (mode «Driver sekitar»).
+  /// [maxDistanceMeters] default [maxDriverDistanceFromPickupMeters].
   static List<ActiveDriverRoute> filterByDistanceFromCenter(
     List<ActiveDriverRoute> drivers,
     double centerLat,
-    double centerLng,
-  ) {
+    double centerLng, {
+    double? maxDistanceMeters,
+  }) {
+    final maxD = maxDistanceMeters ?? maxDriverDistanceFromPickupMeters;
     return drivers.where((d) {
       final dist = Geolocator.distanceBetween(
         centerLat,
@@ -402,14 +430,10 @@ class ActiveDriversService {
         d.driverLat,
         d.driverLng,
       );
-      return dist <= maxDriverDistanceFromPickupMeters;
+      return dist <= maxD;
     }).toList();
   }
 
-  /// [passengerOriginLat/Lng]: lokasi awal penumpang (titik penjemputan).
-  /// [passengerDestLat/Lng]: tujuan penumpang.
-  /// [onlyDriversBeforePassenger]: true = hanya driver yang belum melewati penumpang (default true).
-  /// Radius & limit dinamis berdasarkan jarak asal–tujuan (travel jarak jauh).
   static ({double radiusKm, int limit}) _radiusLimitFromDistance(double distanceMeters) {
     if (distanceMeters < 30000) {
       return (radiusKm: 30, limit: 50);
@@ -418,6 +442,46 @@ class ActiveDriversService {
       return (radiusKm: 60, limit: 65);
     }
     return (radiusKm: 100, limit: 80);
+  }
+
+  /// Koridor polyline + jarak driver–jemput: diringkas untuk OD pendek, dilonggarkan untuk travel jauh
+  /// (satu provinsi/kalimantan dll.) supaya titik jemput di pedesaan & driver di jalur utama tetap ketemu.
+  static ({
+    double pickupToleranceMeters,
+    double dropoffToleranceMeters,
+    double maxDriverFromPickupMeters,
+    double maxMetersPastPickup,
+  }) _matchingParamsForPassengerOd(double odMeters) {
+    if (odMeters < 30000) {
+      return (
+        pickupToleranceMeters: RouteUtils.defaultToleranceMeters,
+        dropoffToleranceMeters: RouteUtils.passengerDropoffToleranceMeters,
+        maxDriverFromPickupMeters: maxDriverDistanceFromPickupMeters,
+        maxMetersPastPickup: 5000,
+      );
+    }
+    if (odMeters < 80000) {
+      return (
+        pickupToleranceMeters: 12000,
+        dropoffToleranceMeters: 32000,
+        maxDriverFromPickupMeters: 55000,
+        maxMetersPastPickup: 8000,
+      );
+    }
+    if (odMeters < 150000) {
+      return (
+        pickupToleranceMeters: 16000,
+        dropoffToleranceMeters: 38000,
+        maxDriverFromPickupMeters: 75000,
+        maxMetersPastPickup: 12000,
+      );
+    }
+    return (
+      pickupToleranceMeters: 20000,
+      dropoffToleranceMeters: 45000,
+      maxDriverFromPickupMeters: 95000,
+      maxMetersPastPickup: 15000,
+    );
   }
 
   /// Peta penumpang «Cari travel»: filter driver `siap_kerja` yang **searah** dengan asal/tujuan penumpang.
@@ -433,6 +497,9 @@ class ActiveDriversService {
   /// - Dokumen: [AppConstants.matchingOdCorridorDocRelative] (folder `traka/`).
   ///
   /// Sama seperti [getActiveDriversForMap] tetapi menyertakan statistik Directions (untuk dialog fallback).
+  ///
+  /// [onlyDriversBeforePassenger]: jika true, driver harus belum melewati titik jemput; untuk OD ≥
+  /// [AppConstants.passengerOdMetersRelaxDriverBeforePickupFilter] aturan ini **tidak dipakai** (travel jauh).
   static Future<ActiveDriversMapResult> getActiveDriversForMapResult({
     double? passengerOriginLat,
     double? passengerOriginLng,
@@ -479,6 +546,15 @@ class ActiveDriversService {
 
     final passengerOrigin = LatLng(passengerOriginLat, passengerOriginLng);
     final passengerDest = LatLng(passengerDestLat, passengerDestLng);
+    final odMeters = Geolocator.distanceBetween(
+      passengerOriginLat,
+      passengerOriginLng,
+      passengerDestLat,
+      passengerDestLng,
+    );
+    final matchParams = _matchingParamsForPassengerOd(odMeters);
+    final enforceDriverBeforePickup = onlyDriversBeforePassenger &&
+        odMeters < AppConstants.passengerOdMetersRelaxDriverBeforePickupFilter;
     final filtered = <ActiveDriverRoute>[];
     var skippedDirectionsEmpty = 0;
     var skippedDirectionsError = 0;
@@ -513,16 +589,16 @@ class ActiveDriversService {
         final driverDest = LatLng(d.routeDestLat, d.routeDestLng);
         final driverOrigin = LatLng(d.routeOriginLat, d.routeOriginLng);
 
-        // Jemput: koridor 10 km. Turun: koridor lebih lebar (±25 km) agar tujuan di samping jalur utama tetap lolos.
+        // Jemput / turun: toleransi naik untuk OD jauh (lihat [_matchingParamsForPassengerOd]).
         final pickupNearAny = RouteUtils.isPointNearAnyRoute(
           passengerOrigin,
           routePolylines,
-          toleranceMeters: RouteUtils.defaultToleranceMeters,
+          toleranceMeters: matchParams.pickupToleranceMeters,
         );
         final dropoffNearAny = RouteUtils.isPointNearAnyRoute(
           passengerDest,
           routePolylines,
-          toleranceMeters: RouteUtils.passengerDropoffToleranceMeters,
+          toleranceMeters: matchParams.dropoffToleranceMeters,
         );
 
         if (!pickupNearAny || !dropoffNearAny) continue;
@@ -535,20 +611,19 @@ class ActiveDriversService {
           continue;
         }
 
-        if (onlyDriversBeforePassenger) {
+        if (enforceDriverBeforePickup) {
           final driverPos = LatLng(d.driverLat, d.driverLng);
-          const maxMetersPastPickup = 5000.0;
           final pickupRouteIdx = RouteUtils.findRouteIndexWithPoint(
             passengerOrigin,
             routePolylines,
-            toleranceMeters: RouteUtils.defaultToleranceMeters,
+            toleranceMeters: matchParams.pickupToleranceMeters,
           );
           bool driverOk = pickupRouteIdx >= 0 &&
               RouteUtils.isDriverBeforePointAlongRoute(
                 driverPos,
                 passengerOrigin,
                 routePolylines[pickupRouteIdx],
-                toleranceMeters: RouteUtils.defaultToleranceMeters,
+                toleranceMeters: matchParams.pickupToleranceMeters,
               );
           if (!driverOk) {
             driverOk = RouteUtils.isDriverBeforePickupByDistance(
@@ -562,7 +637,7 @@ class ActiveDriversService {
               driverPos,
               passengerOrigin,
               driverOrigin,
-              maxMetersPast: maxMetersPastPickup,
+              maxMetersPast: matchParams.maxMetersPastPickup,
             );
           }
           if (!driverOk) continue;
@@ -574,7 +649,7 @@ class ActiveDriversService {
           d.driverLat,
           d.driverLng,
         );
-        if (distToPickup > maxDriverDistanceFromPickupMeters) continue;
+        if (distToPickup > matchParams.maxDriverFromPickupMeters) continue;
 
         filtered.add(d);
       } catch (e) {

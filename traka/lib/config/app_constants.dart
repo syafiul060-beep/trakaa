@@ -27,9 +27,27 @@ class AppConstants {
   /// beranda diblokir penuh — aturan ini tidak menggantikan blokir tersebut.
   static const int passengerDriverSearchSessionMaxMinutes = 5;
 
+  /// Sesi pencarian lebih lama untuk OD jarak jauh (waktu hubungi driver).
+  static const int passengerDriverSearchSessionMinutesLongTrip = 10;
+  static const int passengerDriverSearchSessionMinutesVeryLongTrip = 15;
+
+  /// Menit sesi pencarian dari jarak asal–tujuan penumpang (meter). Null = gunakan [passengerDriverSearchSessionMaxMinutes].
+  static int passengerDriverSearchSessionMinutesForOd(double? odMeters) {
+    if (odMeters == null || odMeters < 80000) {
+      return passengerDriverSearchSessionMaxMinutes;
+    }
+    if (odMeters < 160000) return passengerDriverSearchSessionMinutesLongTrip;
+    return passengerDriverSearchSessionMinutesVeryLongTrip;
+  }
+
+  /// OD ≥ ini (meter): pencarian «searah» **tidak** memfilter «driver harus belum lewat titik jemput»
+  /// (travel jauh: driver bisa di depan di jalur utama; koordinasi via chat).
+  static const double passengerOdMetersRelaxDriverBeforePickupFilter = 80000;
+
   /// Interval interpolasi posisi multi-driver di map penumpang (ms).
   /// Sedikit lebih jarang mengurangi tekanan ke native map + hit-testing marker.
-  static const int passengerMapInterpolationIntervalMs = 96;
+  /// Tahap 2 (optimasi murah): 96 → 100 — uji geser/zoom di perangkat lemah sebelum naik lagi.
+  static const int passengerMapInterpolationIntervalMs = 100;
 
   /// Eksponensial smoothing bearing icon mobil penumpang (0–1). Lebih kecil = lebih halus.
   static const double passengerMapBearingSmoothAlpha = 0.14;

@@ -175,6 +175,8 @@ class _DriverContactPickerSheetState extends State<_DriverContactPickerSheet> {
           const SizedBox(height: 12),
           TextField(
             controller: _searchController,
+            autocorrect: false,
+            enableSuggestions: false,
             decoration: InputDecoration(
               hintText: 'Cari nama...',
               prefixIcon: const Icon(Icons.search),

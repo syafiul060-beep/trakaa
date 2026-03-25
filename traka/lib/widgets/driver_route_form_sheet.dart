@@ -373,6 +373,8 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
                 TextField(
                   controller: _destController,
                   scrollPadding: const EdgeInsets.only(bottom: 160),
+                  autocorrect: false,
+                  enableSuggestions: false,
                   decoration: InputDecoration(
                     hintText:
                         'Stasiun, Mall, Bandara, Rumah Sakit, Perumahan, Terminal, Pelabuhan, Alun-alun',

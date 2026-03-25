@@ -75,11 +75,15 @@ class _DriverPaymentMethodsScreenState extends State<DriverPaymentMethodsScreen>
                 if (type == 'bank')
                   TextField(
                     controller: bankCtrl,
+                    autocorrect: false,
+                    enableSuggestions: false,
                     decoration: const InputDecoration(labelText: 'Nama bank'),
                   ),
                 if (type == 'ewallet')
                   TextField(
                     controller: ewalletCtrl,
+                    autocorrect: false,
+                    enableSuggestions: false,
                     decoration: const InputDecoration(
                       labelText: 'Provider (DANA, GoPay, …)',
                     ),
@@ -87,6 +91,8 @@ class _DriverPaymentMethodsScreenState extends State<DriverPaymentMethodsScreen>
                 if (type != 'qris')
                   TextField(
                     controller: numberCtrl,
+                    autocorrect: false,
+                    enableSuggestions: false,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
                       labelText: 'Nomor rekening / HP e-wallet',
@@ -94,6 +100,8 @@ class _DriverPaymentMethodsScreenState extends State<DriverPaymentMethodsScreen>
                   ),
                 TextField(
                   controller: holderCtrl,
+                  autocorrect: false,
+                  enableSuggestions: false,
                   decoration: const InputDecoration(
                     labelText: 'Nama pemilik (harus sama profil)',
                   ),

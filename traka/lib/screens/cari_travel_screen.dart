@@ -1235,6 +1235,8 @@ class _RequestFormSheetState extends State<_RequestFormSheet> {
             const SizedBox(height: 16),
             TextField(
               controller: widget.asalController,
+              autocorrect: false,
+              enableSuggestions: false,
               decoration: InputDecoration(
                 labelText: 'Dari (asal Anda)',
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
@@ -1244,6 +1246,8 @@ class _RequestFormSheetState extends State<_RequestFormSheet> {
             const SizedBox(height: 12),
             TextField(
               controller: widget.tujuanController,
+              autocorrect: false,
+              enableSuggestions: false,
               decoration: InputDecoration(
                 labelText: 'Tujuan',
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),

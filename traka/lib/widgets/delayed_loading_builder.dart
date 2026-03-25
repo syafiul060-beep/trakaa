@@ -29,9 +29,7 @@ class _DelayedLoadingBuilderState extends State<DelayedLoadingBuilder> {
   bool _showLoading = false;
   Timer? _timer;
 
-  @override
-  void didUpdateWidget(DelayedLoadingBuilder oldWidget) {
-    super.didUpdateWidget(oldWidget);
+  void _syncLoadingTimer() {
     if (widget.loading) {
       if (!_showLoading) {
         _timer?.cancel();
@@ -45,6 +43,18 @@ class _DelayedLoadingBuilderState extends State<DelayedLoadingBuilder> {
       _timer?.cancel();
       _showLoading = false;
     }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _syncLoadingTimer();
+  }
+
+  @override
+  void didUpdateWidget(DelayedLoadingBuilder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncLoadingTimer();
   }
 
   @override

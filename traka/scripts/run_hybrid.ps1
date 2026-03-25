@@ -18,6 +18,8 @@ param(
     [Parameter(Mandatory=$false)]
     [switch]$EnableMapWs,
     [Parameter(Mandatory=$false)]
+    [switch]$CreateOrderViaApi,
+    [Parameter(Mandatory=$false)]
     [switch]$Profile
 )
 

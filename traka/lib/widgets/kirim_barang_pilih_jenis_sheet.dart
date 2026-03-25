@@ -241,6 +241,8 @@ class _KirimBarangPilihJenisSheetState extends State<KirimBarangPilihJenisSheet>
                 const SizedBox(height: 12),
                 TextField(
                   controller: _namaController,
+                  autocorrect: false,
+                  enableSuggestions: false,
                   decoration: InputDecoration(
                     labelText: 'Nama/jenis barang *',
                     hintText: 'Contoh: Sepatu, Elektronik',
@@ -251,6 +253,8 @@ class _KirimBarangPilihJenisSheetState extends State<KirimBarangPilihJenisSheet>
                 const SizedBox(height: 12),
                 TextField(
                   controller: _beratController,
+                  autocorrect: false,
+                  enableSuggestions: false,
                   decoration: InputDecoration(
                     labelText: 'Berat (kg) *',
                     hintText: 'Contoh: 2.5',
@@ -265,6 +269,8 @@ class _KirimBarangPilihJenisSheetState extends State<KirimBarangPilihJenisSheet>
                     Expanded(
                       child: TextField(
                         controller: _panjangController,
+                        autocorrect: false,
+                        enableSuggestions: false,
                         decoration: InputDecoration(
                           labelText: 'Panjang (cm) *',
                           hintText: '30',
@@ -277,6 +283,8 @@ class _KirimBarangPilihJenisSheetState extends State<KirimBarangPilihJenisSheet>
                     Expanded(
                       child: TextField(
                         controller: _lebarController,
+                        autocorrect: false,
+                        enableSuggestions: false,
                         decoration: InputDecoration(
                           labelText: 'Lebar (cm) *',
                           hintText: '20',
@@ -289,6 +297,8 @@ class _KirimBarangPilihJenisSheetState extends State<KirimBarangPilihJenisSheet>
                     Expanded(
                       child: TextField(
                         controller: _tinggiController,
+                        autocorrect: false,
+                        enableSuggestions: false,
                         decoration: InputDecoration(
                           labelText: 'Tinggi (cm)',
                           hintText: '15',

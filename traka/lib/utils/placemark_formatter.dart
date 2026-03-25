@@ -74,4 +74,18 @@ class PlacemarkFormatter {
   static String streetNameOnly(Placemark p) {
     return _normalizeThoroughfare(p.thoroughfare ?? p.name);
   }
+
+  /// Slug kabupaten/kota untuk kunci Redis GEO `drivers:geo:{slug}` (sama dengan logika driver beranda).
+  /// [subAdministrativeArea] dari placemark (subAdministrativeArea).
+  static String? citySlugForGeoMatching(String? subAdministrativeArea) {
+    var s = (subAdministrativeArea ?? '').trim().toLowerCase();
+    if (s.isEmpty) return null;
+    if (s.startsWith('kota ')) s = s.substring(5);
+    if (s.startsWith('kabupaten ')) s = s.substring(10);
+    final slug = s
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+    return slug.isEmpty ? null : slug;
+  }
 }

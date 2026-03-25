@@ -27,6 +27,9 @@
         "headers": [{"key": "Cache-Control", "value": "public, max-age=86400"}]
       }
     ],
+    "redirects": [
+      { "source": "/profil.htm", "destination": "/profil.html", "type": 301 }
+    ],
     "rewrites": [
       {"source": "/admin", "destination": "/admin/index.html"},
       {"source": "/admin/**", "destination": "/admin/index.html"}

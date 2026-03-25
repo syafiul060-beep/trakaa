@@ -23,6 +23,7 @@ import '../services/map_style_service.dart';
 import '../services/route_notification_service.dart';
 import '../widgets/styled_google_map_builder.dart';
 import '../widgets/shimmer_loading.dart';
+import '../widgets/kirim_barang_driver_ongkos_banner.dart';
 import '../widgets/pindah_jadwal_sheet.dart';
 import '../services/driver_status_service.dart';
 import '../models/driver_transfer_model.dart';
@@ -30,6 +31,7 @@ import '../services/driver_transfer_service.dart';
 import '../services/app_config_service.dart';
 import '../services/driver_schedule_service.dart';
 import '../services/order_service.dart';
+import '../services/order_receipt_pdf_flow.dart';
 import '../services/route_session_service.dart';
 import '../services/violation_service.dart';
 import '../services/sos_service.dart';
@@ -92,6 +94,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
   static const double _autoConfirmDistanceMeters = 1000; // 1 km
   Timer? _autoConfirmTimer;
   Timer? _autoCompleteTimer;
+  String? _loadingReceiptPdfOrderId;
 
   /// Tanggal terpilih di tab Pesanan Terjadwal (format y-m-d).
   String? _selectedScheduledDate;
@@ -906,6 +909,20 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                                 : Colors.orange.shade700,
                           ),
                         ),
+                        if (order.isKirimBarang) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            order.effectiveTravelFarePaidBy ==
+                                    OrderModel.travelFarePaidByReceiver
+                                ? 'Ongkos ke driver: penerima'
+                                : 'Ongkos ke driver: pengirim',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1220,6 +1237,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
               ),
               const SizedBox(height: 12),
             ],
+            KirimBarangDriverOngkosBanner(order: order),
             // Foto profil dan nama: kirim_barang di tab Pemesanan = Pengirim + Penerima + lokasi; di tab Penumpang = Penerima (tunjukkan barcode)
             if (order.isKirimBarang && forPenumpangTab) ...[
               Row(
@@ -1413,6 +1431,36 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                   ],
                 ),
               ),
+              if (OrderReceiptPdfFlow.canDriverIssue(order)) ...[
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: _loadingReceiptPdfOrderId == order.id
+                        ? null
+                        : () => OrderReceiptPdfFlow.issueAsDriver(
+                              host: this,
+                              order: order,
+                              setLoadingOrderId: (id) => setState(
+                                () => _loadingReceiptPdfOrderId = id,
+                              ),
+                            ),
+                    icon: _loadingReceiptPdfOrderId == order.id
+                        ? SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          )
+                        : const Icon(Icons.picture_as_pdf_outlined),
+                    label: Text(
+                      TrakaL10n.of(context).onlineReceiptAndPdfButton,
+                    ),
+                  ),
+                ),
+              ],
             ] else if (forPenumpangTab)
               // Menu Penumpang: penumpang sudah dijemput, hanya tombol Barcode (tunjukkan ke penumpang)
               Column(

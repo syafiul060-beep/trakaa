@@ -385,5 +385,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // public_receipt_proofs – bukti struk web (profil.html). Hanya Admin SDK (Functions); verifikasi publik lewat HTTPS getPublicReceiptProof.
+    match /public_receipt_proofs/{proofId} {
+      allow read, write: if false;
+    }
+
   }
 }

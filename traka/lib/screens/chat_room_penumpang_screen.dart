@@ -1652,6 +1652,8 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                       child: TextField(
                         controller: _textController,
                         focusNode: _focusNode,
+                        autocorrect: false,
+                        enableSuggestions: false,
                         onChanged: (_) => setState(() {}),
                         decoration: InputDecoration(
                           hintText: 'Ketik pesan...',

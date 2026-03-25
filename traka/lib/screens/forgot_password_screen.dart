@@ -426,6 +426,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         SizedBox(height: context.responsive.spacing(16)),
         TextField(
           controller: _emailController,
+          autocorrect: false,
+          enableSuggestions: false,
           decoration: const InputDecoration(
             labelText: 'Email',
             hintText: 'contoh@email.com',
@@ -461,6 +463,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         const SizedBox(height: 12),
         TextField(
           controller: _otpController,
+          autocorrect: false,
+          enableSuggestions: false,
           decoration: const InputDecoration(
             labelText: 'Kode verifikasi (6 digit)',
             prefixIcon: Icon(Icons.email_outlined),
@@ -526,6 +530,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         SizedBox(height: context.responsive.spacing(16)),
         TextField(
           controller: _otpController,
+          autocorrect: false,
+          enableSuggestions: false,
           decoration: const InputDecoration(
             labelText: 'Kode verifikasi (6 digit)',
             prefixIcon: Icon(Icons.sms_outlined),
@@ -584,6 +590,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         const SizedBox(height: 12),
         TextField(
           controller: _newPasswordController,
+          autocorrect: false,
+          enableSuggestions: false,
           decoration: const InputDecoration(
             labelText: 'Kata sandi baru',
             prefixIcon: Icon(Icons.lock_outline),
@@ -594,6 +602,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         const SizedBox(height: 12),
         TextField(
           controller: _confirmPasswordController,
+          autocorrect: false,
+          enableSuggestions: false,
           decoration: const InputDecoration(
             labelText: 'Konfirmasi kata sandi baru',
             prefixIcon: Icon(Icons.lock_outline),

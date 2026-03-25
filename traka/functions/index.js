@@ -3,6 +3,8 @@ const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
 const { verifyProductPurchase } = require("./lib/verifyGooglePlay.js");
 const billingValidation = require("./lib/billingValidation.js");
+const publicReceiptProof = require("./lib/publicReceiptProof.js");
+const { sanitizeDriverSchedulesIfNeeded } = require("./lib/driverScheduleValidation.js");
 
 // Load .env untuk development lokal (emulator). Production pakai env var dari Cloud Console.
 try {
@@ -2070,9 +2072,39 @@ exports.onDriverTransferScanned = functions.firestore
 
 // --- Notifikasi jadwal baru: saat driver menambah jadwal di driver_schedules ---
 // Target: penumpang dengan region (provinsi) yang cocok dengan origin/destination jadwal
+// + Enforcement jendela 7 hari WIB (strip slot di luar jendela tanpa order aktif).
 exports.onDriverScheduleWritten = functions.firestore
     .document("driver_schedules/{driverId}")
     .onWrite(async (change, context) => {
+      const driverId = context.params.driverId;
+
+      if (change.after.exists) {
+        const after = change.after.data();
+        const raw = after?.schedules;
+        if (Array.isArray(raw) && raw.length > 0) {
+          const sanitized = await sanitizeDriverSchedulesIfNeeded(driverId, raw);
+          if (sanitized != null) {
+            try {
+              await admin.firestore().collection("driver_schedules").doc(driverId).update({
+                schedules: sanitized,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+              console.log(
+                "onDriverScheduleWritten: sanitized schedules",
+                driverId,
+                "from",
+                raw.length,
+                "to",
+                sanitized.length,
+              );
+            } catch (e) {
+              console.error("onDriverScheduleWritten: sanitize update failed", driverId, e);
+            }
+            return null;
+          }
+        }
+      }
+
       const after = change.after.exists ? change.after.data() : null;
       const afterSchedules = (after?.schedules || []);
       if (afterSchedules.length === 0) return null;
@@ -2087,7 +2119,6 @@ exports.onDriverScheduleWritten = functions.firestore
         newSchedules = afterSchedules.slice(beforeSchedules.length);
       }
 
-      const driverId = context.params.driverId;
       const driverSnap = await admin.firestore().collection("users").doc(driverId).get();
       const driverName = (driverSnap.data()?.displayName || "Driver").trim();
 
@@ -3006,4 +3037,124 @@ exports.consumeRecoveryCode = callable.onCall(async (data) => {
   }
   await ref.delete();
   return { token };
+});
+
+// --- Bukti struk publik (profil.html?bukti=) — TTL 6 hari, anti pemalsuan PDF ---
+const PUBLIC_RECEIPT_ORIGINS = [
+  "https://syafiul-traka.web.app",
+  "https://syafiul-traka.firebaseapp.com",
+  "http://localhost:5000",
+  "http://127.0.0.1:5000",
+];
+
+function setCorsPublicReceipt(req, res) {
+  const origin = (req.headers.origin || "").toString();
+  if (PUBLIC_RECEIPT_ORIGINS.includes(origin)) {
+    res.set("Access-Control-Allow-Origin", origin);
+  } else {
+    res.set("Access-Control-Allow-Origin", "https://syafiul-traka.web.app");
+  }
+  res.set("Vary", "Origin");
+  res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+}
+
+/** Verifikasi token tanpa login (dipanggil dari hosting profil.html). */
+exports.getPublicReceiptProof = functions.https.onRequest(async (req, res) => {
+  setCorsPublicReceipt(req, res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "GET") {
+    res.status(405).json({ status: "method_not_allowed" });
+    return;
+  }
+  const token = (req.query.token || req.query.bukti || "").toString().trim();
+  if (!token || token.length < 48) {
+    res.status(200).json({ status: "invalid" });
+    return;
+  }
+  try {
+    const doc = await admin
+      .firestore()
+      .collection(publicReceiptProof.COLLECTION)
+      .doc(token)
+      .get();
+    if (!doc.exists) {
+      res.status(200).json({ status: "not_issued" });
+      return;
+    }
+    const d = doc.data();
+    const exp = d.expiresAt?.toMillis?.() || 0;
+    if (Date.now() > exp) {
+      res.status(200).json({
+        status: "expired",
+        message:
+          "Bukti ini sudah lewat masa berlaku (6 hari sejak diterbitkan). Untuk keperluan resmi, hubungi admin Traka melalui kanal resmi aplikasi atau email support.",
+      });
+      return;
+    }
+    res.status(200).json({
+      status: "ok",
+      data: publicReceiptProof.sanitizeForPublic(d),
+    });
+  } catch (e) {
+    console.error("getPublicReceiptProof", e);
+    res.status(500).json({ status: "error" });
+  }
+});
+
+/** Penumpang/penerima: terbitkan token bukti untuk order selesai (sebelum PDF / QR). */
+exports.issuePublicReceiptProof = callable.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError("unauthenticated", "Login diperlukan.");
+  }
+  const orderId = (data?.orderId || "").toString().trim();
+  if (!orderId) {
+    throw new functions.https.HttpsError("invalid-argument", "orderId wajib.");
+  }
+  const uid = context.auth.uid;
+  const orderSnap = await admin.firestore().collection("orders").doc(orderId).get();
+  if (!orderSnap.exists) {
+    throw new functions.https.HttpsError("not-found", "Pesanan tidak ditemukan.");
+  }
+  const o = orderSnap.data();
+  if (o.status !== "completed") {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Hanya pesanan selesai yang bisa diterbitkan bukti."
+    );
+  }
+  const isPassengerSide = publicReceiptProof.isParticipant(uid, o);
+  const isDriverSide = publicReceiptProof.isDriver(uid, o);
+  if (!isPassengerSide && !isDriverSide) {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "Anda bukan pihak pada pesanan ini."
+    );
+  }
+  const orderFields = {
+    kind: isDriverSide ? "driver_order" : "passenger_order",
+    orderNumber: o.orderNumber || null,
+    orderType: o.orderType || "travel",
+    completedAt: o.completedAt || null,
+    originText: (o.originText || "").slice(0, 500),
+    destText: (o.destText || "").slice(0, 500),
+    agreedPriceRupiah: o.agreedPrice != null ? Number(o.agreedPrice) : null,
+    tripFareRupiah: o.tripFareRupiah != null ? Number(o.tripFareRupiah) : null,
+    tripBarangFareRupiah:
+      o.tripBarangFareRupiah != null ? Number(o.tripBarangFareRupiah) : null,
+  };
+  const db = admin.firestore();
+  const { token, reused } = await publicReceiptProof.findOrCreateProof(
+    db,
+    orderId,
+    orderFields
+  );
+  return {
+    token,
+    reused,
+    verifyUrl: `https://syafiul-traka.web.app/profil.html?bukti=${encodeURIComponent(token)}`,
+  };
 });

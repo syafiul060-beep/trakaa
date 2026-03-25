@@ -8,7 +8,7 @@ import 'geocoding_service.dart';
 import 'package:uuid/uuid.dart';
 
 import 'app_config_service.dart';
-import 'driver_schedule_service.dart';
+import 'schedule_id_util.dart';
 import 'ferry_distance_service.dart';
 import 'lacak_barang_service.dart';
 import 'order_number_service.dart';
@@ -632,6 +632,92 @@ class OrderService {
     await ref.update(u);
   }
 
+  /// Semua `scheduleId` pada order driver ini yang **belum** selesai/dibatalkan.
+  /// Satu query (bukan N per jadwal) agar `cleanupPastSchedules` tidak menggantung/timeout.
+  /// Pakai [whereIn] status aktif (bukan `whereNotIn`) agar cocok dengan indeks `driverUid`+`status`.
+  static Future<Set<String>> activeScheduleIdsForDriverOrders(String driverUid) async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection(_collectionOrders)
+          .where(_fieldDriverUid, isEqualTo: driverUid)
+          .where(_fieldStatus, whereIn: [
+            statusPendingAgreement,
+            statusAgreed,
+            statusPickedUp,
+            statusPendingReceiver,
+          ])
+          .get()
+          .timeout(const Duration(seconds: 25));
+      final out = <String>{};
+      for (final doc in snap.docs) {
+        final sid = doc.data()['scheduleId'] as String?;
+        if (sid != null && sid.isNotEmpty) {
+          out.add(sid);
+        }
+      }
+      return out;
+    } catch (e, st) {
+      logError('OrderService.activeScheduleIdsForDriverOrders', e, st);
+      rethrow;
+    }
+  }
+
+  /// True jika [scheduleId]/legacy masih dipakai order aktif pada salah satu id di [activeIds].
+  static bool scheduledOrderMatchesActiveIds(
+    Set<String> activeIds,
+    String scheduleId,
+    String legacyScheduleId,
+  ) {
+    if (activeIds.isEmpty) return false;
+    if (activeIds.contains(scheduleId) || activeIds.contains(legacyScheduleId)) {
+      return true;
+    }
+    final legNew = ScheduleIdUtil.toLegacy(scheduleId);
+    final legLeg = ScheduleIdUtil.toLegacy(legacyScheduleId);
+    if (activeIds.contains(legNew)) return true;
+    for (final a in activeIds) {
+      final legA = ScheduleIdUtil.toLegacy(a);
+      if (legA == legNew || legA == legLeg) return true;
+    }
+    return false;
+  }
+
+  /// True jika masih ada order (travel atau kirim barang) dengan [scheduleId] ini yang **belum**
+  /// [statusCompleted] / [statusCancelled] — dipakai agar jadwal lewat tidak dihapus otomatis
+  /// selama masih ada pesanan aktif.
+  static Future<bool> scheduleHasActiveScheduledOrders(
+    String scheduleId, {
+    String? legacyScheduleId,
+  }) async {
+    try {
+      if (await _scheduleIdHasNonTerminalOrders(scheduleId)) return true;
+      if (legacyScheduleId != null &&
+          legacyScheduleId.isNotEmpty &&
+          legacyScheduleId != scheduleId) {
+        if (await _scheduleIdHasNonTerminalOrders(legacyScheduleId)) return true;
+      }
+      return false;
+    } catch (e, st) {
+      logError('OrderService.scheduleHasActiveScheduledOrders', e, st);
+      return true;
+    }
+  }
+
+  static Future<bool> _scheduleIdHasNonTerminalOrders(String scheduleId) async {
+    final snap = await FirebaseFirestore.instance
+        .collection(_collectionOrders)
+        .where('scheduleId', isEqualTo: scheduleId)
+        .get()
+        .timeout(const Duration(seconds: 20));
+    for (final doc in snap.docs) {
+      final s = doc.data()[_fieldStatus] as String?;
+      if (s != statusCompleted && s != statusCancelled) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Jumlah penumpang dan jumlah kirim barang yang sudah dipesan untuk jadwal ini (status agreed/picked_up).
   /// [kargoCount]: hanya barangCategory == 'kargo' (barang besar, mengurangi kapasitas). Dokumen tidak.
   /// [legacyScheduleId]: format lama (tanpa hash) untuk backward compat dengan order yang sudah ada.
@@ -806,13 +892,13 @@ class OrderService {
   static Future<List<OrderModel>> getDriverScheduledOrdersWithAgreed() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return [];
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection(_collectionOrders)
-          .where(_fieldDriverUid, isEqualTo: user.uid)
-          .where(_fieldStatus, whereIn: [statusAgreed, statusPickedUp])
-          .limit(50)
-          .get();
+    final query = FirebaseFirestore.instance
+        .collection(_collectionOrders)
+        .where(_fieldDriverUid, isEqualTo: user.uid)
+        .where(_fieldStatus, whereIn: [statusAgreed, statusPickedUp])
+        .limit(50);
+
+    List<OrderModel> parseScheduled(QuerySnapshot<Map<String, dynamic>> snap) {
       final orders = snap.docs
           .map((d) => OrderModel.fromFirestore(d))
           .where((o) => o.scheduleId != null && o.scheduleId!.isNotEmpty)
@@ -823,6 +909,33 @@ class OrderService {
         return ad.compareTo(bd);
       });
       return orders;
+    }
+
+    try {
+      // 1) Cache dulu: jika sudah ada pesanan terjadwal di cache, langsung pakai — tidak nunggu server
+      // (Source.server saja sering 10–60+ d setelah simpan jadwal / antrean Firestore penuh).
+      try {
+        final cacheSnap = await query
+            .get(const GetOptions(source: Source.cache))
+            .timeout(const Duration(seconds: 8));
+        final fromCache = parseScheduled(cacheSnap);
+        if (fromCache.isNotEmpty) {
+          return fromCache;
+        }
+      } on TimeoutException {
+        // cache SDK bisa menggantung — lanjut ke serverAndCache
+      } catch (_) {
+        // belum pernah di-query / cache miss — lanjut ke jaringan
+      }
+
+      // 2) Cache kosong untuk query ini: serverAndCache + plafon waktu pendek.
+      // Kalau lewat batas, anggap tidak ada → buka sheet pilih rute (trade-off vs tunggu abadi).
+      final snap = await query
+          .get(const GetOptions(source: Source.serverAndCache))
+          .timeout(const Duration(seconds: 10));
+      return parseScheduled(snap);
+    } on TimeoutException {
+      return [];
     } catch (e, st) {
       logError('OrderService.getDriverScheduledOrdersWithAgreed', e, st);
       return [];

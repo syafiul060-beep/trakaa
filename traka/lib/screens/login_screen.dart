@@ -1351,6 +1351,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               textCapitalization: TextCapitalization.characters,
               autocorrect: false,
+              enableSuggestions: false,
             ),
           ],
         ),
@@ -1860,6 +1861,8 @@ class _UnderlineTextField extends StatelessWidget {
       controller: controller,
       obscureText: obscureText,
       keyboardType: keyboardType,
+      autocorrect: false,
+      enableSuggestions: false,
       validator: validator,
       decoration: InputDecoration(
         filled: true,

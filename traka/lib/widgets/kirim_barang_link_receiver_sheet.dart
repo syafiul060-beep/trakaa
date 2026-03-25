@@ -69,14 +69,12 @@ class _KirimBarangLinkReceiverSheetState
   bool _loading = false;
   Map<String, dynamic>? _receiver; // {uid, displayName, photoUrl}
   String? _notFound;
-  List<Map<String, dynamic>> _recentReceivers = [];
   String? _estimasiLacakBarang; // "Rp X" atau "Rp 10.000 - Rp 25.000"
   String _travelFarePaidBy = OrderModel.travelFarePaidBySender;
 
   @override
   void initState() {
     super.initState();
-    _loadRecentReceivers();
     _loadEstimasiLacakBarang();
   }
 
@@ -105,24 +103,10 @@ class _KirimBarangLinkReceiverSheetState
     }
   }
 
-  Future<void> _loadRecentReceivers() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    final list = await OrderService.getRecentReceivers(user.uid);
-    if (mounted) setState(() => _recentReceivers = list);
-  }
-
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
-  }
-
-  void _selectReceiver(Map<String, dynamic> receiver) {
-    setState(() {
-      _receiver = receiver;
-      _notFound = null;
-    });
   }
 
   Future<void> _cari() async {
@@ -360,85 +344,11 @@ class _KirimBarangLinkReceiverSheetState
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
-              if (_recentReceivers.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Riwayat penerima',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 56,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _recentReceivers.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (context, i) {
-                      final r = _recentReceivers[i];
-                      final name = (r['displayName'] as String?) ?? 'Penerima';
-                      final photoUrl = r['photoUrl'] as String?;
-                      final selected = _receiver?['uid'] == r['uid'];
-                      return Material(
-                        color: selected
-                            ? Theme.of(context).colorScheme.primaryContainer
-                            : Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
-                        child: InkWell(
-                          onTap: () => _selectReceiver(r),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                CircleAvatar(
-                                  radius: 20,
-                                  backgroundColor:
-                                      Theme.of(context).colorScheme.surface,
-                                  backgroundImage:
-                                      photoUrl != null && photoUrl.isNotEmpty
-                                          ? CachedNetworkImageProvider(
-                                              photoUrl)
-                                          : null,
-                                  child: photoUrl == null || photoUrl.isEmpty
-                                      ? Icon(Icons.person,
-                                          size: 20,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant)
-                                      : null,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  name,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                    color:
-                                        Theme.of(context).colorScheme.onSurface,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
               const SizedBox(height: 16),
               TextField(
                 controller: _controller,
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: InputDecoration(
                   labelText: 'No. telepon',
                   border: const OutlineInputBorder(),

@@ -18,6 +18,7 @@ import '../services/chat_service.dart';
 import '../services/geocoding_service.dart';
 import '../services/location_service.dart';
 import '../services/order_service.dart';
+import '../services/order_receipt_pdf_flow.dart';
 import '../services/rating_service.dart';
 import '../services/violation_service.dart';
 import '../services/route_notification_service.dart';
@@ -59,6 +60,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
   int _lacakDriverFeeRupiah = 3000;
   String _lacakBarangTooltipRange = 'Rp 10.000 - Rp 25.000';
   bool _isLacakExempt = false;
+  String? _loadingReceiptPdfOrderId;
 
   static String _formatRupiah(int n) =>
       n.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
@@ -961,7 +963,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
     );
   }
 
-  /// Kartu order di tab Riwayat (status completed): hanya info, tanpa tombol aksi.
+  /// Kartu order di tab Riwayat (status completed): info + opsi bukti PDF.
   Widget _buildRiwayatOrderCard(OrderModel order) {
     final info = _driverInfoCache[order.driverUid];
     final driverName = (info?['displayName'] as String?)?.isNotEmpty == true
@@ -1202,6 +1204,38 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
+                      if (OrderReceiptPdfFlow.canPassengerIssue(order)) ...[
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: OutlinedButton.icon(
+                            onPressed: _loadingReceiptPdfOrderId == order.id
+                                ? null
+                                : () => OrderReceiptPdfFlow.issueAsPassenger(
+                                      host: this,
+                                      order: order,
+                                      setLoadingOrderId: (id) => setState(
+                                        () => _loadingReceiptPdfOrderId = id,
+                                      ),
+                                    ),
+                            icon: _loadingReceiptPdfOrderId == order.id
+                                ? SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary,
+                                    ),
+                                  )
+                                : const Icon(Icons.picture_as_pdf_outlined),
+                            label: Text(
+                              TrakaL10n.of(context).onlineReceiptAndPdfButton,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1767,6 +1801,8 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                 const SizedBox(height: 16),
                 TextField(
                   controller: reviewController,
+                  autocorrect: false,
+                  enableSuggestions: false,
                   decoration: InputDecoration(
                     labelText: 'Ulasan (opsional)',
                     hintText: 'Tulis pengalaman Anda...',

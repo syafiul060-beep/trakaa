@@ -30,7 +30,7 @@ Ikuti **berurutan**. Jangan loncat ke “Tahap 2 selesai” hanya karena baselin
 
 Contoh aman untuk percobaan pertama:
 
-- Naikkan `passengerMapInterpolationIntervalMs` dari **80** → **100** di `lib/config/app_constants.dart` (hemat sedikit `setState`/frame di peta penumpang), **atau**
+- Naikkan `passengerMapInterpolationIntervalMs` sedikit (mis. **96** → **100**) di `lib/config/app_constants.dart` (hemat sedikit `setState`/frame di peta penumpang), **atau**
 - Tinjau satu layar yang punya **listener** Firestore lebar → sempitkan query (PR terpisah, butuh baca kode).
 
 ### Langkah 3 — Uji lokal
@@ -68,7 +68,7 @@ Centang [`Gate Tahap 2 selesai`](#gate-tahap-2-selesai) di bawah. Baru lanjut **
 
 | Area | File / konstanta | Keterangan |
 |------|-------------------|------------|
-| Interpolasi marker multi-driver (penumpang) | `lib/config/app_constants.dart` → `passengerMapInterpolationIntervalMs` (default **80** ms) | Trade-off UX vs CPU; naikkan hanya setelah uji (mis. 100–120 ms). |
+| Interpolasi marker multi-driver (penumpang) | `lib/config/app_constants.dart` → `passengerMapInterpolationIntervalMs` (default **100** ms usai Tahap 2 ini) | Trade-off UX vs CPU; naikkan bertahap hanya setelah uji (mis. hingga 120 ms). |
 | Bearing ikon mobil | `passengerMapBearingSmoothAlpha` | Smoothing heading, bukan throttle waktu. |
 | Maks driver di peta pencarian | `maxDriversOnPassengerSearchMap` (**50**) | Batas atas marker setelah filter rute. |
 | Timer interpolasi peta | `lib/screens/penumpang_screen.dart` | `Timer.periodic` memakai `passengerMapInterpolationIntervalMs`. |
@@ -84,7 +84,7 @@ Rujukan UX/performa UI: [`PERBAIKAN_UI_UX_PERFORMA_2025-03.md`](PERBAIKAN_UI_UX_
 
 Lakukan **satu** perubahan dominan per rilis kecil, lalu ukur.
 
-1. **Peta penumpang:** sesuaikan `passengerMapInterpolationIntervalMs` (mis. 80 → 100) **hanya** jika Tahap 1 menunjukkan CPU/frame time tinggi di perangkat lemah — build uji internal dulu.
+1. **Peta penumpang:** sesuaikan `passengerMapInterpolationIntervalMs` (mis. 96 → 100, lalu uji) **hanya** jika sudah baseline metrik / frame — build uji internal dulu.
 2. **Marker / viewport:** pastikan filter jarak + `maxDriversOnPassengerSearchMap` tetap relevan; jangan naikkan batas tanpa alasan (lebih banyak marker = lebih berat).
 3. **Firestore:** hindari **listener** pada koleksi besar tanpa `where` + batas; untuk daftar order aktif, scope ke `userId` / `orderId` yang relevan (tinjau per layar).
 4. **Driver → API:** dokumentasi tier update lokasi / proximity: [`NOTIFIKASI_JARAK_PENUMPANG_DRIVER.md`](NOTIFIKASI_JARAK_PENUMPANG_DRIVER.md) (jika ada); selaraskan dengan `OrderService` / policy jarak agar tidak menulis Firestore lebih sering dari kebutuhan.

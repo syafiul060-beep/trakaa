@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'verification_service.dart';
@@ -65,6 +67,26 @@ Stream<UserShellRebuild> _distinctVerificationShellStream(
   required bool Function(Map<String, dynamic> data) isVerified,
 }) async* {
   String? lastFp;
+  // Satu baca cepat agar StreamBuilder driver/penumpang tidak menunggu event pertama
+  // `snapshots()` saat klien Firestore sibuk (mis. setelah tulis jadwal besar).
+  try {
+    final initial = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .get(const GetOptions(source: Source.serverAndCache))
+        .timeout(const Duration(seconds: 10));
+    final data = initial.data() ?? <String, dynamic>{};
+    final fp = fingerprint(data);
+    lastFp = fp;
+    yield UserShellRebuild(
+      isVerified: isVerified(data),
+      adminVerificationBlocksFeatures:
+          VerificationService.isAdminVerificationBlockingFeatures(data),
+    );
+  } on TimeoutException {
+    // Lanjut ke snapshots — tetap ada data nanti.
+  } catch (_) {}
+
   await for (final snap
       in FirebaseFirestore.instance.collection('users').doc(uid).snapshots()) {
     final data = snap.data() ?? <String, dynamic>{};

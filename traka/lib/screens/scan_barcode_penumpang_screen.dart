@@ -90,6 +90,8 @@ class _ScanBarcodePenumpangScreenState
             const SizedBox(height: 16),
             TextField(
               controller: _ferryController,
+              autocorrect: false,
+              enableSuggestions: false,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 labelText: 'Jarak kapal (km)',

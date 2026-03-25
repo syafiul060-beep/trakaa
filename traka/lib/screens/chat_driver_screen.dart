@@ -9,6 +9,7 @@ import 'package:just_audio/just_audio.dart';
 import '../models/chat_message_model.dart';
 import '../models/order_model.dart';
 import '../widgets/chat_message_content.dart';
+import '../widgets/kirim_barang_driver_ongkos_banner.dart';
 import '../widgets/full_screen_image_viewer.dart';
 import '../services/audio_recorder_service.dart';
 import '../services/chat_badge_service.dart';
@@ -325,6 +326,10 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                       ),
                     ),
                   ),
+                  if (order.isKirimBarang) ...[
+                    const SizedBox(height: 8),
+                    KirimBarangDriverOngkosBanner(order: order, dense: true),
+                  ],
                   const SizedBox(height: 8),
                   // Tujuan awal (hanya kecamatan & kabupaten)
                   if (order.originText.isNotEmpty) ...[
@@ -1242,6 +1247,11 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (_order!.isKirimBarang)
+                      KirimBarangDriverOngkosBanner(
+                        order: _order!,
+                        dense: true,
+                      ),
                     Expanded(
                       child: StreamBuilder<List<ChatMessageModel>>(
                         stream: _messagesStream!,
@@ -1510,6 +1520,8 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                               controller: _textController,
                               focusNode: _focusNode,
                               readOnly: _mustPayContribution,
+                              autocorrect: false,
+                              enableSuggestions: false,
                               onChanged: (_) => setState(() {}),
                               decoration: InputDecoration(
                                 hintText: _mustPayContribution

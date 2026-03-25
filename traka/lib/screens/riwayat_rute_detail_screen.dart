@@ -5,6 +5,7 @@ import '../models/order_model.dart';
 import '../services/app_config_service.dart';
 import '../services/chat_service.dart';
 import '../services/driver_schedule_service.dart';
+import '../services/order_receipt_pdf_flow.dart';
 import '../services/order_service.dart';
 import '../widgets/traka_l10n_scope.dart';
 import 'driver_earnings_screen.dart';
@@ -44,6 +45,7 @@ class RiwayatRuteDetailScreen extends StatefulWidget {
 
 class _RiwayatRuteDetailScreenState extends State<RiwayatRuteDetailScreen> {
   final Map<String, Map<String, dynamic>> _passengerInfoCache = {};
+  String? _loadingReceiptPdfOrderId;
 
   Future<void> _loadPassengerInfoIfNeeded(List<OrderModel> orders) async {
     final uids = orders
@@ -649,67 +651,105 @@ class _RiwayatRuteDetailScreenState extends State<RiwayatRuteDetailScreen> {
             : info?['photoUrl'] as String?;
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-              backgroundImage:
-                  (passengerPhotoUrl != null && passengerPhotoUrl.isNotEmpty)
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
+                  backgroundImage: (passengerPhotoUrl != null &&
+                          passengerPhotoUrl.isNotEmpty)
                       ? CachedNetworkImageProvider(passengerPhotoUrl)
                       : null,
-              child: (passengerPhotoUrl == null || passengerPhotoUrl.isEmpty)
-                  ? Icon(Icons.person, color: Theme.of(context).colorScheme.onSurfaceVariant)
-                  : null,
-            ),
-            title: Text(
-              passengerName,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (order.orderNumber != null)
-                              Text(
-                                'No. Pesanan: ${order.orderNumber}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            Text(
-                              '${order.originText} → ${order.destText}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (order.tripDistanceKm != null)
-                              Text(
-                                'Jarak: ${order.tripDistanceKm!.toStringAsFixed(1)} km',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            _buildHargaPesanan(order),
-                            ..._buildKontribusiRincian(order),
-                            Text(
-                              order.orderType == OrderModel.typeKirimBarang
-                                  ? 'Kirim barang'
-                                  : (order.totalPenumpang == 1
-                                      ? 'Penumpang sendiri'
-                                      : 'Penumpang (${order.totalPenumpang} orang)'),
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
+                  child: (passengerPhotoUrl == null || passengerPhotoUrl.isEmpty)
+                      ? Icon(Icons.person,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant)
+                      : null,
+                ),
+                title: Text(
+                  passengerName,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (order.orderNumber != null)
+                      Text(
+                        'No. Pesanan: ${order.orderNumber}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
-                    );
+                    Text(
+                      '${order.originText} → ${order.destText}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (order.tripDistanceKm != null)
+                      Text(
+                        'Jarak: ${order.tripDistanceKm!.toStringAsFixed(1)} km',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    _buildHargaPesanan(order),
+                    ..._buildKontribusiRincian(order),
+                    Text(
+                      order.orderType == OrderModel.typeKirimBarang
+                          ? 'Kirim barang'
+                          : (order.totalPenumpang == 1
+                              ? 'Penumpang sendiri'
+                              : 'Penumpang (${order.totalPenumpang} orang)'),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (OrderReceiptPdfFlow.canDriverIssue(order))
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: _loadingReceiptPdfOrderId == order.id
+                          ? null
+                          : () => OrderReceiptPdfFlow.issueAsDriver(
+                                host: this,
+                                order: order,
+                                setLoadingOrderId: (id) => setState(
+                                  () => _loadingReceiptPdfOrderId = id,
+                                ),
+                              ),
+                      icon: _loadingReceiptPdfOrderId == order.id
+                          ? SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            )
+                          : const Icon(Icons.picture_as_pdf_outlined),
+                      label: Text(
+                        TrakaL10n.of(context).onlineReceiptAndPdfButton,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
                   },
     );
   }

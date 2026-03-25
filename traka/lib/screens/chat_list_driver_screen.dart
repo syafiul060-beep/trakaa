@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +9,7 @@ import '../widgets/traka_l10n_scope.dart';
 import '../models/order_model.dart';
 import '../services/chat_service.dart';
 import '../services/order_service.dart';
+import '../services/hybrid_foreground_recovery.dart';
 import 'chat_driver_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -33,20 +36,52 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
   // Cache untuk passenger info (untuk menghindari fetch berulang)
   final Map<String, Map<String, dynamic>> _passengerInfoCache = {};
 
-  // Stream di-cache agar tidak re-subscribe tiap rebuild (cegah loading berulang)
-  late final Stream<List<OrderModel>> _ordersStream;
+  /// Stream bisa dibuat ulang (tombol muat ulang) bila snapshot Firestore tertahan setelah aktivitas berat di tab lain.
+  late Stream<List<OrderModel>> _ordersStream;
+  int _ordersStreamGeneration = 0;
 
-  @override
-  void initState() {
-    super.initState();
+  void _bindOrdersStream() {
     final user = FirebaseAuth.instance.currentUser;
     _ordersStream = user != null
         ? OrderService.streamOrdersForDriver(user.uid)
         : Stream.value(<OrderModel>[]);
   }
 
+  Future<void> _retryOrdersStream() async {
+    if (!mounted) return;
+    setState(() {
+      _ordersStreamGeneration++;
+      _bindOrdersStream();
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+
+  void _onHybridForegroundRecoveryTick() {
+    final fromChatTab = HybridForegroundRecovery.takeChatTabSoftResyncPending();
+    final longBackground = HybridForegroundRecovery.lastBackgroundDuration >=
+        const Duration(seconds: 5);
+    if (!fromChatTab && !longBackground) {
+      return;
+    }
+    unawaited(Future<void>.delayed(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      setState(() {
+        _ordersStreamGeneration++;
+        _bindOrdersStream();
+      });
+    }));
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    HybridForegroundRecovery.tick.addListener(_onHybridForegroundRecoveryTick);
+    _bindOrdersStream();
+  }
+
   @override
   void dispose() {
+    HybridForegroundRecovery.tick.removeListener(_onHybridForegroundRecoveryTick);
     _scrollController.dispose();
     super.dispose();
   }
@@ -283,11 +318,38 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
             : null,
       ),
       body: SafeArea(
-        child: StreamBuilder<List<OrderModel>>(
-          stream: _ordersStream,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+        child: KeyedSubtree(
+          key: ValueKey<int>(_ordersStreamGeneration),
+          child: StreamBuilder<List<OrderModel>>(
+            stream: _ordersStream,
+            // Hindari spinner abadi bila snapshot pertama Firestore tertahan
+            // (mis. setelah aktivitas berat di tab lain); data asli tetap mengganti [].
+            initialData: const <OrderModel>[],
+            builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Memuat daftar chat…',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton.icon(
+                      onPressed: () => unawaited(_retryOrdersStream()),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Muat ulang'),
+                    ),
+                  ],
+                ),
+              );
             }
 
             if (snapshot.hasError) {
@@ -379,10 +441,7 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
             }
 
             return RefreshIndicator(
-              onRefresh: () async {
-                // Stream akan otomatis refresh
-                setState(() {});
-              },
+              onRefresh: _retryOrdersStream,
               child: ListView.separated(
                 controller: _scrollController,
                 reverse: false,
@@ -603,6 +662,7 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
               ),
             );
           },
+        ),
         ),
       ),
     );

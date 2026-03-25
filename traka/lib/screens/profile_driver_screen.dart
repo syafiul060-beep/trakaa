@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -26,6 +27,7 @@ import '../services/auth_redirect_state.dart';
 import '../services/image_compression_service.dart';
 import '../services/low_ram_warning_service.dart';
 import '../services/lite_mode_service.dart';
+import '../services/hybrid_foreground_recovery.dart';
 import '../services/driver_status_service.dart';
 import '../services/voice_call_incoming_service.dart';
 import '../theme/app_theme.dart';
@@ -73,6 +75,12 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
   final _firestore = FirebaseFirestore.instance;
   DocumentSnapshot<Map<String, dynamic>>? _userDoc;
   bool _loading = true;
+  /// True jika profil masih "Memuat" terlalu lama — tampilkan aksi coba lagi (hindari layar putih shimmer).
+  bool _profileLoadIncomplete = false;
+  Timer? _profileLoadSafetyTimer;
+  /// Muat ulang dari banner: jangan set [_loading] (hindari seluruh body diganti shimmer / "layar putih").
+  bool _profileRefreshing = false;
+  Timer? _profileReloadSafetyTimer;
   bool _isCheckingFace = false;
   bool _isOcrLoading = false;
   bool _isLowRamDevice = false;
@@ -96,26 +104,95 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
   @override
   void initState() {
     super.initState();
+    _profileLoadSafetyTimer = Timer(const Duration(seconds: 20), () {
+      if (!mounted) return;
+      if (_loading) {
+        setState(() {
+          _loading = false;
+          _profileLoadIncomplete = true;
+        });
+      }
+    });
     _loadUser();
   }
 
   @override
   void dispose() {
+    _profileLoadSafetyTimer?.cancel();
+    _profileReloadSafetyTimer?.cancel();
     _nameController.dispose();
     super.dispose();
   }
 
+  /// Tombol "Muat ulang" di banner: jangan aktifkan loading layar penuh (sering terasa putih + loop setelah antrean Firestore).
+  Future<void> _onProfileBannerReload() async {
+    _profileReloadSafetyTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _profileLoadIncomplete = false;
+      _profileRefreshing = true;
+    });
+    _profileReloadSafetyTimer = Timer(const Duration(seconds: 32), () {
+      if (!mounted) return;
+      if (_profileRefreshing) {
+        setState(() {
+          _profileRefreshing = false;
+          _profileLoadIncomplete = true;
+        });
+      }
+    });
+    try {
+      await _loadUser(forceFromServer: true);
+    } finally {
+      _profileReloadSafetyTimer?.cancel();
+      if (mounted) {
+        setState(() => _profileRefreshing = false);
+      }
+    }
+  }
+
   Future<void> _loadUser({bool forceFromServer = false}) async {
     final user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    // Setelah simpan jadwal/order, antrean ke server bisa panjang — beri sedikit lebih lama saat paksa server.
+    final primaryTimeout = forceFromServer
+        ? const Duration(seconds: 22)
+        : const Duration(seconds: 12);
+    final cacheTimeout = forceFromServer
+        ? const Duration(seconds: 10)
+        : const Duration(seconds: 6);
     try {
-      final doc = await _firestore.collection('users').doc(user.uid).get(
-        forceFromServer ? const GetOptions(source: Source.server) : const GetOptions(),
-      );
+      DocumentSnapshot<Map<String, dynamic>> doc;
+      try {
+        doc = await _firestore.collection('users').doc(user.uid).get(
+          forceFromServer
+              ? const GetOptions(source: Source.server)
+              : const GetOptions(source: Source.serverAndCache),
+        ).timeout(primaryTimeout);
+      } on TimeoutException {
+        // Firestore bisa mengantre panjang setelah operasi berat — jangan biarkan "Memuat" abadi.
+        try {
+          doc = await _firestore.collection('users').doc(user.uid).get(
+            const GetOptions(source: Source.cache),
+          ).timeout(cacheTimeout);
+        } on TimeoutException {
+          if (mounted) {
+            setState(() {
+              _loading = false;
+              _profileLoadIncomplete = true;
+            });
+          }
+          return;
+        }
+      }
       if (mounted) {
         setState(() {
           _userDoc = doc;
           _loading = false;
+          _profileLoadIncomplete = false;
           if (doc.exists && doc.data() != null) {
             final d = doc.data()!;
             _nameController.text = (d['displayName'] as String?) ?? '';
@@ -123,7 +200,12 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _profileLoadIncomplete = true;
+        });
+      }
     }
   }
 
@@ -444,6 +526,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
             children: [
               TextField(
                 controller: oldC,
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: InputDecoration(
                   labelText: TrakaL10n.of(context).oldPassword,
                   border: const OutlineInputBorder(),
@@ -453,6 +537,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
               const SizedBox(height: 12),
               TextField(
                 controller: newC,
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: InputDecoration(
                   labelText: TrakaL10n.of(context).newPassword,
                   border: const OutlineInputBorder(),
@@ -462,6 +548,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
               const SizedBox(height: 12),
               TextField(
                 controller: confirmC,
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: InputDecoration(
                   labelText: TrakaL10n.of(context).confirmNewPassword,
                   border: const OutlineInputBorder(),
@@ -912,6 +1000,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                         const SizedBox(height: 16),
                         TextField(
                           controller: namaController,
+                          autocorrect: false,
+                          enableSuggestions: false,
                           decoration: InputDecoration(
                             labelText: 'Nama',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
@@ -921,6 +1011,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                         const SizedBox(height: 16),
                         TextField(
                           controller: simController,
+                          autocorrect: false,
+                          enableSuggestions: false,
                           decoration: InputDecoration(
                             labelText: 'Nomor SIM',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
@@ -1289,6 +1381,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                   TextField(
                     controller: noteController,
                     maxLines: 2,
+                    autocorrect: false,
+                    enableSuggestions: false,
                     decoration: InputDecoration(
                       labelText: l10n.vehicleChangeNoteOptional,
                       border: const OutlineInputBorder(),
@@ -1612,6 +1706,56 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (_profileLoadIncomplete)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Material(
+                            color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.35),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.cloud_off_outlined,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Profil tidak selesai dimuat (jaringan atau antrean simpan data). Ketuk Muat ulang.',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Theme.of(context).colorScheme.onSurface,
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                  ),
+                                  _profileRefreshing
+                                      ? Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                          ),
+                                          child: SizedBox(
+                                            width: 22,
+                                            height: 22,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                            ),
+                                          ),
+                                        )
+                                      : TextButton(
+                                          onPressed: _onProfileBannerReload,
+                                          child: const Text('Muat ulang'),
+                                        ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       if (_userData['adminVerificationPendingAt'] != null)
                         AdminVerificationBanner(
                           userData: _userData,
@@ -1882,6 +2026,27 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                         crossAxisSpacing: context.responsive.spacing(12),
                         childAspectRatio: 0.95,
                         children: [
+                          _buildMenuCard(
+                            title: TrakaL10n.of(context).locale == AppLocale.id
+                                ? 'Sinkronkan data'
+                                : 'Sync data',
+                            icon: Icons.sync,
+                            onTap: () {
+                              HybridForegroundRecovery.requestManualDriverSyncAll();
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    TrakaL10n.of(context).locale == AppLocale.id
+                                        ? 'Memperbarui jadwal, chat, dan data order…'
+                                        : 'Refreshing schedule, chat, and orders…',
+                                  ),
+                                  behavior: SnackBarBehavior.floating,
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                          ),
                           _buildMenuCard(
                             title: TrakaL10n.of(context).changePassword,
                             icon: Icons.lock_outline,

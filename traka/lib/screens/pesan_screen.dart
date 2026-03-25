@@ -405,8 +405,6 @@ class _PesanScreenState extends State<PesanScreen> {
     _resultPageController.jumpToPage(0);
     // Load jadwal dulu; riwayat pencarian di-background (tidak blocking)
     await _loadSchedulesForDate(selectedDate);
-    unawaited(RecentDestinationService.addForPesanSearch(origin.trim()));
-    unawaited(RecentDestinationService.addForPesanSearch(dest.trim()));
   }
 
   Future<void> _prefetchSchedulesForForm(
@@ -1056,7 +1054,6 @@ class _FormCariTravelState extends State<_FormCariTravel> {
   bool _showOrigin = false;
   List<Placemark> _destResults = [];
   bool _showDest = false;
-  List<RecentDestination> _recentSearches = [];
   Timer? _prefetchDebounce;
 
   @override
@@ -1065,13 +1062,7 @@ class _FormCariTravelState extends State<_FormCariTravel> {
     _originController = TextEditingController(text: widget.initialOrigin ?? '');
     _destController = TextEditingController(text: widget.initialDest ?? '');
     _pickedDate = widget.selectedDate;
-    _loadRecentSearches();
     _schedulePrefetch();
-  }
-
-  Future<void> _loadRecentSearches() async {
-    final list = await RecentDestinationService.getListForPesanSearch();
-    if (mounted) setState(() => _recentSearches = list);
   }
 
   void _schedulePrefetch() {
@@ -1308,50 +1299,6 @@ class _FormCariTravelState extends State<_FormCariTravel> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (_recentSearches.isNotEmpty) ...[
-                Text(
-                  'Riwayat cepat',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _recentSearches.take(5).map((r) {
-                    final colorScheme = Theme.of(context).colorScheme;
-                    return ActionChip(
-                      backgroundColor: colorScheme.surfaceContainerHighest,
-                      side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.5)),
-                      label: Text(
-                        r.text,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: colorScheme.onSurface,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      onPressed: () {
-                        if (_originController.text.trim().isEmpty) {
-                          _originController.text = r.text;
-                        } else if (_destController.text.trim().isEmpty) {
-                          _destController.text = r.text;
-                        } else {
-                          _destController.text = r.text;
-                        }
-                        setState(() {});
-                        _schedulePrefetch();
-                      },
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-              ],
               InkWell(
                 onTap: _pickDate,
                 borderRadius: BorderRadius.circular(8),
@@ -1442,6 +1389,8 @@ class _FormCariTravelState extends State<_FormCariTravel> {
                 ),
               TextField(
                 controller: _originController,
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: InputDecoration(
                   labelText: 'Awal tujuan',
                   hintText: 'Stasiun, Mall, Bandara, Rumah Sakit, Perumahan, Terminal, Pelabuhan, Alun-alun',
@@ -1522,6 +1471,8 @@ class _FormCariTravelState extends State<_FormCariTravel> {
                 ),
               TextField(
                 controller: _destController,
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: InputDecoration(
                   labelText: 'Tujuan travel',
                   hintText: 'Stasiun, Mall, Bandara, Rumah Sakit, Perumahan, Terminal, Pelabuhan, Alun-alun',
@@ -2242,33 +2193,12 @@ class _KirimBarangLinkReceiverSheetJadwalState
   bool _loading = false;
   Map<String, dynamic>? _receiver;
   String? _notFound;
-  List<Map<String, dynamic>> _recentReceivers = [];
   String _travelFarePaidBy = OrderModel.travelFarePaidBySender;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRecentReceivers();
-  }
-
-  Future<void> _loadRecentReceivers() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    final list = await OrderService.getRecentReceivers(user.uid);
-    if (mounted) setState(() => _recentReceivers = list);
-  }
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
-  }
-
-  void _selectReceiver(Map<String, dynamic> receiver) {
-    setState(() {
-      _receiver = receiver;
-      _notFound = null;
-    });
   }
 
   Future<void> _cari() async {
@@ -2482,74 +2412,11 @@ class _KirimBarangLinkReceiverSheetJadwalState
               'Masukkan no. telepon penerima (harus terdaftar di Traka). Penerima harus setuju agar pesanan masuk ke driver.',
               style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
-            if (_recentReceivers.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Text(
-                'Riwayat penerima',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 56,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _recentReceivers.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, i) {
-                    final r = _recentReceivers[i];
-                    final name = (r['displayName'] as String?) ?? 'Penerima';
-                    final photoUrl = r['photoUrl'] as String?;
-                    final selected = _receiver?['uid'] == r['uid'];
-                    return Material(
-                      color: selected
-                          ? Theme.of(context).colorScheme.primaryContainer
-                          : Theme.of(context).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
-                      child: InkWell(
-                        onTap: () => _selectReceiver(r),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              CircleAvatar(
-                                radius: 20,
-                                backgroundColor: Theme.of(context).colorScheme.surface,
-                                backgroundImage: photoUrl != null && photoUrl.isNotEmpty
-                                    ? CachedNetworkImageProvider(photoUrl)
-                                    : null,
-                                child: photoUrl == null || photoUrl.isEmpty
-                                    ? Icon(Icons.person, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant)
-                                    : null,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                name,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  color: Theme.of(context).colorScheme.onSurface,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
             const SizedBox(height: 16),
             TextField(
               controller: _controller,
+              autocorrect: false,
+              enableSuggestions: false,
               decoration: InputDecoration(
                 labelText: 'No. telepon',
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),

@@ -935,6 +935,8 @@ class _RegisterUnderlineField extends StatelessWidget {
       controller: controller,
       obscureText: obscureText,
       keyboardType: keyboardType,
+      autocorrect: false,
+      enableSuggestions: false,
       validator: validator,
       decoration: InputDecoration(
         hintText: hint,

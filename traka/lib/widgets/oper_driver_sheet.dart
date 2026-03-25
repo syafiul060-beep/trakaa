@@ -254,6 +254,8 @@ class _OperDriverSheetState extends State<_OperDriverSheet> {
                   Expanded(
                     child: TextField(
                       controller: _phoneController,
+                      autocorrect: false,
+                      enableSuggestions: false,
                       decoration: InputDecoration(
                         labelText: 'No. HP driver kedua',
                         hintText: '08123456789',

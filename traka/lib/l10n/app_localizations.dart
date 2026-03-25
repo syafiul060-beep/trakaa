@@ -884,6 +884,10 @@ class AppLocalizations {
   String get noRouteMatchSnackHintLine => locale == AppLocale.id
       ? 'Tujuan sudah memakai koridor lebih lebar (~25 km). Driver lain mungkin masih aktif dalam radius 40 km — coba Driver sekitar.'
       : 'Destination already uses a wider corridor (~25 km). Other drivers may still be active within 40 km — try Nearby drivers.';
+  /// Tambahan saat OD jarak jauh & hasil kosong (setelah matching memakai toleransi lebih longgar).
+  String get noRouteMatchLongTripExtraLine => locale == AppLocale.id
+      ? 'Travel jauh: pilih titik jemput/turun di dekat jalur utama trayek (provinsi). Pencarian juga menghitung driver yang sudah di depan di jalur. Aktifkan GPS akurat; «Pesan nanti» untuk jadwal.'
+      : 'Long-distance: place pickup/dropoff near main corridors. Search may include drivers already ahead on the route. Accurate GPS helps; Book later for scheduled trips.';
   /// Banner peta: mode sekitar (bukan hasil A→B).
   String get mapNearbyModeBannerHint => locale == AppLocale.id
       ? 'Menampilkan driver terdekat (bukan filter rute).'
@@ -904,6 +908,10 @@ class AppLocalizations {
       : 'Could not find destination address. Check spelling or pick a suggestion.';
   String get driverNearby => locale == AppLocale.id ? 'Driver sekitar' : 'Nearby drivers';
   String get driverNearbyRadius => locale == AppLocale.id ? 'Dalam 40 km' : 'Within 40 km';
+  /// Subjudul tombol Driver sekitar — [km] dari lokasi penumpang (bisa 40–85 tergantung travel jauh).
+  String driverNearbyRadiusKm(int km) => locale == AppLocale.id
+      ? 'Hingga $km km dari Anda'
+      : 'Up to $km km from you';
   String get pesanNanti => locale == AppLocale.id ? 'Pesan nanti' : 'Book later';
   String get tapDriverToSeeRouteAndBook => locale == AppLocale.id
       ? 'Tap driver untuk lihat rute dan pesan'
@@ -911,6 +919,9 @@ class AppLocalizations {
   String get noNearbyDrivers => locale == AppLocale.id
       ? 'Tidak ada driver aktif dalam 40 km. Coba cari dengan rute spesifik.'
       : 'No active drivers within 40 km. Try searching with a specific route.';
+  String noNearbyDriversWithinKm(int km) => locale == AppLocale.id
+      ? 'Tidak ada driver aktif dalam $km km. Coba rute spesifik atau nanti lagi.'
+      : 'No active drivers within $km km. Try a specific route or later.';
   /// Aksi snackbar setelah pencarian rute kosong: beralih ke mode driver sekitar.
   String get showNearbyDriversAction => locale == AppLocale.id
       ? 'Driver sekitar'
@@ -927,6 +938,9 @@ class AppLocalizations {
       ? 'Beberapa alternatif dari Google + koridor tujuan ~25 km dari jalan'
       : 'Several Google alternatives + ~25 km destination corridor from the road';
   String get checkingNearbyDrivers => locale == AppLocale.id ? 'Memeriksa driver dalam radius 40 km' : 'Checking drivers within 40 km';
+  String checkingNearbyDriversKm(int km) => locale == AppLocale.id
+      ? 'Memeriksa driver dalam radius $km km'
+      : 'Checking drivers within $km km';
   String get failedToCreateOrder => locale == AppLocale.id ? 'Gagal membuat pesanan. Silakan coba lagi.' : 'Failed to create order. Please try again.';
   String get failedToCreateOrderTryAgain => locale == AppLocale.id ? 'Gagal membuat pesanan. Coba lagi.' : 'Failed to create order. Try again.';
   /// Penumpang sudah punya kirim barang pending (belum sepakat / tunggu penerima) ke driver yang sama.
@@ -1059,6 +1073,28 @@ class AppLocalizations {
   String get pdfReportReadyHint => locale == AppLocale.id ? 'Lihat di aplikasi pembaca PDF atau bagikan ke aplikasi lain.' : 'Open in a PDF viewer or share to another app.';
   String get viewPdf => locale == AppLocale.id ? 'Lihat PDF' : 'View PDF';
   String failedToOpenPdf(String message) => locale == AppLocale.id ? 'Tidak dapat membuka PDF: $message' : 'Could not open PDF: $message';
+  String get onlineReceiptAndPdfButton => locale == AppLocale.id ? 'Bukti online & PDF' : 'Online receipt & PDF';
+  String get accountDataNotFound => locale == AppLocale.id ? 'Data akun tidak ditemukan.' : 'Account data not found.';
+  String get receiptAdminVerificationBlocking => locale == AppLocale.id
+      ? 'Beberapa fitur dibatasi sampai Anda mengirim data yang diminta.'
+      : 'Some features are restricted until you submit the requested data.';
+  String get receiptPassengerVerificationRequired => locale == AppLocale.id
+      ? 'Lengkapi verifikasi penumpang (wajah, KTP, nomor HP) untuk menerbitkan bukti.'
+      : 'Complete passenger verification (face, ID, phone) to issue a receipt.';
+  String get receiptDriverVerificationRequired => locale == AppLocale.id
+      ? 'Lengkapi verifikasi driver (wajah, kendaraan, SIM, nomor HP) untuk menerbitkan bukti.'
+      : 'Complete driver verification (face, vehicle, license, phone) to issue a receipt.';
+  String get receiptFaceReverifyRequiredSchedule => locale == AppLocale.id
+      ? 'Verifikasi wajah ulang diperlukan (setiap ±6 bulan).'
+      : 'Face re-verification is required (about every 6 months).';
+  String get receiptPdfShareSubjectPassenger => locale == AppLocale.id ? 'Struk Traka' : 'Traka receipt';
+  String get receiptPdfShareBodyPassenger => locale == AppLocale.id
+      ? 'Bukti perjalanan Traka — verifikasi lewat QR pada PDF.'
+      : 'Traka trip receipt — verify using the QR code in the PDF.';
+  String get receiptPdfShareSubjectDriver => locale == AppLocale.id ? 'Struk Traka (driver)' : 'Traka receipt (driver)';
+  String get receiptPdfShareBodyDriver => locale == AppLocale.id
+      ? 'Bukti perjalanan Traka (driver) — verifikasi lewat QR pada PDF.'
+      : 'Traka trip receipt (driver) — verify using the QR code in the PDF.';
   String get driverEarningsPdfButtonLabel => locale == AppLocale.id ? 'Laporan PDF' : 'PDF report';
   String get driverEarningsPdfMaking => locale == AppLocale.id ? 'Membuat PDF...' : 'Creating PDF...';
   String get failedToUploadPhoto => locale == AppLocale.id ? 'Gagal mengunggah foto' : 'Failed to upload photo';

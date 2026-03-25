@@ -111,12 +111,15 @@ class PenumpangQuickActionsRow extends StatelessWidget {
     required this.visible,
     required this.onDriverSekitarTap,
     required this.onPesanNantiTap,
+    required this.nearbyRadiusKm,
     this.driverSekitarLoading = false,
   });
 
   final bool visible;
   final VoidCallback onDriverSekitarTap;
   final VoidCallback onPesanNantiTap;
+  /// Radius «Driver sekitar» (km) — tampil di bawah tombol.
+  final int nearbyRadiusKm;
   final bool driverSekitarLoading;
 
   @override
@@ -142,7 +145,7 @@ class PenumpangQuickActionsRow extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                TrakaL10n.of(context).driverNearbyRadius,
+                TrakaL10n.of(context).driverNearbyRadiusKm(nearbyRadiusKm),
                 style: TextStyle(
                   fontSize: 11,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,

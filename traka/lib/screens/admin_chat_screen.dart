@@ -478,6 +478,8 @@ class _AdminChatScreenState extends State<AdminChatScreen> {
                     Expanded(
                       child: TextField(
                         controller: _textController,
+                        autocorrect: false,
+                        enableSuggestions: false,
                         decoration: InputDecoration(
                           hintText: 'Ketik pesan...',
                           filled: true,

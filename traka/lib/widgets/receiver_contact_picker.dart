@@ -175,6 +175,8 @@ class _ReceiverContactPickerSheetState extends State<_ReceiverContactPickerSheet
           const SizedBox(height: 12),
           TextField(
             controller: _searchController,
+            autocorrect: false,
+            enableSuggestions: false,
             decoration: InputDecoration(
               hintText: 'Cari nama...',
               prefixIcon: const Icon(Icons.search),

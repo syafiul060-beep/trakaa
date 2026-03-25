@@ -1,3 +1,8 @@
+# Node (tools / skrip lokal di root traka/, bukan Flutter pub)
+node_modules/
+/package.json
+/package-lock.json
+
 # Miscellaneous
 *.class
 *.log

@@ -44,6 +44,28 @@ class RouteUtils {
     return minDistance;
   }
 
+  /// True jika [a] dan [b] menggambar jalur yang sama (untuk menyaring duplikat
+  /// API vs polyline tersimpan). **Tidak** memakai jarak total trip — alternatif
+  /// dengan panjang mirip tetapi jalur beda tetap dianggap berbeda.
+  static bool polylinesLikelyDuplicate(
+    List<LatLng> a,
+    List<LatLng> b, {
+    int sampleCount = 14,
+    double withinMeters = 140,
+    double requiredFraction = 0.82,
+  }) {
+    if (a.length < 2 || b.length < 2) return false;
+    final n = sampleCount.clamp(4, 32);
+    var ok = 0;
+    for (var i = 0; i < n; i++) {
+      final idx =
+          ((i * (a.length - 1)) / math.max(1, n - 1)).round().clamp(0, a.length - 1);
+      final d = distanceToPolyline(a[idx], b);
+      if (d <= withinMeters) ok++;
+    }
+    return ok >= (n * requiredFraction).ceil();
+  }
+
   /// Proyeksi titik GPS ke polyline (snap to road).
   /// Returns (titik terdekat di jalan, segmentIndex, ratio dalam segmen 0..1).
   /// Jika polyline kosong, return (point, -1, 0).

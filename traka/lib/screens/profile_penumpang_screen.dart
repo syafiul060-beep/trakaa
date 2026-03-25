@@ -560,6 +560,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                         const SizedBox(height: 16),
                         TextField(
                           controller: nikController,
+                          autocorrect: false,
+                          enableSuggestions: false,
                           decoration: InputDecoration(
                             labelText: 'NIK',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
@@ -577,6 +579,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                         const SizedBox(height: 16),
                         TextField(
                           controller: namaController,
+                          autocorrect: false,
+                          enableSuggestions: false,
                           decoration: InputDecoration(
                             labelText: 'Nama sesuai KTP',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
@@ -960,6 +964,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
             children: [
               TextField(
                 controller: oldC,
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: InputDecoration(
                   labelText: TrakaL10n.of(context).oldPassword,
                   border: const OutlineInputBorder(),
@@ -969,6 +975,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
               const SizedBox(height: 12),
               TextField(
                 controller: newC,
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: InputDecoration(
                   labelText: TrakaL10n.of(context).newPassword,
                   border: const OutlineInputBorder(),
@@ -978,6 +986,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
               const SizedBox(height: 12),
               TextField(
                 controller: confirmC,
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: InputDecoration(
                   labelText: TrakaL10n.of(context).confirmNewPassword,
                   border: const OutlineInputBorder(),

@@ -4,7 +4,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../services/destination_autocomplete_service.dart';
 import '../services/geocoding_service.dart';
-import '../services/recent_destination_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/placemark_formatter.dart';
 import 'traka_l10n_scope.dart';
@@ -287,62 +286,12 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                       color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 4),
-                if (_destController.text.trim().isEmpty)
-                  FutureBuilder<List<RecentDestination>>(
-                    future: RecentDestinationService.getList(),
-                    builder: (context, snap) {
-                      final list = snap.data ?? [];
-                      if (list.isEmpty) return const SizedBox.shrink();
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Tujuan baru-baru ini',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color:
-                                      Theme.of(context).colorScheme.onSurface),
-                            ),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 6,
-                              children: list.take(5).map((r) {
-                                final colorScheme =
-                                    Theme.of(context).colorScheme;
-                                return ActionChip(
-                                  backgroundColor:
-                                      colorScheme.surfaceContainerHighest,
-                                  label: Text(
-                                    r.text.length > 25
-                                        ? '${r.text.substring(0, 25)}...'
-                                        : r.text,
-                                    style: TextStyle(
-                                      color: colorScheme.onSurface,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  onPressed: () {
-                                    setState(() {
-                                      _destController.text = r.text;
-                                      _selectedDestLat = r.lat;
-                                      _selectedDestLng = r.lng;
-                                    });
-                                  },
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
                 TextField(
                   controller: _destController,
                   autofocus: true,
                   scrollPadding: const EdgeInsets.only(bottom: 160),
+                  autocorrect: false,
+                  enableSuggestions: false,
                   decoration: InputDecoration(
                     hintText:
                         'Stasiun, Mall, Bandara, Rumah Sakit, Perumahan, Terminal, Pelabuhan, Alun-alun',
