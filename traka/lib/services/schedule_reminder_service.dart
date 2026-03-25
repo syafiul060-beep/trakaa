@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest_all.dart' as tz_data;
@@ -50,7 +49,6 @@ class ScheduleReminderService {
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
 
-      int scheduledCount = 0;
       for (var i = 0; i < list.length; i++) {
         final map = list[i] as Map<dynamic, dynamic>;
         final dateStamp = map['date'] as Timestamp?;
@@ -93,7 +91,6 @@ class ScheduleReminderService {
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
         );
-        scheduledCount++;
       }
     } catch (_) {}
   }

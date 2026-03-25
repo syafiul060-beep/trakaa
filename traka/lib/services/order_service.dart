@@ -40,6 +40,10 @@ class OrderService {
   static const String statusPendingReceiver = 'pending_receiver';
   static const String statusCancelled = 'cancelled';
 
+  /// Cache singkat hasil [activeScheduleIdsForDriverOrders] per driver (kurangi query berulang saat cleanup jadwal, dll.).
+  static final Map<String, (DateTime, Set<String>)> _activeScheduleIdsCache = {};
+  static const Duration _activeScheduleIdsCacheTtl = Duration(seconds: 12);
+
   /// Nilai routeJourneyNumber untuk pesanan terjadwal (dari Pesan nanti).
   static const String routeJourneyNumberScheduled = 'scheduled';
 
@@ -505,13 +509,15 @@ class OrderService {
     if (jumlahKerabat != null) data['jumlahKerabat'] = jumlahKerabat;
     if (scheduleId != null) data['scheduleId'] = scheduleId;
     if (scheduledDate != null) data['scheduledDate'] = scheduledDate;
-    if (barangCategory != null && barangCategory!.isNotEmpty) data['barangCategory'] = barangCategory;
-    if (barangNama != null && barangNama!.trim().isNotEmpty) data['barangNama'] = barangNama!.trim();
-    if (barangBeratKg != null && barangBeratKg! > 0) data['barangBeratKg'] = barangBeratKg;
-    if (barangPanjangCm != null && barangPanjangCm! > 0) data['barangPanjangCm'] = barangPanjangCm;
-    if (barangLebarCm != null && barangLebarCm! > 0) data['barangLebarCm'] = barangLebarCm;
-    if (barangTinggiCm != null && barangTinggiCm! > 0) data['barangTinggiCm'] = barangTinggiCm;
-    if (barangFotoUrl != null && barangFotoUrl!.trim().isNotEmpty) data['barangFotoUrl'] = barangFotoUrl!.trim();
+    if (barangCategory != null && barangCategory.isNotEmpty) data['barangCategory'] = barangCategory;
+    if (barangNama != null && barangNama.trim().isNotEmpty) data['barangNama'] = barangNama.trim();
+    if (barangBeratKg != null && barangBeratKg > 0) data['barangBeratKg'] = barangBeratKg;
+    if (barangPanjangCm != null && barangPanjangCm > 0) data['barangPanjangCm'] = barangPanjangCm;
+    if (barangLebarCm != null && barangLebarCm > 0) data['barangLebarCm'] = barangLebarCm;
+    if (barangTinggiCm != null && barangTinggiCm > 0) data['barangTinggiCm'] = barangTinggiCm;
+    if (barangFotoUrl != null && barangFotoUrl.trim().isNotEmpty) {
+      data['barangFotoUrl'] = barangFotoUrl.trim();
+    }
     if (orderType == OrderModel.typeKirimBarang) {
       final tf = travelFarePaidBy == OrderModel.travelFarePaidByReceiver
           ? OrderModel.travelFarePaidByReceiver
@@ -635,7 +641,17 @@ class OrderService {
   /// Semua `scheduleId` pada order driver ini yang **belum** selesai/dibatalkan.
   /// Satu query (bukan N per jadwal) agar `cleanupPastSchedules` tidak menggantung/timeout.
   /// Pakai [whereIn] status aktif (bukan `whereNotIn`) agar cocok dengan indeks `driverUid`+`status`.
+  ///
+  /// Hasil di-cache ±[_activeScheduleIdsCacheTtl] per [driverUid] agar panggilan berdekatan tidak memicu query ganda.
   static Future<Set<String>> activeScheduleIdsForDriverOrders(String driverUid) async {
+    final now = DateTime.now();
+    final cached = _activeScheduleIdsCache[driverUid];
+    if (cached != null) {
+      final (fetchedAt, ids) = cached;
+      if (now.difference(fetchedAt) < _activeScheduleIdsCacheTtl) {
+        return Set<String>.from(ids);
+      }
+    }
     try {
       final snap = await FirebaseFirestore.instance
           .collection(_collectionOrders)
@@ -655,6 +671,7 @@ class OrderService {
           out.add(sid);
         }
       }
+      _activeScheduleIdsCache[driverUid] = (now, Set<String>.from(out));
       return out;
     } catch (e, st) {
       logError('OrderService.activeScheduleIdsForDriverOrders', e, st);
@@ -1754,7 +1771,7 @@ class OrderService {
         .doc(orderId);
     final doc = await ref.get();
     if (!doc.exists || doc.data() == null) return 'Pesanan tidak ditemukan.';
-    final data = doc.data()! as Map<String, dynamic>;
+    final data = doc.data()!;
     if ((data[_fieldPassengerUid] as String?) != user.uid) {
       return 'Anda bukan penumpang pesanan ini.';
     }
@@ -1775,7 +1792,7 @@ class OrderService {
         .doc(orderId);
     final doc = await ref.get();
     if (!doc.exists || doc.data() == null) return 'Pesanan tidak ditemukan.';
-    final data = doc.data()! as Map<String, dynamic>;
+    final data = doc.data()!;
     if ((data['receiverUid'] as String?) != user.uid) {
       return 'Anda bukan penerima pesanan ini.';
     }
@@ -1797,7 +1814,7 @@ class OrderService {
         .doc(orderId);
     final doc = await ref.get();
     if (!doc.exists || doc.data() == null) return 'Pesanan tidak ditemukan.';
-    final data = doc.data()! as Map<String, dynamic>;
+    final data = doc.data()!;
     if ((data[_fieldDriverUid] as String?) != user.uid) {
       return 'Anda bukan driver pesanan ini.';
     }
@@ -2377,7 +2394,7 @@ class OrderService {
 
     // Validasi 1: tidak boleh masih di titik penjemputan
     if (pickLat != null && pickLng != null) {
-      final distDariPenjemputan = _distanceMeters(dropLat!, dropLng!, pickLat, pickLng);
+      final distDariPenjemputan = _distanceMeters(dropLat, dropLng, pickLat, pickLng);
       if (distDariPenjemputan <= radiusMasihDiPenjemputanMeter) {
         return (
           false,

@@ -150,7 +150,8 @@ Jika langkah 1 gagal, uji app hybrid akan mengecewakan — perbaiki deploy dulu,
 - Crashlytics: breadcrumb `[DriverHybrid]` untuk operasi jadwal di lapangan.
 - Setelah **load penuh** jadwal (+ `cleanupPastSchedules`), app menunda **cleanup tunda** pasca-simpan jika pemanggilan cleanup sukses terakhir masih dalam jendela singkat (~2 menit) — mengurangi GET/query order berulang; tidak mengubah data yang disimpan. Saat dilewati, Crashlytics mencatat breadcrumb `[DriverHybrid] schedule.cleanup.skip_deferred …`.
 - Sheet **pindah jadwal**: baca `driver_schedules` memakai **satu retry** (~480 ms) jika timeout; setelah retry, **timeout** → breadcrumb `[DriverHybrid] jadwal.pindah.targets.timeout_after_retry`; error lain → non-fatal `jadwal.pindah.targets` (daftar target kosong).
-- **Regresi otomatis (prune jadwal):** `flutter test test/driver_schedule_prune_test.dart` (dari folder `traka/`). Di GitHub: workflow **Traka prune tests** (`.github/workflows/traka_prune_test.yml`) pada push/PR yang menyentuh `traka/**`.
+- **Regresi otomatis:** `flutter analyze --no-fatal-infos` + kumpulan `flutter test` ringan — lihat **Traka CI** (`.github/workflows/traka_ci.yml`). Lokal cepat prune saja: `flutter test test/driver_schedule_prune_test.dart`.
+- **Query order aktif per driver:** `OrderService.activeScheduleIdsForDriverOrders` memakai **cache dalam memori ±12 detik** per `driverUid` agar panggilan berdekatan (mis. cleanup jadwal) tidak menggandakan query Firestore; data order bisa tertinggal sangat singkat di edge teoretis.
 - Satu lembar ini = satu kombinasi **Build app + API URL**; ganti build → duplikat blok **Sesi uji** atau buat baris baru di dokumen salinan.
 
 ## Tautan terkait

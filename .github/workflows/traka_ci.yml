@@ -1,0 +1,56 @@
+# `flutter analyze` (error & warning fatal; info tidak mem-fail job) + suite tes unit ringan.
+name: Traka CI
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "traka/**"
+      - ".github/workflows/traka_ci.yml"
+  pull_request:
+    paths:
+      - "traka/**"
+      - ".github/workflows/traka_ci.yml"
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: traka
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: traka
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: |
+          flutter test \
+            test/driver_schedule_prune_test.dart \
+            test/route_utils_test.dart \
+            test/validation_utils_test.dart \
+            test/retry_utils_test.dart \
+            test/app_constants_test.dart \
+            test/order_model_test.dart \
+            test/placemark_formatter_test.dart \
+            test/stnk_plate_extraction_test.dart \
+            test/ktp_ocr_extraction_test.dart \
+            test/sim_ocr_extraction_test.dart \
+            test/passenger_first_chat_message_test.dart \
+            test/vehicle_plat_service_test.dart \
+            test/app_logger_test.dart
