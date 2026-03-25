@@ -61,9 +61,11 @@ VITE_FIREBASE_APP_ID=xxx
 Jika pakai **hybrid mode** (driver_status dari API):
 
 ```env
-VITE_TRAKA_API_BASE_URL=https://traka-api.railway.app
+VITE_TRAKA_API_BASE_URL=https://trakaa-production.up.railway.app
 VITE_TRAKA_USE_HYBRID=true
 ```
+
+(Samakan dengan `PRODUCTION_API_BASE_URL.txt` di root monorepo jika URL Railway Anda berbeda.)
 
 ### 3. URL Hasil Deploy
 

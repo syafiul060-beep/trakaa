@@ -48,11 +48,11 @@ Atau manual: `npm run build` lalu `firebase deploy --only hosting`.
 Jika Flutter memakai `TRAKA_USE_HYBRID=true`, tambahkan di `.env`:
 
 ```
-VITE_TRAKA_API_BASE_URL=https://url-backend-anda
+VITE_TRAKA_API_BASE_URL=https://trakaa-production.up.railway.app
 VITE_TRAKA_USE_HYBRID=true
 ```
 
-Tanpa ini, halaman Drivers/Dashboard/Users akan baca driver_status dari Firestore (kosong saat hybrid aktif).
+URL produksi: samakan dengan `../PRODUCTION_API_BASE_URL.txt` (root monorepo) dan `TRAKA_API_BASE_URL` di Flutter. Tanpa ini, Drivers/Dashboard/Users bisa tampak kosong saat hybrid aktif.
 
 ## Sesi admin (idle & keluar)
 
