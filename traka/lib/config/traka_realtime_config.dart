@@ -25,7 +25,8 @@ class TrakaRealtimeConfig {
     defaultValue: false,
   );
 
-  /// Token handshake (`auth.token`) — harus sama dengan `SOCKET_AUTH_DEV_SECRET` di worker jika diset.
+  /// Token handshake (`auth.token`). Opsional: sama dengan `SOCKET_AUTH_DEV_SECRET` (dev).
+  /// Jika kosong dan hybrid aktif, app memanggil **POST /api/realtime/ws-ticket** (butuh `REALTIME_WS_TICKET_SECRET` di API + worker).
   static const String socketAuthToken = String.fromEnvironment(
     'TRAKA_REALTIME_SOCKET_TOKEN',
     defaultValue: '',

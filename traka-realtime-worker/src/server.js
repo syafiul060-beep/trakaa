@@ -15,6 +15,7 @@ const cors = require('cors');
 const { Server } = require('socket.io');
 const Redis = require('ioredis');
 const ngeohash = require('ngeohash');
+const { verifyWsTicket } = require('./wsTicket.js');
 
 const PORT = Number(process.env.PORT) || 3100;
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '*')
@@ -146,7 +147,9 @@ subscriber.on('message', (channel, message) => {
 
 httpServer.listen(PORT, () => {
   console.log(`traka-realtime-worker listening on :${PORT}`);
-  if (!devSecret) {
-    console.warn('[auth] SOCKET_AUTH_DEV_SECRET unset — connections allowed without token (dev only)');
+  if (!devSecret && !ticketSecret) {
+    console.warn('[auth] No SOCKET_AUTH_DEV_SECRET or REALTIME_WS_TICKET_SECRET — open WS (dev only)');
+  } else if (ticketSecret) {
+    console.log('[auth] REALTIME_WS_TICKET_SECRET set — require HMAC ticket or dev secret');
   }
 });

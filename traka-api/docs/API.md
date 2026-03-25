@@ -14,6 +14,9 @@ Authorization: Bearer <Firebase ID Token>
 ### Health
 - `GET /health` - Cek status API (tidak perlu auth). Response: `{ ok, status, checks: { api, redis, pg } }`
 
+### Realtime (Tahap 4 — tiket Socket.IO)
+- `POST /api/realtime/ws-ticket` — mint tiket HMAC untuk handshake worker (`traka-realtime-worker`). **Auth:** Bearer Firebase (penumpang/driver). Response: `{ ticket, expiresIn }`. **503** jika `REALTIME_WS_TICKET_SECRET` belum diset di API. Secret yang **sama** harus diset di worker.
+
 ### Driver
 - `GET /api/driver/status` - Daftar driver aktif (dari Redis)
   - Query: `limit` (default 50, max 100), `cursor` (untuk pagination)

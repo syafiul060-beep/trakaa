@@ -86,7 +86,8 @@ Worker **tidak** mempercayai payload Redis untuk auth — Redis hanya membawa `u
 ### Fase 4B — Auth WebSocket
 
 - Jangan kirim JWT penuh di channel Redis publik.
-- Pola umum: app minta **ticket** singkat dari REST (`POST /api/.../ws-ticket`) dengan Firebase token → worker validasi → koneksi WS diizinkan ke room yang sesuai user.
+- **Di repo:** `POST /api/realtime/ws-ticket` (Bearer Firebase) → `{ ticket, expiresIn }`. Set **`REALTIME_WS_TICKET_SECRET`** (≥16 karakter) **sama** di **traka-api** dan **traka-realtime-worker**. Flutter memanggil endpoint ini jika `TRAKA_REALTIME_SOCKET_TOKEN` kosong.
+- Dev: `SOCKET_AUTH_DEV_SECRET` di worker + `TRAKA_REALTIME_SOCKET_TOKEN` di build.
 
 ### Fase 4C — Flutter penumpang
 

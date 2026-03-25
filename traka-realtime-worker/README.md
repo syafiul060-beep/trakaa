@@ -67,7 +67,8 @@ npm start
 | `REDIS_URL` | Ya | Sama dengan API agar menerima `PUBLISH` dari `traka-api` |
 | `PORT` | Tidak | Default `3100` |
 | `ALLOWED_ORIGINS` | Tidak | CORS; `*` untuk dev |
-| `SOCKET_AUTH_DEV_SECRET` | Tidak | Jika diisi, klien harus kirim `auth: { token: "<secret>" }` saat connect |
+| `SOCKET_AUTH_DEV_SECRET` | Tidak | Dev: klien kirim `auth.token` sama persis |
+| `REALTIME_WS_TICKET_SECRET` | Disarankan produksi | Samakan dengan **traka-api**; klien pakai tiket dari `POST /api/realtime/ws-ticket` |
 
 ## API publish (sisi traka-api)
 

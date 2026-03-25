@@ -41,7 +41,6 @@ import '../services/auth_session_service.dart';
 import '../services/violation_service.dart';
 import '../services/low_ram_warning_service.dart';
 import '../services/pending_purchase_recovery_service.dart';
-import '../services/recent_destination_service.dart';
 import '../services/notification_navigation_service.dart';
 import '../services/performance_trace_service.dart';
 import '../services/directions_service.dart';
@@ -51,6 +50,7 @@ import '../services/map_style_service.dart';
 import '../widgets/styled_google_map_builder.dart';
 import '../services/route_utils.dart';
 import '../services/passenger_map_realtime_socket.dart';
+import '../services/traka_api_service.dart';
 import '../widgets/map_type_zoom_controls.dart';
 import '../widgets/penumpang_map_overlays.dart';
 import '../widgets/recommended_driver_glow_overlay.dart';
@@ -108,6 +108,9 @@ class _PenumpangScreenState extends State<PenumpangScreen>
   final FocusNode _destinationFocusNode = FocusNode();
   final GlobalKey _formSectionKey = GlobalKey();
   String? _currentKabupaten; // subAdministrativeArea (kabupaten/kota)
+  /// Slug kab/kota untuk Redis GEO hybrid — selaras dengan yang dikirim driver saat update lokasi.
+  String? get _passengerCitySlugForGeoMatch =>
+      PlacemarkFormatter.citySlugForGeoMatching(_currentKabupaten);
   String? _currentProvinsi; // administrativeArea (provinsi)
   String? _currentPulau; // pulau (diturunkan dari provinsi)
   Timer? _locationRefreshTimer;
@@ -172,6 +175,13 @@ class _PenumpangScreenState extends State<PenumpangScreen>
 
   /// Banner: mode sekitar dari fallback (snackbar/dialog), bukan tap langsung "Driver sekitar".
   bool _showNearbyModeHintBanner = false;
+
+  /// Jarak asal–tujuan (m) pada pencarian rute terakhir — untuk durasi sesi & petunjuk snackbar.
+  double? _lastRouteSearchOdMeters;
+
+  /// Radius terakhir mode «Driver sekitar» (meter); tampilan label & filter.
+  double _nearbyFilterRadiusMeters =
+      ActiveDriversService.maxDriverDistanceFromPickupMeters;
 
   /// Debounce: waktu terakhir tap "Driver sekitar" (mencegah double tap).
   DateTime? _lastDriverSekitarTapAt;
@@ -362,8 +372,9 @@ class _PenumpangScreenState extends State<PenumpangScreen>
   }
 
   /// Snackbar jika pencarian rute tidak ada hasil: tawarkan mode [Driver sekitar].
-  void _showNoRouteMatchSnackBarWithNearbyAction() {
+  void _showNoRouteMatchSnackBarWithNearbyAction({double? odMeters}) {
     if (!mounted) return;
+    final isLongOd = odMeters != null && odMeters >= 70000;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Column(
@@ -379,6 +390,16 @@ class _PenumpangScreenState extends State<PenumpangScreen>
                 color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.88),
               ),
             ),
+            if (isLongOd) ...[
+              const SizedBox(height: 6),
+              Text(
+                TrakaL10n.of(context).noRouteMatchLongTripExtraLine,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.88),
+                ),
+              ),
+            ],
           ],
         ),
         duration: const Duration(seconds: 6),
@@ -475,11 +496,19 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     });
 
     try {
+      final oLat = widget.originLat;
+      final oLng = widget.originLng;
+      final dLat = widget.destLat;
+      final dLng = widget.destLng;
+      _lastRouteSearchOdMeters = (oLat != null && oLng != null && dLat != null && dLng != null)
+          ? Geolocator.distanceBetween(oLat, oLng, dLat, dLng)
+          : null;
       final mapResult = await ActiveDriversService.getActiveDriversForMapResult(
-        passengerOriginLat: widget.originLat,
-        passengerOriginLng: widget.originLng,
-        passengerDestLat: widget.destLat,
-        passengerDestLng: widget.destLng,
+        passengerOriginLat: oLat,
+        passengerOriginLng: oLng,
+        passengerDestLat: dLat,
+        passengerDestLng: dLng,
+        city: _passengerCitySlugForGeoMatch,
       );
 
       if (mounted) {
@@ -511,7 +540,9 @@ class _PenumpangScreenState extends State<PenumpangScreen>
             driverCount: 0,
             searchMode: 'prefill',
           );
-          _showNoRouteMatchSnackBarWithNearbyAction();
+          _showNoRouteMatchSnackBarWithNearbyAction(
+            odMeters: _lastRouteSearchOdMeters,
+          );
         } else {
           AppAnalyticsService.logPassengerDriverSearchOutcome(
             outcome: 'route_search_ok',
@@ -598,6 +629,19 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     _driverSearchSessionTimer = null;
   }
 
+  /// Radius «Driver sekitar» (km) untuk label tombol & banner memuat — mempertimbangkan OD rute terakhir.
+  int get _driverSekitarRadiusKmLabel {
+    if (_isFormVisible && _lastRouteSearchOdMeters != null) {
+      return (ActiveDriversService.nearbySearchRadiusMetersForPriorOd(
+                _lastRouteSearchOdMeters,
+              ) /
+              1000)
+          .round()
+          .clamp(1, 200);
+    }
+    return (_nearbyFilterRadiusMeters / 1000).round().clamp(1, 200);
+  }
+
   /// Setelah travel punya kesepakatan harga: hentikan tracking driver di peta (di belakang overlay).
   void _clearDriversBecauseTravelBlocking() {
     _cancelDriverSearchSessionTimer();
@@ -617,8 +661,11 @@ class _PenumpangScreenState extends State<PenumpangScreen>
   void _scheduleDriverSearchSessionExpiry() {
     _cancelDriverSearchSessionTimer();
     if (_foundDrivers.isEmpty) return;
+    final minutes = AppConstants.passengerDriverSearchSessionMinutesForOd(
+      _lastRouteSearchOdMeters,
+    );
     _driverSearchSessionTimer = Timer(
-      Duration(minutes: AppConstants.passengerDriverSearchSessionMaxMinutes),
+      Duration(minutes: minutes),
       _onDriverSearchSessionExpired,
     );
   }
@@ -834,7 +881,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     }
 
     _startInterpolationTimer();
-    _maybeStartPassengerMapRealtimeSocket();
+    await _maybeStartPassengerMapRealtimeSocket();
     if (kDebugMode && _foundDrivers.isNotEmpty) {
       if (TrakaRealtimeConfig.isEnabled) {
         debugPrint(
@@ -851,17 +898,28 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     if (mounted) setState(() {});
   }
 
-  void _maybeStartPassengerMapRealtimeSocket() {
+  Future<void> _maybeStartPassengerMapRealtimeSocket() async {
     if (!TrakaRealtimeConfig.isEnabled) return;
     final pos = _currentPosition;
     if (pos == null || _foundDrivers.isEmpty) return;
 
+    String? auth;
+    final staticTok = TrakaRealtimeConfig.socketAuthToken.trim();
+    if (staticTok.isNotEmpty) {
+      auth = staticTok;
+    } else {
+      auth = await TrakaApiService.fetchRealtimeMapWsTicket();
+      if (auth == null && kDebugMode) {
+        debugPrint(
+          'Traka map WS: no ws-ticket (login/API secret?). Open worker still OK if no auth env.',
+        );
+      }
+    }
+
     _mapRealtimeSocket ??= PassengerMapRealtimeSocket();
     _mapRealtimeSocket!.connect(
       url: TrakaRealtimeConfig.realtimeWsUrl.trim(),
-      authToken: TrakaRealtimeConfig.socketAuthToken.trim().isEmpty
-          ? null
-          : TrakaRealtimeConfig.socketAuthToken.trim(),
+      authToken: auth,
       lat: pos.latitude,
       lng: pos.longitude,
       onDriverLocation: _onRealtimeDriverLocation,
@@ -1086,11 +1144,18 @@ class _PenumpangScreenState extends State<PenumpangScreen>
       // - Rute driver harus melewati lokasi awal dan tujuan penumpang (berdasarkan polyline)
       // - Sebelum driver melewati titik awal penumpang: jarak <= 50 km dari titik awal penumpang, maksimal 20 driver
       // - Setelah driver melewati titik awal penumpang: jarak <= 10 km dari titik awal penumpang, maksimal 10 driver
+      _lastRouteSearchOdMeters = Geolocator.distanceBetween(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+        destLat,
+        destLng,
+      );
       final mapResult = await ActiveDriversService.getActiveDriversForMapResult(
         passengerOriginLat: _currentPosition!.latitude,
         passengerOriginLng: _currentPosition!.longitude,
         passengerDestLat: destLat,
         passengerDestLng: destLng,
+        city: _passengerCitySlugForGeoMatch,
       );
 
       if (mounted) {
@@ -1122,7 +1187,9 @@ class _PenumpangScreenState extends State<PenumpangScreen>
             driverCount: 0,
             searchMode: 'route',
           );
-          _showNoRouteMatchSnackBarWithNearbyAction();
+          _showNoRouteMatchSnackBarWithNearbyAction(
+            odMeters: _lastRouteSearchOdMeters,
+          );
         } else {
           AppAnalyticsService.logPassengerDriverSearchOutcome(
             outcome: 'route_search_ok',
@@ -1433,7 +1500,6 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     double destLat,
     double destLng,
   ) {
-    RecentDestinationService.add(destText, lat: destLat, lng: destLng);
     setState(() {
       _destinationController.text = destText;
       _passengerDestLat = destLat;
@@ -1493,7 +1559,6 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     AppAnalyticsService.logPassengerSearchDriver(mode: 'route');
     if (await _checkAndRedirectIfOutstandingViolation()) return;
     if (_abortSearchIfTravelHomeBlocked()) return;
-    RecentDestinationService.add(destText, lat: destLat, lng: destLng);
     _cancelDriverSearchSessionTimer();
     setState(() {
       _destinationController.text = destText;
@@ -1520,11 +1585,18 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     }
 
     try {
+      _lastRouteSearchOdMeters = Geolocator.distanceBetween(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+        destLat,
+        destLng,
+      );
       final mapResult = await ActiveDriversService.getActiveDriversForMapResult(
         passengerOriginLat: _currentPosition!.latitude,
         passengerOriginLng: _currentPosition!.longitude,
         passengerDestLat: destLat,
         passengerDestLng: destLng,
+        city: _passengerCitySlugForGeoMatch,
       );
 
       if (mounted) {
@@ -1556,7 +1628,9 @@ class _PenumpangScreenState extends State<PenumpangScreen>
             driverCount: 0,
             searchMode: 'route_sheet',
           );
-          _showNoRouteMatchSnackBarWithNearbyAction();
+          _showNoRouteMatchSnackBarWithNearbyAction(
+            odMeters: _lastRouteSearchOdMeters,
+          );
         } else {
           AppAnalyticsService.logPassengerDriverSearchOutcome(
             outcome: 'route_search_ok',
@@ -1609,6 +1683,11 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     }
     _lastDriverSekitarTapAt = now;
     _lastSearchWasNearby = true;
+    final priorRouteOd = _lastRouteSearchOdMeters;
+    _lastRouteSearchOdMeters = null;
+    final nearbyRadius = ActiveDriversService.nearbySearchRadiusMetersForPriorOd(
+      priorRouteOd,
+    );
     AppAnalyticsService.logPassengerSearchDriver(mode: 'nearby');
     if (await _checkAndRedirectIfOutstandingViolation()) return;
     if (_abortSearchIfTravelHomeBlocked()) return;
@@ -1629,6 +1708,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
       _foundDrivers = [];
       _searchDriverFailed = false;
       _showNearbyModeHintBanner = fromRouteFallback;
+      _nearbyFilterRadiusMeters = nearbyRadius;
     });
 
     try {
@@ -1637,6 +1717,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
         all,
         _currentPosition!.latitude,
         _currentPosition!.longitude,
+        maxDistanceMeters: nearbyRadius,
       );
       // Urutkan jarak terdekat, batasi 15 driver
       filtered.sort((a, b) {
@@ -1673,7 +1754,11 @@ class _PenumpangScreenState extends State<PenumpangScreen>
           );
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(TrakaL10n.of(context).noNearbyDrivers),
+              content: Text(
+                TrakaL10n.of(context).noNearbyDriversWithinKm(
+                  (nearbyRadius / 1000).round(),
+                ),
+              ),
               duration: const Duration(seconds: 4),
             ),
           );
@@ -3016,6 +3101,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
           visible: _isFormVisible,
           onDriverSekitarTap: _onDriverSekitarTap,
           onPesanNantiTap: () => _onTabTapped(1),
+          nearbyRadiusKm: _driverSekitarRadiusKmLabel,
           driverSekitarLoading: _isSearchingDrivers && _lastSearchWasNearby,
         ),
         PenumpangSearchBar(
@@ -3099,7 +3185,9 @@ class _PenumpangScreenState extends State<PenumpangScreen>
                                     Text(
                                       _lastSearchWasNearby
                                           ? TrakaL10n.of(context)
-                                              .checkingNearbyDrivers
+                                              .checkingNearbyDriversKm(
+                                                _driverSekitarRadiusKmLabel,
+                                              )
                                           : TrakaL10n.of(context)
                                               .checkingDriverRoutes,
                                       style: TextStyle(

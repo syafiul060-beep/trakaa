@@ -99,6 +99,36 @@ class TrakaApiService {
     }
   }
 
+  /// POST /api/realtime/ws-ticket — tiket HMAC untuk Socket.IO worker (Tahap 4).
+  /// Null jika API tidak mengonfigurasi secret atau user belum login.
+  static Future<String?> fetchRealtimeMapWsTicket() async {
+    if (!_enabled) return null;
+    try {
+      final res = await _httpPost(
+        Uri.parse('$_base/api/realtime/ws-ticket'),
+        headers: await _authHeaders(),
+      );
+      if (res.statusCode == 503) {
+        if (kDebugMode) {
+          debugPrint(
+            'TrakaApiService.fetchRealtimeMapWsTicket: server ticket not configured (503)',
+          );
+        }
+        return null;
+      }
+      if (res.statusCode != 200) return null;
+      final map = jsonDecode(res.body);
+      if (map is! Map<String, dynamic>) return null;
+      final t = map['ticket'];
+      if (t is! String) return null;
+      final trimmed = t.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    } catch (e) {
+      if (kDebugMode) debugPrint('TrakaApiService.fetchRealtimeMapWsTicket: $e');
+      return null;
+    }
+  }
+
   /// PATCH /api/driver/status - Partial update (Tahap 4.1: currentPassengerCount).
   static Future<bool> patchDriverStatus({
     required int currentPassengerCount,
@@ -243,30 +273,48 @@ class TrakaApiService {
     }
   }
 
-  /// GET /api/driver/status - Daftar semua driver aktif.
+  /// GET /api/driver/status - Daftar semua driver aktif (paginasi hingga habis).
   static Future<List<Map<String, dynamic>>> getDriverStatusList() async {
     if (!_enabled) return [];
+    final byUid = <String, Map<String, dynamic>>{};
+    var cursor = 0;
+    const limit = 100;
+    const maxPages = 40;
     try {
-      final res = await RetryUtils.withRetry(() async {
-        final r = await _httpGet(
-          Uri.parse('$_base/api/driver/status'),
+      for (var page = 0; page < maxPages; page++) {
+        final uri = Uri.parse('$_base/api/driver/status').replace(
+          queryParameters: {
+            'limit': '$limit',
+            'cursor': '$cursor',
+          },
         );
-        if (r.statusCode >= 500 || r.statusCode == 429) {
-          throw Exception('HTTP ${r.statusCode}');
+        final res = await RetryUtils.withRetry(() async {
+          final r = await _httpGet(uri);
+          if (r.statusCode >= 500 || r.statusCode == 429) {
+            throw Exception('HTTP ${r.statusCode}');
+          }
+          return r;
+        });
+        if (res.statusCode != 200) break;
+        final data = _jsonDecode(res.body) as Map<String, dynamic>?;
+        final list = data?['drivers'] as List<dynamic>?;
+        if (list == null || list.isEmpty) break;
+        for (final e in list.whereType<Map<String, dynamic>>()) {
+          final m = Map<String, dynamic>.from(e);
+          final uid = (m['uid'] ?? m['driverUid']) as String? ?? '';
+          if (uid.isNotEmpty) byUid[uid] = m;
         }
-        return r;
-      });
-      if (res.statusCode != 200) return [];
-      final data = _jsonDecode(res.body) as Map<String, dynamic>?;
-      final list = data?['drivers'] as List<dynamic>?;
-      if (list == null) return [];
-      return list
-          .whereType<Map<String, dynamic>>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
+        final nextRaw = data?['nextCursor'];
+        if (nextRaw == null) break;
+        final next =
+            nextRaw is int ? nextRaw : int.tryParse(nextRaw.toString());
+        if (next == null || next == 0 || next == cursor) break;
+        cursor = next;
+      }
+      return byUid.values.toList();
     } catch (e) {
       if (kDebugMode) debugPrint('TrakaApiService.getDriverStatusList: $e');
-      return [];
+      return byUid.values.toList();
     }
   }
 

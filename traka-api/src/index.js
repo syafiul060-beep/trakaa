@@ -12,12 +12,17 @@ const adminPaymentRoutes = require('./routes/admin_payment_methods.js');
 const matchRoutes = require('./routes/match.js');
 const ordersRoutes = require('./routes/orders.js');
 const usersRoutes = require('./routes/users.js');
+const realtimeRoutes = require('./routes/realtime.js');
 const { initRedis, getRedis } = require('./lib/redis.js');
 const { initPg, getPg } = require('./lib/pg.js');
 const { initFirebase } = require('./lib/auth.js');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Railway / load balancer mengirim X-Forwarded-*; wajib agar express-rate-limit tidak error
+// dan penghitungan IP klien benar. Set TRUST_PROXY_HOPS=2 jika Anda tahu ada dua lapisan proxy.
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS) || 1);
 
 // CORS: batasi origin (env ALLOWED_ORIGINS = "https://app.traka.id,https://admin.traka.id")
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '*').split(',').map((o) => o.trim());
@@ -55,6 +60,7 @@ app.get('/health', async (req, res) => {
       status: 'traka-api',
       checks,
       ...(process.env.APP_VERSION ? { version: process.env.APP_VERSION } : {}),
+      environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'unknown',
       uptimeSeconds: Math.floor(process.uptime()),
     };
     if (req.query.debug === '1' && pgError) body.pgError = pgError;
@@ -68,6 +74,7 @@ app.get('/health', async (req, res) => {
       checks: { ...checks, api: false },
       uptimeSeconds: Math.floor(process.uptime()),
       ...(process.env.APP_VERSION ? { version: process.env.APP_VERSION } : {}),
+      environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'unknown',
       error: req.query.debug === '1' ? err.message : undefined,
     });
   }
@@ -99,6 +106,7 @@ async function start() {
     app.use('/api/match', matchRoutes);
     app.use('/api/orders', ordersRoutes);
     app.use('/api/users', usersRoutes);
+    app.use('/api/realtime', realtimeRoutes);
 
     // Sentry error handler – setelah routes, sebelum listen
     if (process.env.SENTRY_DSN) {
