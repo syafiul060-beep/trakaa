@@ -9,6 +9,33 @@ const { sanitizeNumber, isValidLatLng } = require('../lib/validation.js');
 const KEY_PREFIX = 'driver_status:';
 const TTL_SECONDS = 600; // 10 menit
 
+/** Rate limit POST /location per Firebase UID — kurangi spam Redis/GEO (default >> pola app live). */
+let _driverLocationLimiter = null;
+function driverLocationPerUidLimiter() {
+  if (!_driverLocationLimiter) {
+    const redis = getRedis();
+    const perMin = Math.min(
+      Math.max(parseInt(process.env.DRIVER_LOCATION_RATE_LIMIT_PER_MIN, 10) || 120, 30),
+      600,
+    );
+    _driverLocationLimiter = rateLimit({
+      windowMs: 60 * 1000,
+      limit: perMin,
+      keyGenerator: (req) => `driver_loc:${req.uid || req.ip}`,
+      message: { error: 'Update lokasi terlalu sering. Coba lagi sebentar.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+      store: redis
+        ? new RedisStore({
+            sendCommand: (...args) => redis.sendCommand(args),
+            prefix: 'rl:drvloc:',
+          })
+        : undefined,
+    });
+  }
+  return _driverLocationLimiter;
+}
+
 // Harus sebelum /:uid/status agar tidak tertangkap sebagai uid
 // Pagination: ?limit=50&cursor=0 (hindari full SCAN saat banyak driver)
 router.get('/status', async (req, res) => {
