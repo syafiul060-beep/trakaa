@@ -514,6 +514,20 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
   Timer? _debouncedJadwalSyncTimer;
   _JadwalItem? _debouncedJadwalSyncMergeHint;
 
+  /// Terakhir `cleanupPastSchedules` sukses (muat penuh atau background). Kurangi GET+query order berulang setelah simpan.
+  static const Duration _minIntervalBetweenScheduleCleanups = Duration(minutes: 2);
+  DateTime? _lastJadwalCleanupAt;
+
+  void _markJadwalCleanupDone() {
+    _lastJadwalCleanupAt = DateTime.now();
+  }
+
+  bool _shouldSkipDeferredCleanup() {
+    final t = _lastJadwalCleanupAt;
+    if (t == null) return false;
+    return DateTime.now().difference(t) < _minIntervalBetweenScheduleCleanups;
+  }
+
   /// PageView jadwal per tanggal: geser kiri = tanggal berikutnya, geser kanan = kembali.
   final PageController _jadwalPageController = PageController();
 
@@ -663,6 +677,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     if (_auth.currentUser?.uid != uid) return;
     try {
       await DriverScheduleService.cleanupPastSchedules(uid);
+      if (mounted) _markJadwalCleanupDone();
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('DriverJadwal background cleanup: $e\n$st');
@@ -748,6 +763,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
           _currentPageIndex = 0;
           _seedRouteCategoryPreferencesFromItems();
         });
+        _markJadwalCleanupDone();
         trace('SUCCESS uiItems=${_items.length}');
         DriverHybridDiagnostics.recordScheduleOp(
           'load',
@@ -906,7 +922,13 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
         });
       }
     }
-    unawaited(_deferCleanupPastSchedules(user.uid));
+    if (!_shouldSkipDeferredCleanup()) {
+      unawaited(_deferCleanupPastSchedules(user.uid));
+    } else if (kDebugMode) {
+      debugPrint(
+        '[JadwalLoad] skip deferred cleanup (< ${_minIntervalBetweenScheduleCleanups.inSeconds}s since last)',
+      );
+    }
     if (!mounted) return;
     if (newItem != null) {
       final exists = _items.any((i) =>
