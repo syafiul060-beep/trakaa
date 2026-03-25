@@ -47,6 +47,7 @@ jobs:
             test/retry_utils_test.dart \
             test/app_constants_test.dart \
             test/order_model_test.dart \
+            test/order_service_test.dart \
             test/placemark_formatter_test.dart \
             test/stnk_plate_extraction_test.dart \
             test/ktp_ocr_extraction_test.dart \

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:traka/models/order_model.dart';
 import 'package:traka/services/order_service.dart';
+import 'package:traka/services/schedule_id_util.dart';
 
 void main() {
   group('OrderService', () {
@@ -229,6 +230,44 @@ void main() {
             OrderService.travelAgreedDriverUidsFromOrders([agreed]),
           ),
           false,
+        );
+      });
+    });
+
+    group('scheduledOrderMatchesActiveIds', () {
+      test('empty activeIds is false', () {
+        expect(OrderService.scheduledOrderMatchesActiveIds({}, 'a', 'b'), false);
+      });
+
+      test('direct hit on scheduleId', () {
+        expect(
+          OrderService.scheduledOrderMatchesActiveIds({'sid1'}, 'sid1', 'leg'),
+          true,
+        );
+      });
+
+      test('direct hit on legacyScheduleId', () {
+        expect(
+          OrderService.scheduledOrderMatchesActiveIds({'legX'}, 'other', 'legX'),
+          true,
+        );
+      });
+
+      test('matches new-format id against legacy in active set', () {
+        final (full, leg) = ScheduleIdUtil.build(
+          'driver1',
+          '2025-06-01',
+          90000000,
+          'Jakarta',
+          'Bandung',
+        );
+        expect(
+          OrderService.scheduledOrderMatchesActiveIds({full}, leg, leg),
+          true,
+        );
+        expect(
+          OrderService.scheduledOrderMatchesActiveIds({leg}, full, leg),
+          true,
         );
       });
     });
