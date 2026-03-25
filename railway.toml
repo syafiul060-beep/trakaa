@@ -7,3 +7,4 @@ watchPatterns = ["traka-api/**"]
 [deploy]
 # Start dari nixpacks.toml: root repo → cd traka-api && npm start; jika Root Directory = traka-api → traka-api/nixpacks.toml (npm start)
 healthcheckPath = "/health"
+healthcheckTimeout = 60

@@ -54,9 +54,14 @@ app.get('/health', async (req, res) => {
     } catch (e) {
       pgError = e.message;
     }
-    const ok = checks.api && checks.redis;
+    // Railway/load-balancer: default anggap LIVE walau Redis belum siap (API sudah listen).
+    // Set HEALTHCHECK_STRICT=1 agar 503 jika Redis down (Docker/k8s readiness ketat).
+    const ready = checks.api && checks.redis;
+    const strict = process.env.HEALTHCHECK_STRICT === '1';
+    const httpOk = strict ? ready : checks.api;
     const body = {
-      ok,
+      ok: ready,
+      live: checks.api,
       status: 'traka-api',
       checks,
       ...(process.env.APP_VERSION ? { version: process.env.APP_VERSION } : {}),
@@ -64,7 +69,7 @@ app.get('/health', async (req, res) => {
       uptimeSeconds: Math.floor(process.uptime()),
     };
     if (req.query.debug === '1' && pgError) body.pgError = pgError;
-    res.status(ok ? 200 : 503).json(body);
+    res.status(httpOk ? 200 : 503).json(body);
   } catch (err) {
     // Jangan crash - selalu kirim response agar monitoring tidak trigger ECONNRESET
     console.error('[health]', err.message);

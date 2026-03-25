@@ -12,7 +12,7 @@ Authorization: Bearer <Firebase ID Token>
 ## Endpoints
 
 ### Health
-- `GET /health` - Cek status API (tidak perlu auth). Response: `{ ok, status, checks: { api, redis, pg } }`
+- `GET /health` - Cek status API (tidak perlu auth). JSON: `ok` + `live` + `checks: { api, redis, pg }`. **HTTP:** default **200** selama proses hidup (Redis opsional); **`ok`** false jika Redis belum OK. **`HEALTHCHECK_STRICT=1`** → HTTP **503** bila Redis down (readiness ketat).
 
 ### Realtime (Tahap 4 — tiket Socket.IO)
 - `POST /api/realtime/ws-ticket` — mint tiket HMAC untuk handshake worker (`traka-realtime-worker`). **Auth:** Bearer Firebase (penumpang/driver). Response: `{ ticket, expiresIn }`. **503** jika `REALTIME_WS_TICKET_SECRET` belum diset di API. Secret yang **sama** harus diset di worker.
