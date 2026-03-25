@@ -279,10 +279,12 @@ class AppAnalyticsService {
 
   /// Sumber data driver aktif (Cari travel): pantau fallback Firestore vs Redis/geo.
   /// [source]: `geo_match` | `api_list` | `firestore`
+  /// [firestoreCapHit]: true jika query Firestore memakai plafon dokumen (potensi subset acak).
   static void logPassengerActiveDriversSource({
     required String source,
     String? reason,
     int resultCount = 0,
+    bool firestoreCapHit = false,
   }) {
     final r = reason == null || reason.isEmpty
         ? null
@@ -293,6 +295,7 @@ class AppAnalyticsService {
         'source': source,
         'result_count': resultCount.clamp(0, 500).toString(),
         if (r != null) 'reason': r,
+        if (firestoreCapHit) 'fs_cap': '1',
       },
     );
   }

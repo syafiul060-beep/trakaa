@@ -151,6 +151,9 @@ class ActiveDriversService {
   /// Untuk pencarian «searah» jarak jauh, dipakai nilai dari [_matchingParamsForPassengerOd].
   static const double maxDriverDistanceFromPickupMeters = 40000; // 40 km
 
+  /// Plafon dokumen saat fallback Firestore untuk `siap_kerja` — cegah baca koleksi tanpa batas (mode degradasi).
+  static const int _firestoreFallbackMaxDocs = 400;
+
   /// Radius «Driver sekitar» jika penumpang baru saja mencari rute jarak jauh (OD meter); memperluas jangkauan.
   static double nearbySearchRadiusMetersForPriorOd(double? priorPassengerOdMeters) {
     if (priorPassengerOdMeters == null || priorPassengerOdMeters < 30000) {
@@ -161,16 +164,20 @@ class ActiveDriversService {
     return 85000;
   }
 
-  static Future<List<Map<String, dynamic>>> _fetchDriverStatusFromFirestore() async {
+  static Future<({List<Map<String, dynamic>> list, bool hitCap})>
+      _fetchDriverStatusFromFirestore() async {
     final snapshot = await FirebaseFirestore.instance
         .collection(_collectionDriverStatus)
         .where('status', isEqualTo: _statusSiapKerja)
+        .limit(_firestoreFallbackMaxDocs)
         .get();
-    return snapshot.docs.map((doc) {
+    final hitCap = snapshot.docs.length >= _firestoreFallbackMaxDocs;
+    final list = snapshot.docs.map((doc) {
       final data = doc.data();
       data['uid'] = doc.id;
       return data;
     }).toList();
+    return (list: list, hitCap: hitCap);
   }
 
   /// Daftar driver dengan rute aktif (status siap_kerja + ada data rute).
@@ -216,6 +223,7 @@ class ActiveDriversService {
     List<Map<String, dynamic>> driverStatusList = [];
     var activeDriversSource = 'firestore';
     String? activeDriversReason;
+    var firestoreCapHit = false;
 
     if (TrakaApiConfig.isApiEnabled) {
       activeDriversSource = 'geo_match';
@@ -275,24 +283,41 @@ class ActiveDriversService {
       }
       if (driverStatusList.isEmpty) {
         if (kDebugMode) debugPrint('ActiveDriversService: API kosong, fallback ke Firestore');
-        driverStatusList = await _fetchDriverStatusFromFirestore();
+        final fs = await _fetchDriverStatusFromFirestore();
+        driverStatusList = fs.list;
+        firestoreCapHit = fs.hitCap;
         activeDriversSource = 'firestore';
         activeDriversReason ??= 'exhausted_geo_and_api';
+        if (firestoreCapHit) {
+          activeDriversReason = '$activeDriversReason|fs_cap_hit';
+          DriverHybridDiagnostics.breadcrumb(
+            'passenger.activeDrivers.firestore_cap_hit limit=$_firestoreFallbackMaxDocs',
+          );
+        }
         DriverHybridDiagnostics.breadcrumb(
           'passenger.activeDrivers.firestore_fallback n=${driverStatusList.length}',
         );
         if (kDebugMode) debugPrint('ActiveDriversService: Firestore mengembalikan ${driverStatusList.length} driver');
       }
     } else {
-      driverStatusList = await _fetchDriverStatusFromFirestore();
+      final fs = await _fetchDriverStatusFromFirestore();
+      driverStatusList = fs.list;
+      firestoreCapHit = fs.hitCap;
       activeDriversSource = 'firestore';
-      activeDriversReason = 'hybrid_off';
+      activeDriversReason =
+          firestoreCapHit ? 'hybrid_off|fs_cap_hit' : 'hybrid_off';
+      if (firestoreCapHit) {
+        DriverHybridDiagnostics.breadcrumb(
+          'passenger.activeDrivers.firestore_cap_hit limit=$_firestoreFallbackMaxDocs',
+        );
+      }
     }
 
     AppAnalyticsService.logPassengerActiveDriversSource(
       source: activeDriversSource,
       reason: activeDriversReason,
       resultCount: driverStatusList.length,
+      firestoreCapHit: firestoreCapHit,
     );
 
     final list = <ActiveDriverRoute>[];
