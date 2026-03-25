@@ -148,6 +148,7 @@ Jika langkah 1 gagal, uji app hybrid akan mengecewakan — perbaiki deploy dulu,
 
 - Crashlytics: breadcrumb `[DriverHybrid]` untuk operasi jadwal di lapangan.
 - Setelah **load penuh** jadwal (+ `cleanupPastSchedules`), app menunda **cleanup tunda** pasca-simpan jika pemanggilan cleanup sukses terakhir masih dalam jendela singkat (~2 menit) — mengurangi GET/query order berulang; tidak mengubah data yang disimpan. Saat dilewati, Crashlytics mencatat breadcrumb `[DriverHybrid] schedule.cleanup.skip_deferred …`.
+- Sheet **pindah jadwal**: baca `driver_schedules` memakai **satu retry** (~480 ms) jika timeout; kegagalan akhir mencatat non-fatal `jadwal.pindah.targets` di Crashlytics (daftar target kosong).
 - Satu lembar ini = satu kombinasi **Build app + API URL**; ganti build → duplikat blok **Sesi uji** atau buat baris baru di dokumen salinan.
 
 ## Tautan terkait

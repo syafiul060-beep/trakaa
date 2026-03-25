@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
+import 'driver_hybrid_diagnostics.dart';
 import 'order_service.dart';
 import 'schedule_id_util.dart';
 
@@ -168,6 +169,19 @@ class DriverScheduleService {
         debugPrint('DriverScheduleService.readSchedulesRawFromServer: $e\n$st');
       }
       rethrow;
+    }
+  }
+
+  /// Baca jadwal mentah untuk sheet pindah: satu retry pendek jika timeout (sama ide dengan layar jadwal).
+  static Future<List<Map<String, dynamic>>> _readSchedulesRawForPindahWithRetry(
+    String driverUid,
+  ) async {
+    try {
+      return await readSchedulesRawFromServer(driverUid);
+    } on TimeoutException {
+      DriverHybridDiagnostics.breadcrumb('schedule.pindah.read.retry_after_timeout');
+      await Future<void>.delayed(const Duration(milliseconds: 480));
+      return readSchedulesRawFromServer(driverUid);
     }
   }
 
@@ -398,7 +412,7 @@ class DriverScheduleService {
     required String excludeScheduleId,
   }) async {
     try {
-      final maps = await readSchedulesRawFromServer(driverUid);
+      final maps = await _readSchedulesRawForPindahWithRetry(driverUid);
       final kept = await cleanupPastSchedules(
         driverUid,
         persistPruned: false,
@@ -444,7 +458,8 @@ class DriverScheduleService {
         return ad.compareTo(bd);
       });
       return result;
-    } catch (_) {
+    } catch (e, st) {
+      DriverHybridDiagnostics.recordError('jadwal.pindah.targets', e, st);
       return [];
     }
   }
