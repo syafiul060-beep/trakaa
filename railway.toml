@@ -1,9 +1,7 @@
-# Railway — API trakaa (monorepo).
-# Disarankan juga: Dashboard → service trakaa → Settings → Source → Root Directory = traka-api
-# Supaya build dari root repo tidak gagal (Railpack tanpa deteksi), pakai Nixpacks + nixpacks.toml di root.
+# API monorepo: builder NIXPACKS + nixpacks.toml di root, atau Root Directory = traka-api.
 
 [build]
-builder = "nixpacks"
+builder = "NIXPACKS"
 watchPatterns = ["traka-api/**"]
 
 [deploy]

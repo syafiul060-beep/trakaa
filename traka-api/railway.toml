@@ -2,7 +2,7 @@
 # Pastikan Root Directory = traka-api di Settings > Source
 
 [build]
-builder = "nixpacks"
+builder = "NIXPACKS"
 
 [deploy]
 startCommand = "npm start"

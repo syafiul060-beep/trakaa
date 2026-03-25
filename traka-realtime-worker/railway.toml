@@ -2,7 +2,7 @@
 # Pastikan di dashboard: Root Directory = traka-realtime-worker
 
 [build]
-builder = "nixpacks"
+builder = "NIXPACKS"
 
 [deploy]
 startCommand = "npm start"
