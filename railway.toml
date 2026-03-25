@@ -1,9 +1,11 @@
-# Railway config - traka-api (monorepo)
-# Root Directory harus di-set di UI: Settings > Source > Root Directory = traka-api
+# Railway — API trakaa (monorepo).
+# Disarankan juga: Dashboard → service trakaa → Settings → Source → Root Directory = traka-api
+# Supaya build dari root repo tidak gagal (Railpack tanpa deteksi), pakai Nixpacks + nixpacks.toml di root.
 
 [build]
+builder = "nixpacks"
 watchPatterns = ["traka-api/**"]
 
 [deploy]
-startCommand = "node src/index.js"
+# Start dari nixpacks.toml: root repo → cd traka-api && npm start; jika Root Directory = traka-api → traka-api/nixpacks.toml (npm start)
 healthcheckPath = "/health"

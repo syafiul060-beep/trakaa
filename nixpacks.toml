@@ -1,0 +1,13 @@
+# Monorepo: service API ada di traka-api/. Dipakai saat Railway build dari root repo
+# (bukan dari Settings → Root Directory = traka-api).
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["cd traka-api && npm ci"]
+
+[phases.build]
+cmds = []
+
+[start]
+cmd = "cd traka-api && npm start"
