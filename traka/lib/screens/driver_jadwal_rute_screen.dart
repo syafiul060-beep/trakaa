@@ -489,7 +489,8 @@ class DriverJadwalRuteScreen extends StatefulWidget {
   State<DriverJadwalRuteScreen> createState() => _DriverJadwalRuteScreenState();
 }
 
-class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
+class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
+    with WidgetsBindingObserver {
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
 
@@ -530,6 +531,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     HybridForegroundRecovery.tick.addListener(_onHybridForegroundRecoveryTick);
     _loadJadwal();
     _jadwalPageController.addListener(_onPageChanged);
@@ -537,6 +539,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     HybridForegroundRecovery.tick.removeListener(_onHybridForegroundRecoveryTick);
     _debouncedJadwalSyncTimer?.cancel();
     _loadingDelayTimer?.cancel();
@@ -546,7 +549,41 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    // Setelah lama di background, indikator simpan/sinkron bisa tetap ON walau request sudah selesai/terputus
+    // (antrean Firestore). Tanpa ini, seluruh tab terasa lambat sampai app ditutup — lihat [HybridForegroundRecovery].
+    if (HybridForegroundRecovery.lastBackgroundDuration >= const Duration(seconds: 3)) {
+      _releaseStuckScheduleUi();
+    }
+    unawaited(_silentResyncJadwalFromServer());
+  }
+
+  /// Matikan spinner/overlay jadwal yang “nyangkut” tanpa menutup app.
+  void _releaseStuckScheduleUi() {
+    if (!mounted) return;
+    _loadingDelayTimer?.cancel();
+    _loadingDelayTimer = null;
+    final stuck = _loading ||
+        _showLoadingSpinner ||
+        _syncingWithServer ||
+        _firestoreCardBusy ||
+        _serverSyncBarrierCount != 0;
+    _serverSyncBarrierCount = 0;
+    if (!stuck) return;
+    setState(() {
+      _loading = false;
+      _showLoadingSpinner = false;
+      _syncingWithServer = false;
+      _firestoreCardBusy = false;
+    });
+  }
+
   void _onHybridForegroundRecoveryTick() {
+    // Jangan [_releaseStuckScheduleUi] di sini: tick juga dipicu saat ganti tab; [lastBackgroundDuration]
+    // bisa masih nilai lama dan memutus progres yang sah.
     unawaited(_silentResyncJadwalFromServer());
   }
 
@@ -554,7 +591,6 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen> {
   Future<void> _silentResyncJadwalFromServer() async {
     final user = _auth.currentUser;
     if (user == null || !mounted) return;
-    if (_firestoreCardBusy) return;
     final gen = ++_silentJadwalGen;
     try {
       final maps = await DriverScheduleService.readSchedulesRawFromServer(
