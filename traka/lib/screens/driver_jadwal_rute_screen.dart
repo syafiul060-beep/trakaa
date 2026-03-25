@@ -924,9 +924,11 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     }
     if (!_shouldSkipDeferredCleanup()) {
       unawaited(_deferCleanupPastSchedules(user.uid));
-    } else if (kDebugMode) {
-      debugPrint(
-        '[JadwalLoad] skip deferred cleanup (< ${_minIntervalBetweenScheduleCleanups.inSeconds}s since last)',
+    } else {
+      final sinceSec =
+          DateTime.now().difference(_lastJadwalCleanupAt!).inSeconds;
+      DriverHybridDiagnostics.breadcrumb(
+        'schedule.cleanup.skip_deferred secs_since_last=$sinceSec window_min=${_minIntervalBetweenScheduleCleanups.inMinutes}',
       );
     }
     if (!mounted) return;
