@@ -185,6 +185,64 @@ class DriverScheduleService {
     }
   }
 
+  /// Aturan prune in-memory (sama dengan langkah sortir di [cleanupPastSchedules], tanpa I/O).
+  static List<Map<String, dynamic>> applySchedulePruneInMemory({
+    required List<Map<String, dynamic>> mapsList,
+    required String driverUid,
+    required Set<String>? activeScheduleIds,
+  }) {
+    final kept = <Map<String, dynamic>>[];
+    for (final raw in mapsList) {
+      final map = Map<String, dynamic>.from(raw);
+      final prune = isScheduleDepartureInThePast(map) ||
+          _isCalendarOutsideBookingWindowFromMap(map);
+      if (!prune) {
+        kept.add(map);
+        continue;
+      }
+      final dateStamp = map['date'] as Timestamp?;
+      final depStamp = map['departureTime'] as Timestamp?;
+      if (dateStamp == null || depStamp == null) {
+        kept.add(map);
+        continue;
+      }
+      if (activeScheduleIds == null) {
+        kept.add(map);
+        continue;
+      }
+      final d = dateStamp.toDate();
+      final dep = depStamp.toDate();
+      final dateKey =
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      final origin = (map['origin'] as String?) ?? '';
+      final dest = (map['destination'] as String?) ?? '';
+      final (scheduleId, legacyScheduleId) = ScheduleIdUtil.build(
+        driverUid,
+        dateKey,
+        dep.millisecondsSinceEpoch,
+        origin,
+        dest,
+      );
+      final storedSid = map['scheduleId'] as String?;
+      final hasOrders = (storedSid != null &&
+              storedSid.isNotEmpty &&
+              OrderService.scheduledOrderMatchesActiveIds(
+                activeScheduleIds,
+                storedSid,
+                ScheduleIdUtil.toLegacy(storedSid),
+              )) ||
+          OrderService.scheduledOrderMatchesActiveIds(
+            activeScheduleIds,
+            scheduleId,
+            legacyScheduleId,
+          );
+      if (hasOrders) {
+        kept.add(map);
+      }
+    }
+    return kept;
+  }
+
   static Future<List<Map<String, dynamic>>> cleanupPastSchedules(
     String driverUid, {
     bool persistPruned = true,
@@ -243,56 +301,11 @@ class DriverScheduleService {
         trace('orders: FAILED ($e) → past schedules kept if ambiguous');
       }
 
-      final kept = <Map<String, dynamic>>[];
-      for (final raw in mapsList) {
-        final map = Map<String, dynamic>.from(raw);
-        final prune =
-            isScheduleDepartureInThePast(map) ||
-                _isCalendarOutsideBookingWindowFromMap(map);
-        if (!prune) {
-          kept.add(map);
-          continue;
-        }
-        final dateStamp = map['date'] as Timestamp?;
-        final depStamp = map['departureTime'] as Timestamp?;
-        if (dateStamp == null || depStamp == null) {
-          kept.add(map);
-          continue;
-        }
-        if (activeScheduleIds == null) {
-          kept.add(map);
-          continue;
-        }
-        final d = dateStamp.toDate();
-        final dep = depStamp.toDate();
-        final dateKey =
-            '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-        final origin = (map['origin'] as String?) ?? '';
-        final dest = (map['destination'] as String?) ?? '';
-        final (scheduleId, legacyScheduleId) = ScheduleIdUtil.build(
-          driverUid,
-          dateKey,
-          dep.millisecondsSinceEpoch,
-          origin,
-          dest,
-        );
-        final storedSid = map['scheduleId'] as String?;
-        final hasOrders = (storedSid != null &&
-                storedSid.isNotEmpty &&
-                OrderService.scheduledOrderMatchesActiveIds(
-                  activeScheduleIds,
-                  storedSid,
-                  ScheduleIdUtil.toLegacy(storedSid),
-                )) ||
-            OrderService.scheduledOrderMatchesActiveIds(
-              activeScheduleIds,
-              scheduleId,
-              legacyScheduleId,
-            );
-        if (hasOrders) {
-          kept.add(map);
-        }
-      }
+      final kept = applySchedulePruneInMemory(
+        mapsList: mapsList,
+        driverUid: driverUid,
+        activeScheduleIds: activeScheduleIds,
+      );
 
       if (kept.length < mapsList.length) {
         if (persistPruned) {
