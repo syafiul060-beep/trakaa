@@ -1,0 +1,4 @@
+# Satu URL publik untuk HTTP API Railway (servis trakaa). Tanpa trailing slash.
+# Setelah mengubah baris URL di bawah, cari & samakan: traka-admin .env,
+# scripts run_hybrid / build_hybrid (default), dan build Play (dart-define).
+https://trakaa-production.up.railway.app

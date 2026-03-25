@@ -1,7 +1,8 @@
 /// Konfigurasi Traka Backend API (hybrid Redis + PostgreSQL).
 ///
+/// URL produksi resmi (satu sumber): file **`PRODUCTION_API_BASE_URL.txt`** di root monorepo.
 /// **Aktif jika** `--dart-define=TRAKA_USE_HYBRID=true` **dan**
-/// `--dart-define=TRAKA_API_BASE_URL=https://...` (lihat `scripts/run_hybrid.ps1` /
+/// `--dart-define=TRAKA_API_BASE_URL=...` (lihat `scripts/run_hybrid.ps1` /
 /// `scripts/build_hybrid.ps1`). Tanpa itu, app hanya memakai Firestore untuk
 /// `driver_status` / matching (tetap aman, tapi tanpa Redis).
 ///
@@ -11,7 +12,7 @@ class TrakaApiConfig {
   TrakaApiConfig._();
 
   /// Base URL backend API (tanpa trailing slash).
-  /// Contoh: https://traka-api.railway.app
+  /// Produksi: baris URL di `PRODUCTION_API_BASE_URL.txt` (root repo).
   static const String apiBaseUrl = String.fromEnvironment(
     'TRAKA_API_BASE_URL',
     defaultValue: '',

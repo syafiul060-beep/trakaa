@@ -90,7 +90,7 @@ FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json
    - `FIREBASE_SERVICE_ACCOUNT_PATH` = `./firebase-service-account.json`
 5. Untuk service account: upload file JSON sebagai **Secret** atau paste isi JSON ke variable `FIREBASE_SERVICE_ACCOUNT` (jika backend mendukung env JSON)
 6. **Deploy**
-7. Catat URL public (mis. `https://traka-api-production.up.railway.app`)
+7. Catat URL public (mis. `https://trakaa-production.up.railway.app`)
 
 > **Catatan:** Railway/Render biasanya tidak punya filesystem untuk upload file. Alternatif: encode JSON sebagai base64 dan decode di startup, atau gunakan variable `GOOGLE_APPLICATION_CREDENTIALS_JSON` berisi string JSON.
 
@@ -143,13 +143,13 @@ Untuk **development** (uji hybrid):
 
 ```bash
 cd traka
-flutter run --dart-define=TRAKA_API_BASE_URL=https://traka-api-production.up.railway.app --dart-define=TRAKA_USE_HYBRID=true
+flutter run --dart-define=TRAKA_API_BASE_URL=https://trakaa-production.up.railway.app --dart-define=TRAKA_USE_HYBRID=true
 ```
 
 Untuk **production** (release):
 
 ```bash
-flutter build apk --dart-define=TRAKA_API_BASE_URL=https://traka-api-production.up.railway.app --dart-define=TRAKA_USE_HYBRID=true
+flutter build apk --dart-define=TRAKA_API_BASE_URL=https://trakaa-production.up.railway.app --dart-define=TRAKA_USE_HYBRID=true
 ```
 
 ### 5.2 Tanpa dart-define (hardcode sementara)
@@ -157,7 +157,7 @@ flutter build apk --dart-define=TRAKA_API_BASE_URL=https://traka-api-production.
 Edit `traka/lib/config/traka_api_config.dart`:
 
 ```dart
-static const String apiBaseUrl = 'https://traka-api-production.up.railway.app';
+static const String apiBaseUrl = 'https://trakaa-production.up.railway.app';
 static const bool useHybrid = true;  // ubah ke true untuk aktifkan
 ```
 
@@ -171,10 +171,10 @@ static const bool useHybrid = true;  // ubah ke true untuk aktifkan
 
 ```bash
 # Health check
-curl https://traka-api-production.up.railway.app/health
+curl https://trakaa-production.up.railway.app/health
 
 # Daftar driver (harus kosong awalnya)
-curl https://traka-api-production.up.railway.app/api/driver/status
+curl https://trakaa-production.up.railway.app/api/driver/status
 ```
 
 ### 6.2 Flutter (driver)
@@ -252,7 +252,7 @@ Jika terjadi masalah:
 Agar sinkron dengan hybrid, set di `.env`:
 
 ```env
-VITE_TRAKA_API_BASE_URL=https://traka-api-production.up.railway.app
+VITE_TRAKA_API_BASE_URL=https://trakaa-production.up.railway.app
 VITE_TRAKA_USE_HYBRID=true
 ```
 

@@ -14,7 +14,7 @@ class PassengerMapRealtimeSocket {
   String _lastAuthKey = '';
   void Function(Map<String, dynamic> data)? _onDriverLocation;
 
-  /// [url] contoh `https://trakaa-production-ae90.up.railway.app`
+  /// [url] worker Socket.IO (bukan URL API HTTP); contoh `https://<worker>.up.railway.app`
   void connect({
     required String url,
     String? authToken,

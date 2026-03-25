@@ -11,7 +11,7 @@ Dokumen ini untuk uji cepat sebelum rilis ketika app dibuild dengan **`TRAKA_USE
 | **Tanggal** | _YYYY-MM-DD_ |
 | **Tester** | _nama_ |
 | **Lingkungan** | ☐ Staging &nbsp; ☐ Production &nbsp; ☐ Lain: _______ |
-| **`TRAKA_API_BASE_URL`** (yang dipakai build) | _https://…_ |
+| **`TRAKA_API_BASE_URL`** (yang dipakai build) | https://trakaa-production.up.railway.app |
 | **Build app** (version + build / CI #) | _mis. 1.4.0 (210) atau #456_ |
 | **Define opsional** (centang jika dipakai di build ini) | ☐ `TRAKA_CREATE_ORDER_VIA_API` ☐ `TRAKA_API_CERT_SHA256` ☐ Map WS (`TRAKA_ENABLE_MAP_WS` + URL) |
 | **Firebase project** (jika relevan) | _default / alias_ |

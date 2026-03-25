@@ -10,7 +10,7 @@ Jika biasanya pakai **hybrid** (`dart-define` API + opsional Map WS), gunakan sk
 
 ```powershell
 cd traka
-.\scripts\run_hybrid.bat -Profile -EnableMapWs -RealtimeWsUrl "https://trakaa-production-ae90.up.railway.app"
+.\scripts\run_hybrid.bat -Profile -EnableMapWs -RealtimeWsUrl "https://<worker-realtime>.up.railway.app"
 ```
 
 Atau tanpa WebSocket:

@@ -63,7 +63,7 @@ adb install -r build\app\outputs\flutter-apk\app-release.apk
 Sama seperti build Play Store: tambah flag worker (URL **HTTPS** service `traka-realtime-worker`, bukan API REST):
 
 ```cmd
-.\scripts\run_hybrid.bat -EnableMapWs -RealtimeWsUrl "https://trakaa-production-ae90.up.railway.app"
+.\scripts\run_hybrid.bat -EnableMapWs -RealtimeWsUrl "https://<worker-realtime>.up.railway.app"
 ```
 
 Tanpa kedua argumen itu, app tetap pakai hybrid biasa; posisi driver di peta mengikuti stream/polling (fallback).

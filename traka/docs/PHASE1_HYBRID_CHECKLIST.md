@@ -71,7 +71,7 @@ npm start
 - [ ] New Project → Deploy from GitHub (atau folder)
 - [ ] Root: `traka-api`
 - [ ] Variables: `REDIS_URL`, `FIREBASE_SERVICE_ACCOUNT_JSON` (paste JSON)
-- [ ] Deploy → catat URL (mis. `https://traka-api-production.up.railway.app`)
+- [ ] Deploy → catat URL (satu kanonis: `PRODUCTION_API_BASE_URL.txt` — mis. `https://trakaa-production.up.railway.app`)
 
 **Render:**
 - [ ] New Web Service → connect repo
