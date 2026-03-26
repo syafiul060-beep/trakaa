@@ -66,7 +66,7 @@ class OrderReceiptPdfFlow {
     final snap =
         await FirebaseFirestore.instance.collection('users').doc(uid).get();
     final userData = snap.data();
-    if (!host.mounted) return;
+    if (!context.mounted) return;
     final l10n = TrakaL10n.of(context);
 
     if (userData == null) {
@@ -133,7 +133,7 @@ class OrderReceiptPdfFlow {
           : 'bukti_traka_${order.orderNumber ?? order.id}.pdf';
       final file =
           await PassengerReceiptPdfService.savePdfToFile(doc, name: name);
-      if (!host.mounted) return;
+      if (!context.mounted) return;
       await showModalBottomSheet<void>(
         context: context,
         showDragHandle: true,
@@ -163,7 +163,7 @@ class OrderReceiptPdfFlow {
                   onPressed: () async {
                     Navigator.of(ctx).pop();
                     final r = await PassengerReceiptPdfService.openPdfFile(file);
-                    if (!host.mounted) return;
+                    if (!context.mounted) return;
                     if (r.type != ResultType.done) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
@@ -202,7 +202,7 @@ class OrderReceiptPdfFlow {
         ),
       );
     } on PublicReceiptProofException catch (e) {
-      if (host.mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.message)),
         );
@@ -213,13 +213,13 @@ class OrderReceiptPdfFlow {
         e,
         st,
       );
-      if (host.mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(l10n.failedToCreatePdf(e))),
         );
       }
     } finally {
-      if (host.mounted) {
+      if (context.mounted) {
         setLoadingOrderId(null);
       }
     }

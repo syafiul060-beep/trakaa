@@ -289,7 +289,7 @@ class OrderService {
       }
       final scan = scanPms.first;
       final dest = destPms.first;
-      final norm = (String? s) => (s ?? '').trim().toLowerCase();
+      String norm(String? s) => (s ?? '').trim().toLowerCase();
       bool atDest;
       switch (level) {
         case 'desa':
