@@ -77,17 +77,22 @@ jobs:
       - run: flutter pub get
       - run: cp lib/firebase_options.example.dart lib/firebase_options.dart
       # File di-gitignore lokal; Gradle :processDebugGoogleServices wajib ada di CI.
+      # Path absolut: hindari salah cwd. PR dari fork: secrets tidak dikirim GitHub → variabel kosong.
       - name: Write google-services.json from secret
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           if [ -z "$GOOGLE_SERVICES_JSON" ]; then
-            echo "::error::Secret GOOGLE_SERVICES_JSON kosong. Repo Settings → Secrets → Actions: tambahkan isi penuh android/app/google-services.json (lihat docs/BUILD_PLAY_STORE.md)."
+            echo "::error::GOOGLE_SERVICES_JSON kosong. Jika PR dari fork, GitHub tidak memuat repo secrets — buat PR dari branch di repo yang sama, atau tambah secret (Settings → Secrets → Actions). Lihat docs/BUILD_PLAY_STORE.md."
             exit 1
           fi
-          printf '%s\n' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
-          python3 -c "import json; json.load(open('android/app/google-services.json'))" \
-            || { echo "::error::google-services.json bukan JSON valid (periksa secret, jangan potong awal/akhir)."; exit 1; }
+          OUT="${GITHUB_WORKSPACE}/traka/android/app/google-services.json"
+          mkdir -p "$(dirname "$OUT")"
+          printf '%s\n' "$GOOGLE_SERVICES_JSON" > "$OUT"
+          python3 -c "import json; json.load(open('$OUT'))" \
+            || { echo "::error::google-services.json bukan JSON valid (periksa secret)."; exit 1; }
+          test -s "$OUT" || { echo "::error::File google-services.json kosong setelah tulis."; exit 1; }
+          ls -la "$OUT"
       # Runner GitHub ~7GB RAM; gradle.properties repo pakai -Xmx2048m untuk laptop — sering OOM di CI.
       - name: Gradle heap untuk CI
         run: |
