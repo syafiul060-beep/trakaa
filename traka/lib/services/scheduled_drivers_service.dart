@@ -282,9 +282,11 @@ class ScheduledDriversService {
             }
           } catch (e) {
             // Jika error geocode atau ambil polyline, skip jadwal ini
-            if (kDebugMode) debugPrint(
-              'ScheduledDriversService: Error proses jadwal untuk driver $driverUid: $e',
-            );
+            if (kDebugMode) {
+              debugPrint(
+                'ScheduledDriversService: Error proses jadwal untuk driver $driverUid: $e',
+              );
+            }
             continue;
           }
         }
@@ -382,7 +384,9 @@ class ScheduledDriversService {
           if (depStamp != null) {
             final dep = depStamp.toDate();
             if (scheduleDateOnly == DateTime(now.year, now.month, now.day) &&
-                dep.isBefore(now)) continue;
+                dep.isBefore(now)) {
+              continue;
+            }
           }
 
           final originText = (map['origin'] as String?)?.trim() ?? '';

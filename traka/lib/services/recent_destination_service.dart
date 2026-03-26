@@ -53,7 +53,9 @@ class RecentDestinationService {
       lng: lng,
       usedAt: DateTime.now(),
     ));
-    while (list.length > _maxCount) list.removeLast();
+    while (list.length > _maxCount) {
+      list.removeLast();
+    }
     final encoded = list.map((r) => jsonEncode(r.toJson())).toList();
     await prefs.setStringList(_key, encoded);
   }
@@ -102,7 +104,9 @@ class RecentDestinationService {
       lng: null,
       usedAt: DateTime.now(),
     ));
-    while (list.length > _maxCount) list.removeLast();
+    while (list.length > _maxCount) {
+      list.removeLast();
+    }
     final encoded = list.map((r) => jsonEncode(r.toJson())).toList();
     await prefs.setStringList(_keyDriverJadwal, encoded);
   }

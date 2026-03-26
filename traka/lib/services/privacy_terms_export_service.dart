@@ -144,10 +144,13 @@ class PrivacyTermsExportService {
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/Kebijakan_Privasi_Traka.html');
     await file.writeAsString(privacyHtml, encoding: utf8);
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      subject: 'Kebijakan Privasi - Traka',
-      text: 'Buka file ini dengan browser, lalu pilih Cetak > Simpan sebagai PDF untuk mendapatkan PDF.',
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(file.path)],
+        subject: 'Kebijakan Privasi - Traka',
+        text:
+            'Buka file ini dengan browser, lalu pilih Cetak > Simpan sebagai PDF untuk mendapatkan PDF.',
+      ),
     );
   }
 
@@ -156,10 +159,13 @@ class PrivacyTermsExportService {
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/Syarat_dan_Ketentuan_Traka.html');
     await file.writeAsString(termsHtml, encoding: utf8);
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      subject: 'Syarat dan Ketentuan - Traka',
-      text: 'Buka file ini dengan browser, lalu pilih Cetak > Simpan sebagai PDF untuk mendapatkan PDF.',
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(file.path)],
+        subject: 'Syarat dan Ketentuan - Traka',
+        text:
+            'Buka file ini dengan browser, lalu pilih Cetak > Simpan sebagai PDF untuk mendapatkan PDF.',
+      ),
     );
   }
 }

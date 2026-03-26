@@ -13,7 +13,8 @@ class RegisteredContactsService {
     return toE164OrNull(raw);
   }
 
-  /// Cek maksimal 50 nomor ke backend. Return Map<normalizedPhone, {uid, displayName, photoUrl}>.
+  /// Cek maksimal 50 nomor ke backend. Mengembalikan map: kunci nomor E-164,
+  /// nilai berisi uid, displayName, dan photoUrl.
   static Future<Map<String, Map<String, dynamic>>> checkRegistered(
     List<String> phoneNumbers,
   ) async {
