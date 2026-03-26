@@ -2,6 +2,10 @@
 # Job build-hybrid-smoke: kompilasi APK debug dengan dart-define hybrid (Tahap 3) agar regresi compile terdeteksi di CI.
 name: Traka CI
 
+# Opt-in Node 24 untuk actions JS (checkout, dll.) — kurangi annotation deprecation Node 20 (GitHub 2026).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches: [main, master]
