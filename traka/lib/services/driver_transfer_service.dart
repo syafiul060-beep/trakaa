@@ -192,13 +192,13 @@ class DriverTransferService {
     driverSegments.add({
       'driverUid': fromDriverUid,
       'distanceKm': distance1,
-      'fareRupiah': fare1 != null ? fare1.round() : null,
+      'fareRupiah': fare1?.round(),
       'segmentType': 'pickup_to_transfer',
     });
     driverSegments.add({
       'driverUid': toDriverUid,
       'distanceKm': distance2,
-      'fareRupiah': fare2 != null ? fare2.round() : null,
+      'fareRupiah': fare2?.round(),
       'segmentType': 'transfer_to_dest',
     });
 

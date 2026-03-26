@@ -88,10 +88,12 @@ class LocationService {
   /// Loop terus sampai user kasih izin atau keluar dari halaman.
   static Future<bool> requestPermissionPersistent(BuildContext context) async {
     while (true) {
+      if (!context.mounted) return false;
       // Cek apakah GPS/Location service aktif
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         // GPS mati, tampilkan dialog minta user nyalakan GPS
+        if (!context.mounted) return false;
         final openSettings = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -130,6 +132,7 @@ class LocationService {
 
       if (permission == LocationPermission.deniedForever) {
         // Izin ditolak permanent, harus buka app settings
+        if (!context.mounted) return false;
         final openSettings = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -168,6 +171,7 @@ class LocationService {
 
         if (permission == LocationPermission.denied) {
           // User tolak, tanya lagi
+          if (!context.mounted) return false;
           final retry = await showDialog<bool>(
             context: context,
             barrierDismissible: false,
