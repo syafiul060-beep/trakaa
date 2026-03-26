@@ -25,6 +25,8 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
+      # `lib/firebase_options.dart` di-gitignore (generate lokal). Analyzer butuh file ini.
+      - run: cp lib/firebase_options.example.dart lib/firebase_options.dart
       - run: dart analyze --fatal-warnings --fatal-infos
 
   unit-tests:
@@ -39,6 +41,7 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
+      - run: cp lib/firebase_options.example.dart lib/firebase_options.dart
       - run: |
           flutter test \
             test/driver_schedule_prune_test.dart \
