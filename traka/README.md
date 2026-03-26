@@ -35,7 +35,7 @@ flutter pub get
 flutter run
 ```
 
-**Mode hybrid** (API backend + dual-write Firestore): dari folder `traka`, `.\scripts\run_hybrid.ps1` (Windows) — setara `--dart-define=TRAKA_API_BASE_URL=...` dan `TRAKA_USE_HYBRID=true`. Build Play Store: `.\scripts\build_hybrid.ps1 -Target appbundle` — lihat [`docs/BUILD_PLAY_STORE.md`](docs/BUILD_PLAY_STORE.md).
+**Mode hybrid** (API backend + dual-write Firestore): dari folder `traka`, `.\scripts\run_hybrid.ps1` (Windows) — setara `--dart-define=TRAKA_API_BASE_URL=...` dan `TRAKA_USE_HYBRID=true`. Build Play Store: `.\scripts\build_hybrid.ps1 -Target appbundle` — lihat [`docs/BUILD_PLAY_STORE.md`](docs/BUILD_PLAY_STORE.md). Cek `/health` + Redis: `.\scripts\verify_api_health.ps1`. CI: job `build-hybrid-smoke` di `.github/workflows/traka_ci.yml`.
 
 ## Dokumentasi
 

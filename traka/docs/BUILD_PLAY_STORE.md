@@ -66,6 +66,16 @@ flutter build appbundle --release --dart-define=TRAKA_API_BASE_URL=https://traka
 
 Tanpa `TRAKA_USE_HYBRID` + URL, release hanya memakai **Firestore** untuk status driver / matching (aman, tapi bukan jalur hybrid penuh). Pinning opsional: `.\scripts\build_hybrid.ps1 -Target appbundle -CertSha256 "AA:BB:..."`.
 
+**CI (engineering Tahap 3):** GitHub Actions `Traka CI` menjalankan job `build-hybrid-smoke` — `flutter build apk --debug` dengan `TRAKA_USE_HYBRID` + URL produksi + `TRAKA_CREATE_ORDER_VIA_API` agar regresi compile di jalur hybrid/API ketahuan sebelum rilis.
+
+- **Secret wajib di GitHub:** di repositori → **Settings → Secrets and variables → Actions** → **New repository secret** → nama **`GOOGLE_SERVICES_JSON`**, nilai = **seluruh isi** file `android/app/google-services.json` dari mesin Anda (satu JSON utuh, multiline; paste utuh agar valid JSON). Tanpa ini job `build-hybrid-smoke` gagal di task `:app:processDebugGoogleServices` karena file tidak di-commit (`.gitignore`). CI memvalidasi JSON setelah menulis file.
+- **Penting:** untuk **pull request dari fork**, GitHub **tidak** menyuntikkan repository secrets ke workflow — `GOOGLE_SERVICES_JSON` akan kosong dan job gagal. Untuk CI hijau, buat branch di **repo utama** (`syafiul060-beep/trakaa`) lalu buka PR dari situ, atau uji lewat **push** ke `main` / **workflow_dispatch** setelah secret diset.
+- Secret harus di **Repository secrets** (Settings → Secrets and variables → **Actions**), bukan hanya di *Environment* yang tidak direferensikan workflow.
+- **Re-run failed job** di GitHub memakai **commit & workflow file yang sama** dengan run gagal itu. Jika Anda sudah push perbaikan workflow, jangan hanya re-run job lama — buka tab **Actions**, pilih run **terbaru** setelah push, atau **Re-run all jobs** dari run yang sudah memakai commit terbaru, atau push commit kosong (`git commit --allow-empty`) untuk trigger baru.
+- Jika build CI masih gagal setelah secret benar: log job menampilkan **120 baris terakhir** build; penyebab umum adalah **OOM Gradle** — workflow menaikkan heap sementara di runner (`-Xmx4096m`).
+
+**Sebelum build manual / upload Play:** dari folder `traka`, `.\scripts\verify_api_health.ps1` (membaca URL dari `PRODUCTION_API_BASE_URL.txt` di root monorepo) — wajib `ok` + `checks.redis: true`.
+
 **Hanya Firestore (tanpa hybrid API):**
 
 ```batch

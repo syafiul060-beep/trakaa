@@ -1,5 +1,10 @@
 # `dart analyze --fatal-warnings --fatal-infos` mem-fail pada error, warning, dan info (lint termasuk use_build_context_synchronously).
+# Job build-hybrid-smoke: kompilasi APK debug dengan dart-define hybrid (Tahap 3) agar regresi compile terdeteksi di CI.
 name: Traka CI
+
+# Opt-in Node 24 untuk actions JS (checkout, dll.) — kurangi annotation deprecation Node 20 (GitHub 2026).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 on:
   push:
@@ -11,6 +16,12 @@ on:
     paths:
       - "traka/**"
       - ".github/workflows/traka_ci.yml"
+  workflow_dispatch:
+
+# Satu run aktif per ref (PR/main): push baru membatalkan run lama — hindari 3× paralel saat banyak commit cepat.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze:
@@ -58,3 +69,69 @@ jobs:
             test/passenger_first_chat_message_test.dart \
             test/vehicle_plat_service_test.dart \
             test/app_logger_test.dart
+
+  # Kompilasi jalur hybrid + createOrder API (tanpa upload artifact; hanya cegah drift compile).
+  build-hybrid-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: traka
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: cp lib/firebase_options.example.dart lib/firebase_options.dart
+      # File di-gitignore lokal; Gradle :processDebugGoogleServices wajib ada di CI.
+      # Path absolut: hindari salah cwd. PR dari fork: secrets tidak dikirim GitHub → variabel kosong.
+      - name: Write google-services.json from secret
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON kosong. Jika PR dari fork, GitHub tidak memuat repo secrets — buat PR dari branch di repo yang sama, atau tambah secret (Settings → Secrets → Actions). Lihat docs/BUILD_PLAY_STORE.md."
+            exit 1
+          fi
+          OUT="${GITHUB_WORKSPACE}/traka/android/app/google-services.json"
+          mkdir -p "$(dirname "$OUT")"
+          printf '%s\n' "$GOOGLE_SERVICES_JSON" > "$OUT"
+          python3 -c "import json; json.load(open('$OUT'))" \
+            || { echo "::error::google-services.json bukan JSON valid (periksa secret)."; exit 1; }
+          test -s "$OUT" || { echo "::error::File google-services.json kosong setelah tulis."; exit 1; }
+          ls -la "$OUT"
+      # Gagal cepat jika file hilang (jangan tunggu 8m Gradle). Cwd = traka = path yang dipakai flutter/gradle.
+      - name: Assert google-services.json untuk assembleDebug
+        run: |
+          F="android/app/google-services.json"
+          if [ ! -f "$F" ] || [ ! -s "$F" ]; then
+            echo "::error::Tidak ada $F sebelum build. Jangan pakai «Re-run failed job» pada run lama — itu pakai commit/workflow lama. Push commit baru atau «Re-run all jobs» dari run terbaru di branch. Pastikan secret GOOGLE_SERVICES_JSON (repo Actions secrets)."
+            ls -la android/app/ || true
+            exit 1
+          fi
+          ls -la "$F"
+      # Runner GitHub ~7GB RAM; gradle.properties repo pakai -Xmx2048m untuk laptop — sering OOM di CI.
+      - name: Gradle heap untuk CI
+        run: |
+          sed -i.bak 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4096m -Xms512m -XX:MaxMetaspaceSize=512m -XX:ReservedCodeCacheSize=128m -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8/' android/gradle.properties
+      - name: flutter build apk --debug (hybrid + CREATE_ORDER_VIA_API)
+        env:
+          MAPS_API_KEY: ci_placeholder_maps_key
+        run: |
+          set -uo pipefail
+          LOG=build_apk_ci.log
+          set +e
+          flutter build apk --debug \
+            --dart-define=TRAKA_API_BASE_URL=https://trakaa-production.up.railway.app \
+            --dart-define=TRAKA_USE_HYBRID=true \
+            --dart-define=TRAKA_CREATE_ORDER_VIA_API=true \
+            2>&1 | tee "$LOG"
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" -ne 0 ]; then
+            echo "::error::flutter build apk gagal (exit $code). 120 baris terakhir:"
+            tail -n 120 "$LOG" || true
+            exit "$code"
+          fi

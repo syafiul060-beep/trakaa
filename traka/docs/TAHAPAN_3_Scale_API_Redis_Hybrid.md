@@ -73,6 +73,8 @@ Ini **disarankan**: sama-sama mode hybrid, lebih cepat iterasi daripada internal
 | Daftar driver aktif (travel) | `lib/services/active_drivers_service.dart` — cabang `TrakaApiConfig.isApiEnabled` |
 | HTTP ke API + pinning | `lib/services/traka_api_service.dart` |
 | Build hybrid (PowerShell) | `scripts/build_hybrid.ps1` |
+| Cek `/health` + Redis (lokal, sebelum rilis) | `scripts/verify_api_health.ps1` (URL dari `PRODUCTION_API_BASE_URL.txt`) |
+| CI: smoke compile hybrid | GitHub Actions `Traka CI` → job `build-hybrid-smoke` (secret **`GOOGLE_SERVICES_JSON`** = isi `android/app/google-services.json`) |
 | Certificate pinning | [`SETUP_CERTIFICATE_PINNING.md`](SETUP_CERTIFICATE_PINNING.md) |
 | Redis produksi (API) | [`../traka-api/docs/SETUP_REDIS_PRODUCTION.md`](../traka-api/docs/SETUP_REDIS_PRODUCTION.md) |
 | Geo matching API | [`../traka-api/docs/REDIS_GEO_MATCHING.md`](../traka-api/docs/REDIS_GEO_MATCHING.md) |
