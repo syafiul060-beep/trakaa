@@ -5,6 +5,7 @@ const router = express.Router();
 const { getRedis, scanKeysPaginated, geoAddDriver, geoRemoveDriver } = require('../lib/redis.js');
 const { verifyToken } = require('../lib/auth.js');
 const { sanitizeNumber, isValidLatLng } = require('../lib/validation.js');
+const { maybeSnapDriverLatLng } = require('../lib/roads_snap.js');
 
 const KEY_PREFIX = 'driver_status:';
 const TTL_SECONDS = 600; // 10 menit
@@ -90,12 +91,24 @@ router.post('/location', verifyToken, driverLocationLimit, async (req, res) => {
       return res.status(400).json({ error: 'Invalid latitude or longitude' });
     }
 
+    let finalLat = parseFloat(latitude);
+    let finalLng = parseFloat(longitude);
+    let roadSnapped = false;
+    try {
+      const snap = await maybeSnapDriverLatLng(redis, uid, finalLat, finalLng);
+      finalLat = snap.lat;
+      finalLng = snap.lng;
+      roadSnapped = snap.snapped;
+    } catch (snapErr) {
+      console.warn('[driver/location] roads_snap:', snapErr.message);
+    }
+
     const citySlug = (city && String(city).trim()) || 'default';
     const data = {
       uid,
       city: citySlug,
-      latitude: parseFloat(latitude),
-      longitude: parseFloat(longitude),
+      latitude: finalLat,
+      longitude: finalLng,
       lastUpdated: new Date().toISOString(),
       status: status || 'siap_kerja',
       ...(routeOriginLat != null && { routeOriginLat: parseFloat(routeOriginLat) }),
@@ -117,7 +130,7 @@ router.post('/location', verifyToken, driverLocationLimit, async (req, res) => {
     const key = KEY_PREFIX + uid;
     await redis.setEx(key, TTL_SECONDS, JSON.stringify(data));
     try {
-      await geoAddDriver(citySlug, uid, parseFloat(longitude), parseFloat(latitude));
+      await geoAddDriver(citySlug, uid, finalLng, finalLat);
     } catch (geoErr) {
       console.warn('[driver/location] GEOADD failed:', geoErr.message);
     }
@@ -128,8 +141,8 @@ router.post('/location', verifyToken, driverLocationLimit, async (req, res) => {
           JSON.stringify({
             uid,
             city: citySlug,
-            lat: data.latitude,
-            lng: data.longitude,
+            lat: finalLat,
+            lng: finalLng,
             ts: Date.now(),
           }),
         );
@@ -137,7 +150,12 @@ router.post('/location', verifyToken, driverLocationLimit, async (req, res) => {
         console.warn('[driver/location] publish:', pubErr.message);
       }
     }
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+      latitude: finalLat,
+      longitude: finalLng,
+      roadSnapped,
+    });
   } catch (err) {
     console.error('POST /driver/location:', err);
     res.status(500).json({ error: err.message });

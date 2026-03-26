@@ -14,6 +14,19 @@ import 'driver_hybrid_diagnostics.dart';
 /// Hasil [createPassengerOrderViaApi]: id order atau fallback ke Firestore lokal.
 typedef CreateOrderApiResult = ({String? orderId, bool fallBackToFirestore});
 
+/// Koordinat akhir dari POST /api/driver/location (Redis + opsional Roads snap).
+class DriverLocationPostResult {
+  const DriverLocationPostResult({
+    required this.latitude,
+    required this.longitude,
+    this.roadSnapped = false,
+  });
+
+  final double latitude;
+  final double longitude;
+  final bool roadSnapped;
+}
+
 /// HTTP client untuk Traka Backend API.
 /// Digunakan untuk driver_status (Redis) saat hybrid aktif.
 /// Tahap 6: Certificate pinning opsional via TRAKA_API_CERT_SHA256.
@@ -81,8 +94,15 @@ class TrakaApiService {
   }
 
   /// POST /api/driver/location - Update lokasi driver.
-  static Future<bool> postDriverLocation(Map<String, dynamic> body) async {
-    if (!_enabled) return false;
+  /// Respons memuat [latitude]/[longitude] final (map-matching Roads di server jika diaktifkan).
+  static Future<DriverLocationPostResult?> postDriverLocation(
+    Map<String, dynamic> body,
+  ) async {
+    if (!_enabled) return null;
+    final fallbackLat = (body['latitude'] as num?)?.toDouble();
+    final fallbackLng = (body['longitude'] as num?)?.toDouble();
+    if (fallbackLat == null || fallbackLng == null) return null;
+
     try {
       return await RetryUtils.withRetry(() async {
         final res = await _httpPost(
@@ -93,7 +113,27 @@ class TrakaApiService {
         if (res.statusCode >= 500 || res.statusCode == 429) {
           throw Exception('HTTP ${res.statusCode}');
         }
-        return res.statusCode == 200;
+        if (res.statusCode != 200) {
+          return null;
+        }
+        try {
+          final decoded = jsonDecode(res.body);
+          if (decoded is Map<String, dynamic> && decoded['ok'] == true) {
+            final la = decoded['latitude'];
+            final lo = decoded['longitude'];
+            if (la is num && lo is num) {
+              return DriverLocationPostResult(
+                latitude: la.toDouble(),
+                longitude: lo.toDouble(),
+                roadSnapped: decoded['roadSnapped'] == true,
+              );
+            }
+          }
+        } catch (_) {}
+        return DriverLocationPostResult(
+          latitude: fallbackLat,
+          longitude: fallbackLng,
+        );
       });
     } catch (e) {
       if (kDebugMode) debugPrint('TrakaApiService.postDriverLocation: $e');
@@ -102,7 +142,7 @@ class TrakaApiService {
         DriverHybridDiagnostics.breadcrumb('hybrid.driver_location http_429');
         AppAnalyticsService.logHybridDriverLocationRateLimited();
       }
-      return false;
+      return null;
     }
   }
 

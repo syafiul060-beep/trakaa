@@ -188,7 +188,11 @@ class DriverStatusService {
         if (estimatedDurationSeconds != null) apiBody['estimatedDurationSeconds'] = estimatedDurationSeconds;
         if (routeCategory != null && routeCategory.isNotEmpty) apiBody['routeCategory'] = routeCategory;
       }
-      await TrakaApiService.postDriverLocation(apiBody);
+      final posted = await TrakaApiService.postDriverLocation(apiBody);
+      if (posted != null) {
+        data['latitude'] = posted.latitude;
+        data['longitude'] = posted.longitude;
+      }
       // Dual-write ke Firestore: penumpang non-hybrid bisa tetap menemukan driver
       await FirebaseFirestore.instance
           .collection(_collectionDriverStatus)
