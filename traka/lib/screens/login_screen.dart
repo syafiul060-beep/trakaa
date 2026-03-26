@@ -1826,7 +1826,7 @@ class _LogoSection extends StatelessWidget {
       _logoAsset,
       height: 140,
       fit: BoxFit.contain,
-      errorBuilder: (_, __, ___) => Icon(
+      errorBuilder: (_, _, _) => Icon(
         Icons.image_not_supported_outlined,
         size: 56,
         color: Theme.of(context).colorScheme.onSurfaceVariant,

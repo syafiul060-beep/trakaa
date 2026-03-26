@@ -1354,7 +1354,7 @@ class _FormCariTravelState extends State<_FormCariTravel> {
                     child: ListView.separated(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       itemCount: _originResults.length,
-                      separatorBuilder: (_, __) =>
+                      separatorBuilder: (_, _) =>
                           Divider(height: 1, color: Theme.of(context).colorScheme.outline),
                       itemBuilder: (context, i) {
                         final p = _originResults[i];
@@ -1436,7 +1436,7 @@ class _FormCariTravelState extends State<_FormCariTravel> {
                     child: ListView.separated(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       itemCount: _destResults.length,
-                      separatorBuilder: (_, __) =>
+                      separatorBuilder: (_, _) =>
                           Divider(height: 1, color: Theme.of(context).colorScheme.outline),
                       itemBuilder: (context, i) {
                         final p = _destResults[i];

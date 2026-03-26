@@ -447,7 +447,7 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
                 reverse: false,
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 itemCount: orders.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
+                separatorBuilder: (_, _) => const Divider(height: 1),
                 itemBuilder: (context, i) {
                   final order = orders[i];
                   final siblingCount =

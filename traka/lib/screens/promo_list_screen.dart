@@ -99,12 +99,12 @@ class _PromoCard extends StatelessWidget {
                 imageUrl: promotion.imageUrl!,
                 height: 140,
                 fit: BoxFit.cover,
-                placeholder: (_, __) => Container(
+                placeholder: (_, _) => Container(
                   height: 140,
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: const Center(child: CircularProgressIndicator()),
                 ),
-                errorWidget: (_, __, ___) => Container(
+                errorWidget: (_, _, _) => Container(
                   height: 140,
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   child: Icon(Icons.image_not_supported, size: 48),
@@ -180,12 +180,12 @@ class PromoDetailScreen extends StatelessWidget {
                   height: 200,
                   width: double.infinity,
                   fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(
+                  placeholder: (_, _) => Container(
                     height: 200,
                     color: Theme.of(context).colorScheme.surfaceContainerHighest,
                     child: const Center(child: CircularProgressIndicator()),
                   ),
-                  errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                  errorWidget: (_, _, _) => const SizedBox.shrink(),
                 ),
               ),
             if (promotion.imageUrl != null && promotion.imageUrl!.isNotEmpty)

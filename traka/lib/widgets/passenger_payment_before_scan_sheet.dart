@@ -251,7 +251,7 @@ class _PassengerPaymentBeforeScanSheetState
                   qrisUrl,
                   height: 220,
                   fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Text('Gagal memuat gambar'),
+                  errorBuilder: (_, _, _) => const Text('Gagal memuat gambar'),
                 ),
               ),
             ],

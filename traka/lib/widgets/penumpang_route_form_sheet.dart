@@ -353,7 +353,7 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         physics: const ClampingScrollPhysics(),
                         itemCount: _autocompleteResults.length,
-                        separatorBuilder: (_, __) => Divider(
+                        separatorBuilder: (_, _) => Divider(
                           height: 1,
                           color: Theme.of(context).colorScheme.outline,
                         ),

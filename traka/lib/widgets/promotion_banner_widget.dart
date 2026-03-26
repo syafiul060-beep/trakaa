@@ -63,12 +63,12 @@ class _PromotionBannerWidgetState extends State<PromotionBannerWidget> {
                           width: 80,
                           height: 56,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(
+                          placeholder: (_, _) => Container(
                             width: 80,
                             height: 56,
                             color: Theme.of(context).colorScheme.surfaceContainerHighest,
                           ),
-                          errorWidget: (_, __, ___) => Container(
+                          errorWidget: (_, _, _) => Container(
                             width: 80,
                             height: 56,
                             color: Theme.of(context).colorScheme.surfaceContainerHighest,

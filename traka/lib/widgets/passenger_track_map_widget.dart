@@ -266,6 +266,7 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
         padding: 4,
         mapZoom: _mapZoomForCarIcons,
       );
+      if (!mounted) return;
       final result = await CarIconService.loadCarIcons(
         context: context,
         baseSize: 12,
@@ -288,7 +289,7 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
 
   Future<void> _loadShipIcon() async {
     try {
-      _shipIcon = await BitmapDescriptor.fromAssetImage(
+      _shipIcon = await BitmapDescriptor.asset(
         const ImageConfiguration(size: Size(56, 56)),
         'assets/images/ship_icon.png',
       );
@@ -592,8 +593,12 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
   /// Smooth bearing: EMA + hysteresis (abaikan perubahan kecil). Sinkron dengan driver.
   double _smoothBearing(double current, double newBearing) {
     double diff = newBearing - current;
-    while (diff > 180) diff -= 360;
-    while (diff < -180) diff += 360;
+    while (diff > 180) {
+      diff -= 360;
+    }
+    while (diff < -180) {
+      diff += 360;
+    }
     if (diff.abs() < _bearingHysteresisDeg) return current;
     return (current + diff * _bearingSmoothAlpha) % 360;
   }

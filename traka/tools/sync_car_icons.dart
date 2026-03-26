@@ -7,7 +7,7 @@ import 'package:image/image.dart' as img;
 void main() async {
   final premiumDir = Directory('assets/images/traka_car_icons_premium');
   if (!await premiumDir.exists()) {
-    print('Folder ${premiumDir.path} tidak ditemukan');
+    stdout.writeln('Folder ${premiumDir.path} tidak ditemukan');
     exit(1);
   }
 
@@ -16,14 +16,14 @@ void main() async {
   for (final name in ['car_red.png', 'car_green.png', 'car_blue.png']) {
     final src = File('${premiumDir.path}/$name');
     if (!await src.exists()) {
-      print('Skip: $name tidak ada');
+      stdout.writeln('Skip: $name tidak ada');
       continue;
     }
 
     final bytes = await src.readAsBytes();
     final decoded = img.decodeImage(bytes);
     if (decoded == null) {
-      print('Gagal decode: $name');
+      stdout.writeln('Gagal decode: $name');
       continue;
     }
 
@@ -34,7 +34,7 @@ void main() async {
       interpolation: img.Interpolation.cubic,
     );
     await src.writeAsBytes(img.encodePng(resized));
-    print('OK: traka_car_icons_premium/$name → ${size1x}x$size1x');
+    stdout.writeln('OK: traka_car_icons_premium/$name ke ${size1x}x$size1x');
   }
-  print('Selesai.');
+  stdout.writeln('Selesai.');
 }

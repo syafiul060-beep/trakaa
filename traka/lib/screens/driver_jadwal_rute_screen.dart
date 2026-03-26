@@ -1897,7 +1897,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
                                         0,
                                       ),
                                       itemCount: _groupedByDate().length,
-                                      separatorBuilder: (_, __) => const SizedBox(width: 8),
+                                      separatorBuilder: (_, _) => const SizedBox(width: 8),
                                       itemBuilder: (context, i) {
                                         final entry = _groupedByDate()[i];
                                         final date = entry.key;
@@ -2862,7 +2862,7 @@ class _ScheduledPassengersSheetState extends State<_ScheduledPassengersSheet> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: orders.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (context, i) {
                         final o = orders[i];
                         final photoUrl = o.passengerPhotoUrl;
@@ -3818,7 +3818,7 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                       child: ListView.separated(
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         itemCount: _originResults.length,
-                        separatorBuilder: (_, __) =>
+                        separatorBuilder: (_, _) =>
                             Divider(height: 1, color: Theme.of(context).colorScheme.outline),
                         itemBuilder: (context, i) {
                           final p = _originResults[i];
@@ -3918,7 +3918,7 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                       child: ListView.separated(
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         itemCount: _destResults.length,
-                        separatorBuilder: (_, __) =>
+                        separatorBuilder: (_, _) =>
                             Divider(height: 1, color: Theme.of(context).colorScheme.outline),
                         itemBuilder: (context, i) {
                           final p = _destResults[i];

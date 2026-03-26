@@ -195,7 +195,7 @@ class _PindahJadwalSheetState extends State<_PindahJadwalSheet> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: _otherSchedules.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
                   final m = _otherSchedules[i];
                   return ListTile(

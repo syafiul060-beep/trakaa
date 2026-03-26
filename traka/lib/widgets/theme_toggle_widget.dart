@@ -13,7 +13,7 @@ class ThemeToggleWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: ThemeService.themeModeNotifier,
-      builder: (_, themeMode, __) {
+      builder: (_, themeMode, _) {
         final isDark = themeMode == ThemeMode.dark;
         return Tooltip(
           message: isDark

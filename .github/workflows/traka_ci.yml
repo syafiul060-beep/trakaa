@@ -1,4 +1,4 @@
-# `flutter analyze` (error & warning fatal; info tidak mem-fail job) + suite tes unit ringan.
+# `dart analyze --fatal-warnings` (error & warning fatal; info tidak mem-fail job). Pakai dart analyze agar exit code konsisten di CI; `flutter analyze --no-fatal-infos` terkadang tetap non-zero di beberapa runner.
 name: Traka CI
 
 on:
@@ -25,7 +25,7 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter analyze --no-fatal-infos
+      - run: dart analyze --fatal-warnings
 
   unit-tests:
     runs-on: ubuntu-latest
