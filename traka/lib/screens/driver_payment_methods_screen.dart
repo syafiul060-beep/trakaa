@@ -63,7 +63,7 @@ class _DriverPaymentMethodsScreenState extends State<DriverPaymentMethodsScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  value: type,
+                  initialValue: type,
                   decoration: const InputDecoration(labelText: 'Jenis'),
                   items: const [
                     DropdownMenuItem(value: 'bank', child: Text('Bank')),

@@ -3898,8 +3898,7 @@ class _DriverScreenState extends State<DriverScreen>
       _pendingJadwalSafetyTimer = null;
       // Jangan biarkan flag ini true setelah async selesai / widget tidak mounted
       // (kasus: driver pindah tab saat geocode — `if (!mounted) return` tanpa clear → Siap Kerja terasa mati).
-      if (loadGen != _loadRouteFromJadwalGen) return;
-      if (_pendingJadwalRouteLoad) {
+      if (loadGen == _loadRouteFromJadwalGen && _pendingJadwalRouteLoad) {
         if (mounted) {
           setState(() => _pendingJadwalRouteLoad = false);
         } else {
@@ -4065,34 +4064,32 @@ class _DriverScreenState extends State<DriverScreen>
                 });
                 _startJourneyNumberPrefetch();
 
-                if (mounted) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) _fitAlternativeRoutesBounds();
-                  });
-                  ScaffoldMessenger.of(currentContext).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Pilih rute yang diinginkan di map. Gunakan tombol di bawah peta atau tap garis rute.',
-                      ),
-                      behavior: SnackBarBehavior.floating,
-                      duration: Duration(seconds: 4),
+                if (!context.mounted) return;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _fitAlternativeRoutesBounds();
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Pilih rute yang diinginkan di map. Gunakan tombol di bawah peta atau tap garis rute.',
                     ),
-                  );
-                }
+                    behavior: SnackBarBehavior.floating,
+                    duration: Duration(seconds: 4),
+                  ),
+                );
               } else {
-                if (mounted) {
-                  ScaffoldMessenger.of(currentContext).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        TrakaL10n.of(currentContext).failedToLoadRouteDirections,
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      backgroundColor: Colors.orange,
-                      behavior: SnackBarBehavior.floating,
-                      duration: const Duration(seconds: 5),
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      TrakaL10n.of(context).failedToLoadRouteDirections,
+                      style: const TextStyle(fontWeight: FontWeight.w500),
                     ),
-                  );
-                }
+                    backgroundColor: Colors.orange,
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(seconds: 5),
+                  ),
+                );
               }
             },
       ),
@@ -4414,7 +4411,7 @@ class _DriverScreenState extends State<DriverScreen>
             rotation: _smoothedBearing,
             flat: true,
             anchor: const Offset(0.5, 0.33),
-            zIndex: 4,
+            zIndexInt: 4,
           ),
         );
         }
@@ -4437,7 +4434,7 @@ class _DriverScreenState extends State<DriverScreen>
             flat: useArrow,
             // Selaraskan dengan marker cone/arrow mode aktif: ujung panah ~posisi GPS.
             anchor: Offset(0.5, useArrow ? 0.33 : 0.5),
-            zIndex: 4,
+            zIndexInt: 4,
           ),
         );
       }
@@ -7239,7 +7236,7 @@ class _DriverScreenState extends State<DriverScreen>
             final mustPay = status?.mustPayContribution ?? false;
             if (!mustPay) return const SizedBox.shrink();
             final total = status?.totalRupiah ?? 0;
-            final fmt = (int n) => n.toString().replaceAllMapped(
+            String fmt(int n) => n.toString().replaceAllMapped(
                 RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
             final t = status?.contributionTravelRupiah ?? 0;
             final b = status?.contributionBarangRupiah ?? 0;

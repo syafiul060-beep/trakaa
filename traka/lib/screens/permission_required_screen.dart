@@ -54,10 +54,11 @@ class _PermissionRequiredScreenState extends State<PermissionRequiredScreen>
     setState(() => _isRetrying = true);
     final locationGranted =
         await PermissionService.requestLocationPermission(context);
+    if (!mounted) return;
     final phoneStateGranted =
         await PermissionService.requestPhoneStatePermission(context);
-    if (mounted) setState(() => _isRetrying = false);
     if (!mounted) return;
+    setState(() => _isRetrying = false);
     if (locationGranted && phoneStateGranted) {
       widget.onPermissionGranted?.call(context);
     }

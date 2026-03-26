@@ -225,6 +225,7 @@ class _DataKendaraanScreenState extends State<DataKendaraanScreen> {
         return;
       }
     }
+    if (!mounted) return;
 
     if (_selectedMerek == null ||
         _selectedType == null ||
@@ -243,6 +244,7 @@ class _DataKendaraanScreenState extends State<DataKendaraanScreen> {
     final platExists = await VehiclePlatService.platExistsForOtherDriver(
       _platController.text.toUpperCase(),
     );
+    if (!mounted) return;
     if (platExists) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -826,6 +828,7 @@ class _DataKendaraanFormSheetState extends State<DataKendaraanFormSheet> {
         return;
       }
     }
+    if (!mounted) return;
 
     if (_selectedMerek == null ||
         _selectedType == null ||
@@ -843,6 +846,7 @@ class _DataKendaraanFormSheetState extends State<DataKendaraanFormSheet> {
     final platUpper = _platController.text.toUpperCase();
     final platExists = await VehiclePlatService.platExistsForOtherDriver(platUpper);
 
+    if (!mounted) return;
     if (platExists) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

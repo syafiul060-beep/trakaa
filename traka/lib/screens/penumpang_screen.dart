@@ -1069,6 +1069,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     AppAnalyticsService.logPassengerSearchDriver(mode: 'route');
     if (await _checkAndRedirectIfOutstandingViolation()) return;
     if (_abortSearchIfTravelHomeBlocked()) return;
+    if (!mounted) return;
     // Validasi: form tujuan harus diisi
     final tujuanText = _destinationController.text.trim();
     if (tujuanText.isEmpty) {
@@ -1881,7 +1882,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
           icon: _passengerBlueDotIcon ??
               BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
           anchor: const Offset(0.5, 0.5),
-          zIndex: 4,
+          zIndexInt: 4,
           infoWindow: const InfoWindow(title: 'Lokasi Anda'),
         ),
       );
@@ -2049,6 +2050,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
         padding: passengerMapCarPadding,
         mapZoom: _mapZoomForCarIcons,
       );
+      if (!mounted) return;
       final result = await CarIconService.loadCarIcons(
         context: context,
         baseSize: passengerMapCarBaseSize,

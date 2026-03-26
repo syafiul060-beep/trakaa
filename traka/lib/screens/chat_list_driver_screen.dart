@@ -595,7 +595,7 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
                               if (value == 'sembunyikan') {
                                 final err = await OrderService.hideChatForDriver(
                                     order.id);
-                                if (mounted) {
+                                if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(err ?? 'Chat disembunyikan'),
@@ -607,7 +607,7 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
                               } else if (value == 'hapus') {
                                 final err = await OrderService.deleteOrderAndChat(
                                     order.id);
-                                if (mounted) {
+                                if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(err ?? 'Pesan dihapus'),

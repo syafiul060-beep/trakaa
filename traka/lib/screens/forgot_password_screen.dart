@@ -115,11 +115,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       if (customToken == null || customToken.isEmpty) throw Exception('Token tidak diterima');
       await FirebaseAuth.instance.signInWithCustomToken(customToken);
       final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null || !mounted) {
-        setState(() => _loading = false);
-        _showSnack(TrakaL10n.of(context).verificationFailed, isError: true);
+      if (uid == null) {
+        if (mounted) setState(() => _loading = false);
+        if (mounted) {
+          _showSnack(TrakaL10n.of(context).verificationFailed, isError: true);
+        }
         return;
       }
+      if (!mounted) return;
       setState(() {
         _resetUid = uid;
         _step = _ForgotStep.faceVerify;
@@ -129,9 +132,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     } on FirebaseFunctionsException catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
+      if (!mounted) return;
       _showSnack(e.message ?? 'Kode salah atau kedaluwarsa.', isError: true);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+      if (!mounted) return;
       _showSnack(TrakaL10n.of(context).wrongOrExpiredCode, isError: true);
     }
   }
@@ -197,6 +202,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
+      if (!mounted) return;
       _showSnack(TrakaL10n.of(context).phoneNotLinkedToAccount, isError: true);
     }
   }
@@ -216,6 +222,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       await _onPhoneVerified(credential);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+      if (!mounted) return;
       _showSnack(TrakaL10n.of(context).wrongOrExpiredCode, isError: true);
     }
   }
@@ -239,10 +246,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       );
       if (!mounted) return;
       final cameraOk = await PermissionService.requestCameraPermission(context);
-      if (!cameraOk || !mounted) {
-        _showSnack(TrakaL10n.of(context).cameraPermissionRequired, isError: true);
+      if (!cameraOk) {
+        if (mounted) {
+          _showSnack(TrakaL10n.of(context).cameraPermissionRequired, isError: true);
+        }
         return;
       }
+      if (!mounted) return;
       final file = await Navigator.of(context).push<File>(
         MaterialPageRoute<File>(builder: (_) => const ActiveLivenessScreen()),
       );

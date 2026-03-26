@@ -1938,6 +1938,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
     if (TrakaApiConfig.isApiEnabled) {
       final fresh = await OrderService.getOrderById(order.id);
       final o = fresh ?? order;
+      if (!context.mounted) return;
       if (!isReceiver) {
         if (o.hybridPayRequiredBeforeSenderScan && !o.passengerPayReadyForScan) {
           final go = await PassengerPaymentBeforeScanSheet.show(
@@ -1957,6 +1958,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
         }
       }
     }
+    if (!context.mounted) return;
     final result = await Navigator.of(context).push<Object?>(
       MaterialPageRoute(
         builder: (ctx) => const ScanBarcodePenumpangScreen(),
@@ -2230,7 +2232,9 @@ class _DataOrderScreenState extends State<DataOrderScreen>
       final message = order.isKirimBarang
           ? 'Lacak kirim barang Traka (posisi driver + titik pengirim & penerima di peta):\n$url\n\nTautan tidak berlaku setelah barang diterima atau pesanan selesai.'
           : 'Keluarga bisa lacak perjalanan saya di: $url\n\nLink tidak berlaku setelah sampai tujuan.';
-      await Share.share(message, subject: subject);
+      await SharePlus.instance.share(
+        ShareParams(text: message, subject: subject),
+      );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -1,4 +1,5 @@
 /// Flag fitur untuk uji coba. Set true untuk mengaktifkan kembali.
+library;
 
 /// Pembayaran Lacak Driver (penumpang): penumpang harus bayar untuk lacak driver.
 const bool kLacakDriverPaymentRequired = true;

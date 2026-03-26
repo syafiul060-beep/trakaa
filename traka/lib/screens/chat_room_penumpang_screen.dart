@@ -1266,14 +1266,13 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                   final err = widget.isReceiver
                       ? await OrderService.hideChatForReceiver(widget.orderId)
                       : await OrderService.hideChatForPassenger(widget.orderId);
-                  if (mounted) {
-                    if (err == null) {
-                      Navigator.of(context).pop();
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(err), backgroundColor: Colors.red),
-                      );
-                    }
+                  if (!context.mounted) return;
+                  if (err == null) {
+                    Navigator.of(context).pop();
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(err), backgroundColor: Colors.red),
+                    );
                   }
                 }
               },
@@ -1302,7 +1301,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                 final uid = FirebaseAuth.instance.currentUser?.uid;
                 if (uid == null || _order == null) return;
                 final (canUse, reason) = await OrderService.canUseVoiceCall(_order!);
-                if (!mounted) return;
+                if (!context.mounted) return;
                 if (!canUse) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -1317,7 +1316,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                 final callerName = _order?.passengerName ??
                     FirebaseAuth.instance.currentUser?.displayName ??
                     'Penumpang';
-                if (!mounted) return;
+                if (!context.mounted) return;
                 Navigator.push(
                   context,
                   MaterialPageRoute<void>(
@@ -1334,7 +1333,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
               } else if (value == 'phone') {
                 final info = await ChatService.getUserInfo(widget.driverUid);
                 final phone = (info['phoneNumber'] as String?)?.trim();
-                if (!mounted) return;
+                if (!context.mounted) return;
                 if (phone == null || phone.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -1350,14 +1349,14 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                   if (await canLaunchUrl(uri)) {
                     await launchUrl(uri, mode: LaunchMode.externalApplication);
                   } else {
-                    if (mounted) {
+                    if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Tidak dapat membuka aplikasi telepon')),
                       );
                     }
                   }
                 } catch (_) {
-                  if (mounted) {
+                  if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Gagal membuka telepon')),
                     );

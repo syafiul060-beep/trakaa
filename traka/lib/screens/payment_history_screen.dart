@@ -160,9 +160,11 @@ Pembayaran via Google Play
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: () async {
-                        await Share.share(
-                          struk,
-                          subject: 'Struk Traka - ${record.typeLabel}',
+                        await SharePlus.instance.share(
+                          ShareParams(
+                            text: struk,
+                            subject: 'Struk Traka - ${record.typeLabel}',
+                          ),
                         );
                         if (ctx.mounted) Navigator.pop(ctx);
                       },
@@ -320,7 +322,7 @@ Pembayaran via Google Play
                               final mustPay = status?.mustPayContribution ?? false;
                               if (!mustPay) return const SizedBox.shrink();
                               final total = status?.totalRupiah ?? 0;
-                              final fmt = (int n) => n.toString().replaceAllMapped(
+                              String fmt(int n) => n.toString().replaceAllMapped(
                                   RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
                               final t = status?.contributionTravelRupiah ?? 0;
                               final b = status?.contributionBarangRupiah ?? 0;

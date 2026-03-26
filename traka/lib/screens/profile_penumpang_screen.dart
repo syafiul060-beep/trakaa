@@ -238,8 +238,10 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
           );
         }
         final skipBlurResult = await FaceValidationService.validateFacePhotoSkipBlur(file.path);
+        if (!mounted) return;
         if (mounted) Navigator.of(context).pop();
         if (!skipBlurResult.isValid) {
+          if (!mounted) return;
           final retry = await ProfileFaceValidationDialog.show(
             context,
             message:

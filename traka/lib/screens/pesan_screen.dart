@@ -533,6 +533,7 @@ class _PesanScreenState extends State<PesanScreen> {
       } catch (_) {}
     }
     if (!mounted) return;
+    if (!context.mounted) return;
 
     showModalBottomSheet<void>(
       context: context,

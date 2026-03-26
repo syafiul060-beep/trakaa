@@ -121,6 +121,7 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
         padding: 4,
         mapZoom: _mapZoomForCarIcons,
       );
+      if (!mounted) return;
       final result = await CarIconService.loadCarIcons(
         context: context,
         baseSize: 12,
@@ -579,7 +580,7 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
                 );
                 if (newThreadFromDuplicate) {
                   Future<void>.delayed(const Duration(milliseconds: 500), () {
-                    if (!context.mounted) return;
+                    if (!mounted) return;
                     messenger.showSnackBar(
                       SnackBar(
                         content: Text(

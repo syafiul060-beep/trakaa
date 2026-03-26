@@ -157,7 +157,7 @@ class _LoginEmailOtpScreenState extends State<LoginEmailOtpScreen> {
                 FilledButton(
                   onPressed: _loading ? null : () async {
                     final ok = await _verifyOtp();
-                    if (ok && mounted) {
+                    if (ok && context.mounted) {
                       Navigator.of(context).pop(true);
                     }
                   },

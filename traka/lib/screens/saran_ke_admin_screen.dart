@@ -125,7 +125,7 @@ class _SaranKeAdminScreenState extends State<SaranKeAdminScreen> {
               ),
               const SizedBox(height: 24),
               DropdownButtonFormField<String>(
-                value: _type,
+                initialValue: _type,
                 decoration: InputDecoration(
                   labelText: 'Jenis',
                   border: OutlineInputBorder(

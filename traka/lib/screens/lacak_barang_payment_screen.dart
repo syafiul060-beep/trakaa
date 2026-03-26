@@ -235,6 +235,7 @@ class _LacakBarangPaymentScreenState extends State<LacakBarangPaymentScreen> {
       await _loadProducts();
       if (_products.isEmpty) return;
     }
+    if (!context.mounted) return;
     final product = _products.first;
     final priceLabel = product.price.isNotEmpty ? product.price : 'nominal';
     final confirmed = await showDialog<bool>(

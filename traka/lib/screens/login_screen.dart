@@ -527,7 +527,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handlePostLogin(String uid) async {
     // Delay minimal untuk edge case: logout dari device A lalu langsung login di device B
     // Jalankan Firestore + deviceId paralel agar lebih cepat
-    Future<DocumentSnapshot<Map<String, dynamic>>?> _fetchUserDoc() async {
+    Future<DocumentSnapshot<Map<String, dynamic>>?> fetchUserDoc() async {
       for (int r = 0; r < 2; r++) {
         try {
           return await FirebaseFirestore.instance
@@ -545,7 +545,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return null;
     }
 
-    Future<String?> _fetchDeviceId() async {
+    Future<String?> fetchDeviceId() async {
       for (int r = 0; r < 2; r++) {
         final id = await DeviceService.getDeviceId();
         if (id != null && id.isNotEmpty) return id;
@@ -557,8 +557,8 @@ class _LoginScreenState extends State<LoginScreen> {
     // Delay minimal 100ms untuk edge case: logout device A → login device B (token propagation)
     final results = await Future.wait([
       Future.delayed(const Duration(milliseconds: 100)),
-      _fetchUserDoc(),
-      _fetchDeviceId(),
+      fetchUserDoc(),
+      fetchDeviceId(),
     ]);
     final userDoc = results[1] as DocumentSnapshot<Map<String, dynamic>>?;
     final currentDeviceId = results[2] as String?;
@@ -810,6 +810,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final userRole = (role ?? '').toUserRoleOrNull;
     if (userRole == UserRole.penumpang || userRole == UserRole.driver) {
+      if (!context.mounted) return;
       await AuthFlowService.navigateToHome(
         context,
         uid: uid,
@@ -820,6 +821,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       VoiceCallIncomingService.stop();
       await FirebaseAuth.instance.signOut();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -978,6 +980,9 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await FaceVerification.instance.init();
     } catch (_) {}
+    if (!mounted) {
+      return (verified: false, selfiePath: null, errorMessage: null);
+    }
     final file = await Navigator.of(context).push<File>(
       MaterialPageRoute<File>(builder: (_) => const ActiveLivenessScreen()),
     );
@@ -1189,6 +1194,7 @@ class _LoginScreenState extends State<LoginScreen> {
         } catch (_) {
           if (!mounted) return;
           await FirebaseAuth.instance.signOut();
+          if (!mounted) return;
           setState(() => _isLoading = false);
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(

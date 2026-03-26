@@ -506,6 +506,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                               'Tujuan ${order.destText}\n'
                               'Ongkosnya Rp $hargaFormatted';
                           await ChatService.sendMessage(order.id, messageText);
+                          if (!mounted) return;
 
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -1129,7 +1130,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                 } else if (value == 'phone' && _order?.passengerUid != null) {
                   final info = await ChatService.getUserInfo(_order!.passengerUid);
                   final phone = (info['phoneNumber'] as String?)?.trim();
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   if (phone == null || phone.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -1144,13 +1145,13 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                   try {
                     if (await canLaunchUrl(uri)) {
                       await launchUrl(uri, mode: LaunchMode.externalApplication);
-                    } else if (mounted) {
+                    } else if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Tidak dapat membuka aplikasi telepon')),
                       );
                     }
                   } catch (_) {
-                    if (mounted) {
+                    if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Gagal membuka telepon')),
                       );
@@ -1208,14 +1209,13 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                 );
                 if (confirmed == true && mounted && _order != null) {
                   final err = await OrderService.hideChatForDriver(_order!.id);
-                  if (mounted) {
-                    if (err == null) {
-                      Navigator.of(context).pop();
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(err), backgroundColor: Colors.red),
-                      );
-                    }
+                  if (!context.mounted) return;
+                  if (err == null) {
+                    Navigator.of(context).pop();
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(err), backgroundColor: Colors.red),
+                    );
                   }
                 }
               },

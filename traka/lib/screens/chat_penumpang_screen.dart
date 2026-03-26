@@ -519,7 +519,7 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
                                       final err =
                                           await OrderService.hideChatForPassenger(
                                               order.id);
-                                      if (mounted) {
+                                      if (context.mounted) {
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
                                           SnackBar(
@@ -535,7 +535,7 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
                                       final err =
                                           await OrderService.deleteOrderAndChat(
                                               order.id);
-                                      if (mounted) {
+                                      if (context.mounted) {
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
                                           SnackBar(

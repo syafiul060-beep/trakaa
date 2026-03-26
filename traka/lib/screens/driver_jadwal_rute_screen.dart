@@ -999,7 +999,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     return '$h:$m';
   }
 
-  /// Parse routePolyline dari Firestore: [{lat, lng}, ...] → List<LatLng>.
+  /// Parse routePolyline dari Firestore: daftar map `lat`/`lng` menjadi `List<LatLng>`.
   static List<LatLng>? _parseRoutePolyline(dynamic raw) {
     if (raw == null) return null;
     final list = raw as List<dynamic>?;
@@ -1731,14 +1731,13 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
                                   TextButton.icon(
                                     onPressed: () async {
                                       await _loadJadwal();
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
                                           const SnackBar(
                                             content: Text('Jadwal lewat telah dibersihkan'),
                                             backgroundColor: Colors.green,
                                           ),
                                         );
-                                      }
                                     },
                                     icon: const Icon(Icons.cleaning_services_outlined, size: 18),
                                     label: const Text('Bersihkan jadwal lewat'),
@@ -3764,7 +3763,7 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                 ),
                 const SizedBox(height: 20),
                 DropdownButtonFormField<String>(
-                  value: _routeCategory,
+                  initialValue: _routeCategory,
                   decoration: InputDecoration(
                     labelText: 'Kategori rute',
                     border: OutlineInputBorder(
@@ -4567,11 +4566,13 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
       ),
     );
     if (confirmed != true) return;
+    if (!mounted) return;
     const conflictThresholdMinutes = 120;
     for (final other in widget.otherScheduleTimesOnDate) {
       final otherMin = other.hour * 60 + other.minute;
       final newMin = _jam.hour * 60 + _jam.minute;
       if ((newMin - otherMin).abs() < conflictThresholdMinutes) {
+        if (!mounted) return;
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
