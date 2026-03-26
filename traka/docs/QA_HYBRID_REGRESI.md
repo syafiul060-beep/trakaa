@@ -2,6 +2,8 @@
 
 Dokumen ini untuk uji cepat sebelum rilis ketika app dibuild dengan **`TRAKA_USE_HYBRID=true`** + **`TRAKA_API_BASE_URL`** (lihat `scripts/build_hybrid.ps1`). Tanpa itu, banyak fitur API tidak jalan — itu bukan bug, melainkan mode “Firestore-only”.
 
+**Prioritas operasional & skala:** urutan “mulai dari sini” (isi **Sesi uji** → smoke API → skenario penuh) ada di [`KESIAPAN_SKALA_JUTAAN_PENGGUNA.md`](KESIAPAN_SKALA_JUTAAN_PENGGUNA.md#fokus-operasional-mulai-dari-sini).
+
 ---
 
 ## Sesi uji (isi sebelum mulai)
@@ -26,7 +28,7 @@ _Isi **Pass/Fail** di tabel dengan `PASS` / `FAIL` / `N/A`. **Catatan** untuk no
 
 ## Smoke API pasca-deploy (~5 menit)
 
-Jika driver massal uji **Siap kerja**: API membatasi `POST /api/driver/location` per **UID** (default ±120/menit, env `DRIVER_LOCATION_RATE_LIMIT_PER_MIN`). **429** = penyesuaian load test, bukan bug app.
+Jika driver massal uji **Siap kerja**: API membatasi `POST /api/driver/location` per **UID** (default ±120/menit, env `DRIVER_LOCATION_RATE_LIMIT_PER_MIN`). **429** = penyesuaian load test, bukan bug app. Set env di Railway: [`../traka-api/docs/RAILWAY_DEPLOY_CEPAT.md`](../traka-api/docs/RAILWAY_DEPLOY_CEPAT.md).
 
 Langkah singkat **setelah** API di-deploy (sebelum / bersamaan dengan QA app):
 
@@ -159,6 +161,8 @@ Jika langkah 1 gagal, uji app hybrid akan mengecewakan — perbaiki deploy dulu,
 
 ## Tautan terkait
 
+- [`KESIAPAN_SKALA_JUTAAN_PENGGUNA.md`](KESIAPAN_SKALA_JUTAAN_PENGGUNA.md) — fokus operasional mingguan + checklist sebelum klaim skala jutaan
+- [`../traka-api/docs/RAILWAY_DEPLOY_CEPAT.md`](../traka-api/docs/RAILWAY_DEPLOY_CEPAT.md) — redeploy Railway + env (termasuk rate limit lokasi driver)
 - [`README.md`](../README.md) — mode hybrid & skrip run/build
 - [`TAHAPAN_MIGRASI_INFRA_4_FASE.md`](TAHAPAN_MIGRASI_INFRA_4_FASE.md) — **Tahap 1–4** (observabilitas → realtime)
 - [`../traka-api/docs/TAHAPAN_1_OBSERVABILITAS.md`](../traka-api/docs/TAHAPAN_1_OBSERVABILITAS.md) — **Tahap 1**: `/health`, UptimeRobot, Sentry, QA baseline

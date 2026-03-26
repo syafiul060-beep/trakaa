@@ -10,6 +10,7 @@ Dokumen ini mendukung **poin 1** (QA + data): skenario yang dijalankan sebelum r
 2. Jalankan skenario; centang **Lulus** atau catat **Gagal** + screenshot/log.
 3. Simpan hasil (foto spreadsheet / issue) sebagai **data baseline** per versi.
 4. Untuk **HP khas pasar Indonesia** (gesture vs tombol nav, variasi OEM): lihat [`QA_PERANGKAT_INDONESIA.md`](QA_PERANGKAT_INDONESIA.md).
+5. Build **hybrid** (`TRAKA_USE_HYBRID` + `TRAKA_API_BASE_URL`): setelah matriks di bawah (atau paralel), jalankan [`QA_HYBRID_REGRESI.md`](QA_HYBRID_REGRESI.md) mengikuti urutan [`KESIAPAN_SKALA_JUTAAN_PENGGUNA.md`](KESIAPAN_SKALA_JUTAAN_PENGGUNA.md#fokus-operasional-mulai-dari-sini) (smoke API → skenario penuh).
 
 ### Metadata (salin per sesi)
 
@@ -107,4 +108,5 @@ Yang terjadi: ...
 ---
 
 *Rujukan kebijakan status: [`KEBIJAKAN_BLOKIR_BERANDA_DAN_ORDER.md`](KEBIJAKAN_BLOKIR_BERANDA_DAN_ORDER.md)*  
-*Perangkat uji Indonesia: [`QA_PERANGKAT_INDONESIA.md`](QA_PERANGKAT_INDONESIA.md)*
+*Perangkat uji Indonesia: [`QA_PERANGKAT_INDONESIA.md`](QA_PERANGKAT_INDONESIA.md)*  
+*Kesiapan skala & kalimat stakeholder: [`KESIAPAN_SKALA_JUTAAN_PENGGUNA.md`](KESIAPAN_SKALA_JUTAAN_PENGGUNA.md)*

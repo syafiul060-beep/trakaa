@@ -128,6 +128,13 @@ CLI bisa mengingatkan bahwa **`firebase-functions`** di `package.json` ketinggal
 
 **Catatan:** Upgrade `firebase-functions` **tidak** otomatis mengganti runtime Node; runtime tetap diatur oleh **`firebase.json`** (`nodejs20` / `nodejs22`, dll.) dan **`engines.node`** di `package.json`. Anda bisa memperbarui npm dulu, lalu terpisah naikkan Node runtime ketika siap.
 
+## Backend Node (traka-api di Railway)
+
+**App hybrid** membutuhkan API Node terpisah (bukan Firebase Hosting). Deploy Firebase **tidak** menggantikan redeploy API.
+
+- **Langkah cepat** (Redeploy, Variables, rate limit `POST /api/driver/location`): [`../traka-api/docs/RAILWAY_DEPLOY_CEPAT.md`](../traka-api/docs/RAILWAY_DEPLOY_CEPAT.md).
+- **Health & monitoring**: [`../traka-api/docs/MONITORING_PRODUCTION.md`](../traka-api/docs/MONITORING_PRODUCTION.md).
+
 ## Quota / error deploy
 
 Jika deploy Functions gagal karena kuota atau terlalu banyak fungsi sekaligus, lihat [`SOLUSI_ERROR_429_DEPLOY.md`](SOLUSI_ERROR_429_DEPLOY.md).

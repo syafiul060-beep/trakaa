@@ -15,6 +15,8 @@ Dokumen ini melengkapi [`ROADMAP_INFRASTRUKTUR_SKALA.md`](ROADMAP_INFRASTRUKTUR_
 | **3** | Scale API + Redis sebagai pusat geo/matching | Redis & API stabil; hybrid (`TRAKA_USE_HYBRID`) teruji staging |
 | **4** | Realtime massal: publish Redis → worker → WebSocket → klien | Worker + WS stabil; fallback Firestore tetap ada sementara |
 
+**Klaim skala besar (stakeholder + checklist operasional):** [`KESIAPAN_SKALA_JUTAAN_PENGGUNA.md`](KESIAPAN_SKALA_JUTAAN_PENGGUNA.md).
+
 Rujukan teknis API: [`../traka-api/docs/MONITORING_PRODUCTION.md`](../traka-api/docs/MONITORING_PRODUCTION.md), [`../traka-api/docs/REALTIME_DRIVER_UPDATES.md`](../traka-api/docs/REALTIME_DRIVER_UPDATES.md), [`../traka-api/docs/SETUP_REDIS_PRODUCTION.md`](../traka-api/docs/SETUP_REDIS_PRODUCTION.md).
 
 ---

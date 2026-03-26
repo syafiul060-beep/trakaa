@@ -4,6 +4,8 @@
 
 **Prinsip:** tambah kompleksitas hanya setelah **QA** (lihat [`QA_REGRESI_ALUR_UTAMA.md`](QA_REGRESI_ALUR_UTAMA.md)) dan **monitoring** ([`../traka-api/docs/MONITORING_PRODUCTION.md`](../traka-api/docs/MONITORING_PRODUCTION.md)) menunjukkan kebutuhan.
 
+**Klaim “siap jutaan pengguna”** (stakeholder + checklist operasional): [`KESIAPAN_SKALA_JUTAAN_PENGGUNA.md`](KESIAPAN_SKALA_JUTAAN_PENGGUNA.md).
+
 ## Kapan mempertimbangkan apa
 
 | Gejala / metrik | Arah teknis |

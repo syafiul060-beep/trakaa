@@ -20,6 +20,7 @@ Checklist operasional **Tahap 1** (APP_VERSION, Sentry, uptime, QA): [`TAHAPAN_1
 |----------|--------|
 | `APP_VERSION` | Opsional; muncul di JSON `/health` untuk memastikan instance deploy terbaru. |
 | `REDIS_URL` | Wajib production untuk matching + rate limit. |
+| `DRIVER_LOCATION_RATE_LIMIT_PER_MIN` | Opsional (default 120): batas `POST /api/driver/location` per menit per UID; naikkan sementara untuk load test. |
 | `SENTRY_DSN` | Opsional tapi sangat disarankan. |
 
 ## Contoh interpretasi `/health`
@@ -38,5 +39,6 @@ Checklist operasional **Tahap 1** (APP_VERSION, Sentry, uptime, QA): [`TAHAPAN_1
 
 ## Rujukan
 
+- [`RAILWAY_DEPLOY_CEPAT.md`](RAILWAY_DEPLOY_CEPAT.md) — redeploy Railway + env `DRIVER_LOCATION_RATE_LIMIT_PER_MIN`.
 - [`SETUP_REDIS_PRODUCTION.md`](SETUP_REDIS_PRODUCTION.md)
 - [`REDIS_GEO_MATCHING.md`](REDIS_GEO_MATCHING.md)
