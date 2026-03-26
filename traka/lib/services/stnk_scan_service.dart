@@ -26,6 +26,7 @@ class StnkScanService {
     if (image == null) return null;
     final f = File(image.path);
     if (!f.existsSync() || f.lengthSync() == 0) return null;
+    if (context != null && !context.mounted) return null;
     return _processWithLoading(image.path, context, 'Membaca STNK...');
   }
 
@@ -37,6 +38,7 @@ class StnkScanService {
     if (image == null) return null;
     final f = File(image.path);
     if (!f.existsSync() || f.lengthSync() == 0) return null;
+    if (context != null && !context.mounted) return null;
     return _processWithLoading(image.path, context, 'Membaca STNK...');
   }
 
@@ -126,11 +128,9 @@ class StnkScanService {
       }
 
       var best = StnkPlateExtraction.pickBest(all);
-      if (best == null) {
-        best = StnkPlateExtraction.pickBest(
-          StnkPlateExtraction.extractScored(recognizedText.text),
-        );
-      }
+      best ??= StnkPlateExtraction.pickBest(
+        StnkPlateExtraction.extractScored(recognizedText.text),
+      );
       return best;
     } catch (_) {
       return null;
