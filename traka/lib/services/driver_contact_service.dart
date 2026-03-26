@@ -12,7 +12,8 @@ class DriverContactService {
     return toE164OrNull(raw);
   }
 
-  /// Cek maksimal 50 nomor ke backend. Return Map<normalizedPhone, {uid, displayName, photoUrl, email}>.
+  /// Cek maksimal 50 nomor ke backend. Mengembalikan map (kunci: nomor dinormalisasi) berisi
+  /// `uid`, `displayName`, `photoUrl`, dan `email` untuk driver yang terdaftar.
   /// Hanya user dengan role=driver yang dikembalikan.
   static Future<Map<String, Map<String, dynamic>>> checkRegisteredDrivers(
     List<String> phoneNumbers,

@@ -1,5 +1,4 @@
 import 'dart:collection';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -182,6 +181,9 @@ class CarIconService {
     try {
       int decodeWidth;
       try {
+        if (!context.mounted) {
+          throw StateError('unmounted');
+        }
         final size = Responsive.of(context).iconSize(baseSize).round().clamp(14, 56);
         final zScale = forPassenger ? passengerIconPixelScale(mapZoom) : 1.0;
         decodeWidth = (size * dpr * zScale).round().clamp(
@@ -292,50 +294,50 @@ class CarIconService {
         debugPrint('[CarIconService] Fallback ke fromAssetImage');
       }
 
-      // Fallback: proses dengan package:image (tetap transparan) atau fromAssetImage
+      // Fallback: proses dengan package:image (tetap transparan) atau asset descriptor
       try {
-        final fallbackResult = await _loadAndProcessAssetIcons(
-          context: context,
-          baseSize: baseSize,
-          padding: padding,
-          dpr: dpr,
-          forPassenger: forPassenger,
-          mapZoom: mapZoom,
-        );
-        if (fallbackResult != null) {
-          final result = CarIconResult(
-            red: fallbackResult.red,
-            green: fallbackResult.green,
+        if (context.mounted) {
+          final fallbackResult = await _loadAndProcessAssetIcons(
+            context: context,
+            baseSize: baseSize,
+            padding: padding,
+            dpr: dpr,
+            forPassenger: forPassenger,
+            mapZoom: mapZoom,
           );
-          _cachedResult = result;
-          _cachedBaseSize = baseSize;
-          _cachedPadding = padding;
-          _cachedIncludeImages = includeRawImages;
-          _cachedUse3D = use3DStyle;
-          _cachedDpr = dpr;
-          _cachedProcessingVersion = _processingVersion;
-          _cachedForPassenger = forPassenger;
-          _cachedMapZoomKey = zoomKey;
-          return result;
+          if (fallbackResult != null) {
+            final result = CarIconResult(
+              red: fallbackResult.red,
+              green: fallbackResult.green,
+            );
+            _cachedResult = result;
+            _cachedBaseSize = baseSize;
+            _cachedPadding = padding;
+            _cachedIncludeImages = includeRawImages;
+            _cachedUse3D = use3DStyle;
+            _cachedDpr = dpr;
+            _cachedProcessingVersion = _processingVersion;
+            _cachedForPassenger = forPassenger;
+            _cachedMapZoomKey = zoomKey;
+            return result;
+          }
         }
       } catch (_) {}
 
-      // Last resort: fromAssetImage (bisa ada kotak hitam jika asset punya background)
+      // Last resort: `BitmapDescriptor.asset` (bisa ada kotak hitam jika asset punya background)
       try {
         const size = 40.0;
         final config = ImageConfiguration(
           devicePixelRatio: dpr,
           size: Size(size, size),
         );
-        redDesc = await BitmapDescriptor.fromAssetImage(
+        redDesc = await BitmapDescriptor.asset(
           config,
           _driverCarRed,
-          mipmaps: false,
         );
-        greenDesc = await BitmapDescriptor.fromAssetImage(
+        greenDesc = await BitmapDescriptor.asset(
           config,
           _driverCarGreen,
-          mipmaps: false,
         );
       } catch (_) {}
 

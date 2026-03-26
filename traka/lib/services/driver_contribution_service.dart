@@ -73,7 +73,7 @@ class DriverContributionService {
       (unpaidSessions, userDoc) {
         final unpaidTravel = unpaidSessions.fold<int>(
           0,
-          (sum, s) => sum + s.contributionRupiah,
+          (running, s) => running + s.contributionRupiah,
         );
         final d = userDoc.data() as Map<String, dynamic>?;
         final totalBarang = (d?['totalBarangContributionRupiah'] as num?)?.toInt() ?? 0;
