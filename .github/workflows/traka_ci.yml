@@ -93,6 +93,16 @@ jobs:
             || { echo "::error::google-services.json bukan JSON valid (periksa secret)."; exit 1; }
           test -s "$OUT" || { echo "::error::File google-services.json kosong setelah tulis."; exit 1; }
           ls -la "$OUT"
+      # Gagal cepat jika file hilang (jangan tunggu 8m Gradle). Cwd = traka = path yang dipakai flutter/gradle.
+      - name: Assert google-services.json untuk assembleDebug
+        run: |
+          F="android/app/google-services.json"
+          if [ ! -f "$F" ] || [ ! -s "$F" ]; then
+            echo "::error::Tidak ada $F sebelum build. Jangan pakai «Re-run failed job» pada run lama — itu pakai commit/workflow lama. Push commit baru atau «Re-run all jobs» dari run terbaru di branch. Pastikan secret GOOGLE_SERVICES_JSON (repo Actions secrets)."
+            ls -la android/app/ || true
+            exit 1
+          fi
+          ls -la "$F"
       # Runner GitHub ~7GB RAM; gradle.properties repo pakai -Xmx2048m untuk laptop — sering OOM di CI.
       - name: Gradle heap untuk CI
         run: |
