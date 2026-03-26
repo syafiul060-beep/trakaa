@@ -207,6 +207,7 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
 
       final userRole = (role ?? '').toUserRoleOrNull;
       if (userRole == UserRole.penumpang || userRole == UserRole.driver) {
+        if (!mounted) return;
         await AuthFlowService.navigateToHome(
           context,
           uid: user.uid,
@@ -361,6 +362,7 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
     }
     final userRole = (role ?? '').toUserRoleOrNull;
     if (userRole == UserRole.penumpang || userRole == UserRole.driver) {
+      if (!mounted) return;
       await AuthFlowService.navigateToHome(
         context,
         uid: user.uid,

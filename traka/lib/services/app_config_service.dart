@@ -49,8 +49,9 @@ class AppConfigService {
   static Future<String> getLacakBarangFeeRangeForTooltip() async {
     final min = await getLacakBarangFeeRupiah(1);
     final max = await getLacakBarangFeeRupiah(3);
-    final fmt = (int n) =>
-        n.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
+    String fmt(int n) => n
+        .toString()
+        .replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
     return 'Rp ${fmt(min)} - Rp ${fmt(max)}';
   }
 

@@ -201,30 +201,25 @@ class _ScanBarcodePenumpangScreenState
       // Scan barcode selesai (penumpang scan saat sampai tujuan)
       // Hybrid: estimasi jarak kapal otomatis jika beda pulau, atau dialog manual
       double? ferryKm;
-      if (mounted) {
-        final (orderId, _, _) = OrderService.parseDriverBarcodePayloadWithPhase(raw);
-        double? estimatedFerry;
-        if (orderId != null &&
-            dropLat != null &&
-            dropLng != null) {
-          final order = await OrderService.getOrderById(orderId);
-          final pickLat = order?.pickupLat ?? order?.passengerLat ?? order?.originLat;
-          final pickLng = order?.pickupLng ?? order?.passengerLng ?? order?.originLng;
-          if (pickLat != null && pickLng != null) {
-            estimatedFerry = await FerryDistanceService.getEstimatedFerryKm(
-              originLat: pickLat,
-              originLng: pickLng,
-              destLat: dropLat,
-              destLng: dropLng,
-            );
-          }
+      final (orderId, _, _) = OrderService.parseDriverBarcodePayloadWithPhase(raw);
+      double? estimatedFerry;
+      if (orderId != null && dropLat != null && dropLng != null) {
+        final order = await OrderService.getOrderById(orderId);
+        final pickLat = order?.pickupLat ?? order?.passengerLat ?? order?.originLat;
+        final pickLng = order?.pickupLng ?? order?.passengerLng ?? order?.originLng;
+        if (pickLat != null && pickLng != null) {
+          estimatedFerry = await FerryDistanceService.getEstimatedFerryKm(
+            originLat: pickLat,
+            originLng: pickLng,
+            destLat: dropLat,
+            destLng: dropLng,
+          );
         }
-        if (estimatedFerry != null) {
-          if (!context.mounted) return;
-          ferryKm = await _showFerryDialog(context, estimatedFerryKm: estimatedFerry);
-        }
-        // Jika sama pulau (estimatedFerry == null): lewati dialog, ferryKm tetap null (= 0)
       }
+      if (estimatedFerry != null && mounted) {
+        ferryKm = await _showFerryDialog(context, estimatedFerryKm: estimatedFerry);
+      }
+      // Jika sama pulau (estimatedFerry == null): lewati dialog, ferryKm tetap null (= 0)
       var (s, e, oid) = await OrderService.applyPassengerScanDriver(
         raw,
         dropLat: dropLat,
