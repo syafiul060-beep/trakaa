@@ -33,7 +33,7 @@ class PrivacyTermsExportService {
 </html>
 ''';
 
-  static String get privacyHtml => _htmlHeader.replaceFirst('%TITLE%', 'Kebijakan Privasi - Traka') + '''
+  static const String _privacyBody = '''
   <h1>Kebijakan Privasi</h1>
   <p class="intro">Traka adalah aplikasi yang menghubungkan penumpang dengan driver travel di wilayah Kalimantan dan wilayah di luar Kalimantan. Kami tidak menyimpan, memegang, atau mengontrol dana pengguna; seluruh transaksi keuangan terjadi langsung antar pengguna.</p>
 
@@ -78,9 +78,14 @@ class PrivacyTermsExportService {
     <h2>8. Kontak</h2>
     <p>Pertanyaan atau permintaan terkait data pribadi dapat diajukan melalui saluran dukungan di aplikasi atau kontak resmi Traka.</p>
   </div>
-''' + _htmlFooter;
+''';
 
-  static String get termsHtml => _htmlHeader.replaceFirst('%TITLE%', 'Syarat dan Ketentuan - Traka') + '''
+  static String get privacyHtml =>
+      '${_htmlHeader.replaceFirst('%TITLE%', 'Kebijakan Privasi - Traka')}'
+      '$_privacyBody'
+      '$_htmlFooter';
+
+  static const String _termsBody = '''
   <h1>Syarat dan Ketentuan</h1>
   <p class="intro">Selamat datang di Traka. Dengan mengunduh, menginstal, atau menggunakan aplikasi Traka, Anda menyetujui syarat dan ketentuan berikut. Traka adalah platform penghubung antara penumpang dan driver travel di Kalimantan; kami bukan penyedia angkutan umum dan tidak memegang dana pengguna.</p>
 
@@ -137,7 +142,12 @@ class PrivacyTermsExportService {
     <h2>10. Kontak</h2>
     <p>Pertanyaan mengenai syarat dan ketentuan dapat diajukan melalui saluran dukungan di aplikasi atau kontak resmi Traka.</p>
   </div>
-''' + _htmlFooter;
+''';
+
+  static String get termsHtml =>
+      '${_htmlHeader.replaceFirst('%TITLE%', 'Syarat dan Ketentuan - Traka')}'
+      '$_termsBody'
+      '$_htmlFooter';
 
   /// Membagikan Kebijakan Privasi sebagai file HTML. Pengguna dapat membuka di browser lalu Cetak → Simpan sebagai PDF.
   static Future<void> sharePrivacyAsFile() async {

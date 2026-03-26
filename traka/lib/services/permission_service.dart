@@ -10,10 +10,13 @@ class PermissionService {
   static Future<bool> requestEssentialForHome(BuildContext context) async {
     bool allGranted = false;
     while (!allGranted) {
+      if (!context.mounted) return false;
       final locationGranted = await requestLocationPermission(context);
+      if (!context.mounted) return false;
       final phoneStateGranted = await requestPhoneStatePermission(context);
       allGranted = locationGranted && phoneStateGranted;
       if (!allGranted) {
+        if (!context.mounted) return false;
         final shouldContinue = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -37,6 +40,7 @@ class PermissionService {
         );
         if (shouldContinue != true) return false;
         if (!locationGranted || !phoneStateGranted) {
+          if (!context.mounted) return false;
           final open = await showDialog<bool>(
             context: context,
             builder: (ctx) => AlertDialog(
@@ -72,10 +76,14 @@ class PermissionService {
     bool allGranted = false;
 
     while (!allGranted) {
+      if (!context.mounted) return false;
       // Request permission satu per satu
       final locationGranted = await requestLocationPermission(context);
+      if (!context.mounted) return false;
       final phoneStateGranted = await requestPhoneStatePermission(context);
+      if (!context.mounted) return false;
       final cameraGranted = await requestCameraPermission(context);
+      if (!context.mounted) return false;
       final notificationGranted = await requestNotificationPermission(context);
 
       allGranted =
@@ -85,6 +93,7 @@ class PermissionService {
           notificationGranted;
 
       if (!allGranted) {
+        if (!context.mounted) return false;
         // Jika ada permission yang belum diberikan, tampilkan dialog
         final shouldContinue = await showDialog<bool>(
           context: context,
@@ -122,6 +131,7 @@ class PermissionService {
             !phoneStateGranted ||
             !cameraGranted ||
             !notificationGranted) {
+          if (!context.mounted) return false;
           final openSettings = await showDialog<bool>(
             context: context,
             barrierDismissible: false,
@@ -162,6 +172,7 @@ class PermissionService {
       // Cek apakah GPS aktif
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
+        if (!context.mounted) return false;
         final openSettings = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -197,6 +208,7 @@ class PermissionService {
       LocationPermission permission = await Geolocator.checkPermission();
 
       if (permission == LocationPermission.deniedForever) {
+        if (!context.mounted) return false;
         final openSettings = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -232,6 +244,7 @@ class PermissionService {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
           // User tolak, tanya lagi
+          if (!context.mounted) return false;
           final retry = await showDialog<bool>(
             context: context,
             barrierDismissible: false,
@@ -280,6 +293,7 @@ class PermissionService {
       }
 
       if (status.isPermanentlyDenied) {
+        if (!context.mounted) return false;
         final openSettings = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -320,6 +334,7 @@ class PermissionService {
 
       if (result.isDenied) {
         // User tolak, tanya lagi
+        if (!context.mounted) return false;
         final retry = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -361,6 +376,7 @@ class PermissionService {
       }
 
       if (status.isPermanentlyDenied) {
+        if (!context.mounted) return false;
         final openSettings = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -401,6 +417,7 @@ class PermissionService {
 
       if (result.isDenied) {
         // User tolak, tanya lagi
+        if (!context.mounted) return false;
         final retry = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -444,6 +461,7 @@ class PermissionService {
     }
 
     if (status.isPermanentlyDenied) {
+      if (!context.mounted) return false;
       final openSettings = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
