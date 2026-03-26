@@ -1,4 +1,5 @@
 # `dart analyze --fatal-warnings --fatal-infos` mem-fail pada error, warning, dan info (lint termasuk use_build_context_synchronously).
+# Job build-hybrid-smoke: kompilasi APK debug dengan dart-define hybrid (Tahap 3) agar regresi compile terdeteksi di CI.
 name: Traka CI
 
 on:
@@ -11,6 +12,7 @@ on:
     paths:
       - "traka/**"
       - ".github/workflows/traka_ci.yml"
+  workflow_dispatch:
 
 jobs:
   analyze:
@@ -58,3 +60,26 @@ jobs:
             test/passenger_first_chat_message_test.dart \
             test/vehicle_plat_service_test.dart \
             test/app_logger_test.dart
+
+  # Kompilasi jalur hybrid + createOrder API (tanpa upload artifact; hanya cegah drift compile).
+  build-hybrid-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: traka
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: cp lib/firebase_options.example.dart lib/firebase_options.dart
+      - name: flutter build apk --debug (hybrid + CREATE_ORDER_VIA_API)
+        env:
+          MAPS_API_KEY: ci_placeholder_maps_key
+        run: |
+          flutter build apk --debug \
+            --dart-define=TRAKA_API_BASE_URL=https://trakaa-production.up.railway.app \
+            --dart-define=TRAKA_USE_HYBRID=true \
+            --dart-define=TRAKA_CREATE_ORDER_VIA_API=true
