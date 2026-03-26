@@ -138,7 +138,9 @@ bool _isDuplicateAppError(Object e) {
   final msg = e.toString().toLowerCase();
   if (msg.contains('duplicate-app') ||
       msg.contains('core/duplicate-app') ||
-      msg.contains('already exists')) return true;
+      msg.contains('already exists')) {
+    return true;
+  }
   // PlatformException / FirebaseException punya .code
   try {
     final code = (e as dynamic).code as String?;

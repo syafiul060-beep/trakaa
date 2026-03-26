@@ -129,16 +129,21 @@ class DriverStatusService {
       data['routeSelectedIndex'] = routeSelectedIndex >= 0
           ? routeSelectedIndex
           : 0;
-      if (routeJourneyNumber != null)
+      if (routeJourneyNumber != null) {
         data['routeJourneyNumber'] = routeJourneyNumber;
-      if (scheduleId != null && scheduleId.isNotEmpty)
+      }
+      if (scheduleId != null && scheduleId.isNotEmpty) {
         data['scheduleId'] = scheduleId;
-      if (routeStartedAt != null)
+      }
+      if (routeStartedAt != null) {
         data['routeStartedAt'] = Timestamp.fromDate(routeStartedAt);
-      if (estimatedDurationSeconds != null)
+      }
+      if (estimatedDurationSeconds != null) {
         data['estimatedDurationSeconds'] = estimatedDurationSeconds;
-      if (routeCategory != null && routeCategory.isNotEmpty)
+      }
+      if (routeCategory != null && routeCategory.isNotEmpty) {
         data['routeCategory'] = routeCategory;
+      }
     } else {
       // Jika tidak aktif, hapus info rute
       data['routeOriginLat'] = null;

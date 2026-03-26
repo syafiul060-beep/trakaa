@@ -120,9 +120,11 @@ class DeviceSecurityService {
       if (storedUid == null || storedUid.isEmpty) return;
 
       await col.doc(trimmed).update({field: FieldValue.delete()});
-      if (kDebugMode) debugPrint(
+      if (kDebugMode) {
+        debugPrint(
         '[Traka DeviceCheck] releaseDeviceRegistration: cleared $role dari $trimmed',
       );
+      }
 
       final installId = (data?['installId'] as String?)?.trim();
       if (installId != null &&
@@ -131,15 +133,19 @@ class DeviceSecurityService {
         final installDoc = await col.doc(installId).get();
         if (installDoc.exists) {
           await col.doc(installId).update({field: FieldValue.delete()});
-          if (kDebugMode) debugPrint(
+          if (kDebugMode) {
+            debugPrint(
             '[Traka DeviceCheck] releaseDeviceRegistration: cleared $role dari installId $installId',
           );
+          }
         }
       }
     } catch (e, st) {
-      if (kDebugMode) debugPrint(
+      if (kDebugMode) {
+        debugPrint(
         '[Traka DeviceCheck] releaseDeviceRegistration Error: $e\n$st',
       );
+      }
     }
   }
 

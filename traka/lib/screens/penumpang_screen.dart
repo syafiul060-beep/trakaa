@@ -2385,8 +2385,9 @@ class _PenumpangScreenState extends State<PenumpangScreen>
                 validator: (v) {
                   final n = int.tryParse(v ?? '');
                   if (n == null || n < 1) return 'Minimal 1 orang ikut';
-                  if (n > maxKerabat)
+                  if (n > maxKerabat) {
                     return 'Maksimal $maxKerabat (sisa kursi mobil $sisaKursi)';
+                  }
                   return null;
                 },
               ),

@@ -295,26 +295,38 @@ class OrderService {
         case 'desa':
           final s = norm(scan.subLocality);
           final d = norm(dest.subLocality);
-          if (s.isEmpty || d.isEmpty) atDest = true;
-          else atDest = s == d;
+          if (s.isEmpty || d.isEmpty) {
+            atDest = true;
+          } else {
+            atDest = s == d;
+          }
           break;
         case 'kecamatan':
           final s = norm(scan.locality);
           final d = norm(dest.locality);
-          if (s.isEmpty || d.isEmpty) atDest = true;
-          else atDest = s == d;
+          if (s.isEmpty || d.isEmpty) {
+            atDest = true;
+          } else {
+            atDest = s == d;
+          }
           break;
         case 'kabupaten':
           final s = norm(scan.subAdministrativeArea);
           final d = norm(dest.subAdministrativeArea);
-          if (s.isEmpty || d.isEmpty) atDest = true;
-          else atDest = s == d;
+          if (s.isEmpty || d.isEmpty) {
+            atDest = true;
+          } else {
+            atDest = s == d;
+          }
           break;
         case 'provinsi':
           final s = norm(scan.administrativeArea);
           final d = norm(dest.administrativeArea);
-          if (s.isEmpty || d.isEmpty) atDest = true;
-          else atDest = s == d;
+          if (s.isEmpty || d.isEmpty) {
+            atDest = true;
+          } else {
+            atDest = s == d;
+          }
           break;
         default:
           atDest = true;
@@ -887,8 +899,9 @@ class OrderService {
         final d = doc.data();
         final orderType = (d['orderType'] as String?) ?? 'travel';
         if (travelOnly == true && orderType != OrderModel.typeTravel) continue;
-        if (kirimBarangOnly == true && orderType != OrderModel.typeKirimBarang)
+        if (kirimBarangOnly == true && orderType != OrderModel.typeKirimBarang) {
           continue;
+        }
         list.add({
           'orderId': doc.id,
           'passengerName': (d['passengerName'] as String?) ?? 'Penumpang',
@@ -1026,8 +1039,9 @@ class OrderService {
     final doc = await ref.get();
     if (!doc.exists) return false;
     final data = doc.data();
-    if (data == null || (data[_fieldDriverUid] as String?) != user.uid)
+    if (data == null || (data[_fieldDriverUid] as String?) != user.uid) {
       return false;
+    }
 
     await ref.update({
       'driverAgreed': true,
@@ -1049,8 +1063,9 @@ class OrderService {
     final doc = await ref.get();
     if (!doc.exists) return false;
     final data = doc.data();
-    if (data == null || (data[_fieldDriverUid] as String?) != user.uid)
+    if (data == null || (data[_fieldDriverUid] as String?) != user.uid) {
       return false;
+    }
 
     await ref.update({
       'driverAgreed': true,
@@ -1077,8 +1092,9 @@ class OrderService {
     final doc = await ref.get();
     if (!doc.exists) return (false, null, false);
     final data = doc.data();
-    if (data == null || (data[_fieldPassengerUid] as String?) != user.uid)
+    if (data == null || (data[_fieldPassengerUid] as String?) != user.uid) {
       return (false, null, false);
+    }
 
     final driverAgreed = (data['driverAgreed'] as bool?) ?? false;
     final passengerAgreedAlready = (data['passengerAgreed'] as bool?) ?? false;
@@ -1921,8 +1937,9 @@ class OrderService {
   static (String?, String?) parsePassengerBarcodePayload(String raw) {
     final parts = raw.trim().split(':');
     if (parts.length < 4) return (null, 'Format barcode tidak valid.');
-    if (parts[0] != 'TRAKA' || parts[2] != 'P')
+    if (parts[0] != 'TRAKA' || parts[2] != 'P') {
       return (null, 'Barcode bukan barcode penumpang Traka.');
+    }
     return (parts[1], null);
   }
 
@@ -1938,22 +1955,27 @@ class OrderService {
     if (user == null) return (false, 'Anda belum login.', null);
 
     final (orderId, parseError) = parsePassengerBarcodePayload(rawPayload);
-    if (orderId == null)
+    if (orderId == null) {
       return (false, parseError ?? 'Payload tidak valid.', null);
+    }
 
     final ref = FirebaseFirestore.instance
         .collection(_collectionOrders)
         .doc(orderId);
     final doc = await ref.get();
-    if (!doc.exists || doc.data() == null)
+    if (!doc.exists || doc.data() == null) {
       return (false, 'Pesanan tidak ditemukan.', null);
+    }
     final data = doc.data()!;
-    if ((data[_fieldDriverUid] as String?) != user.uid)
+    if ((data[_fieldDriverUid] as String?) != user.uid) {
       return (false, 'Barcode ini bukan untuk pesanan Anda.', null);
-    if ((data[_fieldStatus] as String?) == statusPickedUp)
+    }
+    if ((data[_fieldStatus] as String?) == statusPickedUp) {
       return (false, 'Penumpang sudah di-scan sebelumnya.', null);
-    if ((data[_fieldStatus] as String?) != statusAgreed)
+    }
+    if ((data[_fieldStatus] as String?) != statusAgreed) {
       return (false, 'Status pesanan tidak sesuai.', null);
+    }
 
     final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
     final isKirimBarang = orderType == OrderModel.typeKirimBarang;
@@ -2031,12 +2053,14 @@ class OrderService {
   static (String?, String?, String?) parseDriverBarcodePayloadWithPhase(String raw) {
     final parts = raw.trim().split(':');
     if (parts.length < 4) return (null, null, 'Format barcode tidak valid.');
-    if (parts[0] != 'TRAKA' || parts[2] != 'D')
+    if (parts[0] != 'TRAKA' || parts[2] != 'D') {
       return (null, null, 'Barcode bukan barcode driver Traka.');
+    }
     if (parts.length >= 5) {
       final fase = parts[3];
-      if (fase != 'PICKUP' && fase != 'COMPLETE')
+      if (fase != 'PICKUP' && fase != 'COMPLETE') {
         return (null, null, 'Fase barcode tidak valid.');
+      }
       return (parts[1], fase, null);
     }
     // Format lama: TRAKA:orderId:D:uuid (4 bagian) = COMPLETE
@@ -2284,27 +2308,34 @@ class OrderService {
     if (user == null) return (false, 'Anda belum login.', null);
 
     final (orderId, fase, parseError) = parseDriverBarcodePayloadWithPhase(rawPayload);
-    if (orderId == null || parseError != null)
+    if (orderId == null || parseError != null) {
       return (false, parseError ?? 'Payload tidak valid.', null);
-    if (fase != 'PICKUP')
+    }
+    if (fase != 'PICKUP') {
       return (false, 'Barcode ini untuk selesai perjalanan. Gunakan barcode penjemputan.', null);
+    }
 
     final ref = FirebaseFirestore.instance
         .collection(_collectionOrders)
         .doc(orderId);
     final doc = await ref.get();
-    if (!doc.exists || doc.data() == null)
+    if (!doc.exists || doc.data() == null) {
       return (false, 'Pesanan tidak ditemukan.', null);
+    }
     final data = doc.data()!;
-    if ((data[_fieldPassengerUid] as String?) != user.uid)
+    if ((data[_fieldPassengerUid] as String?) != user.uid) {
       return (false, 'Barcode ini bukan untuk pesanan Anda.', null);
-    if ((data[_fieldStatus] as String?) == statusPickedUp)
+    }
+    if ((data[_fieldStatus] as String?) == statusPickedUp) {
       return (false, 'Penjemputan sudah dikonfirmasi sebelumnya.', null);
-    if ((data[_fieldStatus] as String?) != statusAgreed)
+    }
+    if ((data[_fieldStatus] as String?) != statusAgreed) {
       return (false, 'Status pesanan tidak sesuai.', null);
+    }
 
-    if (pickupLat == null || pickupLng == null)
+    if (pickupLat == null || pickupLng == null) {
       return (false, 'Lokasi Anda tidak terdeteksi. Pastikan GPS aktif lalu coba lagi.', null);
+    }
 
     // Validasi: driver harus dekat penumpang (bersama saat penjemputan).
     final driverUid = data[_fieldDriverUid] as String?;
@@ -2363,27 +2394,34 @@ class OrderService {
     if (user == null) return (false, 'Anda belum login.', null);
 
     final (orderId, fase, parseError) = parseDriverBarcodePayloadWithPhase(rawPayload);
-    if (orderId == null || parseError != null)
+    if (orderId == null || parseError != null) {
       return (false, parseError ?? 'Payload tidak valid.', null);
-    if (fase == 'PICKUP')
+    }
+    if (fase == 'PICKUP') {
       return (false, 'Ini barcode penjemputan. Gunakan barcode selesai saat sampai tujuan.', null);
+    }
 
     final ref = FirebaseFirestore.instance
         .collection(_collectionOrders)
         .doc(orderId);
     final doc = await ref.get();
-    if (!doc.exists || doc.data() == null)
+    if (!doc.exists || doc.data() == null) {
       return (false, 'Pesanan tidak ditemukan.', null);
+    }
     final data = doc.data()!;
-    if ((data[_fieldPassengerUid] as String?) != user.uid)
+    if ((data[_fieldPassengerUid] as String?) != user.uid) {
       return (false, 'Barcode ini bukan untuk pesanan Anda.', null);
-    if ((data[_fieldStatus] as String?) == statusCompleted)
+    }
+    if ((data[_fieldStatus] as String?) == statusCompleted) {
       return (false, 'Perjalanan sudah selesai.', null);
-    if ((data[_fieldStatus] as String?) != statusPickedUp)
+    }
+    if ((data[_fieldStatus] as String?) != statusPickedUp) {
       return (false, 'Scan penjemputan terlebih dahulu. Driver tunjukkan barcode penjemputan.', null);
+    }
 
-    if (dropLat == null || dropLng == null)
+    if (dropLat == null || dropLng == null) {
       return (false, 'Aktifkan GPS dan izin lokasi untuk konfirmasi sampai tujuan.', null);
+    }
 
     final pickLat =
         (data['pickupLat'] as num?)?.toDouble() ??
@@ -2586,15 +2624,19 @@ class OrderService {
         .collection(_collectionOrders)
         .doc(orderId);
     final doc = await ref.get();
-    if (!doc.exists || doc.data() == null)
+    if (!doc.exists || doc.data() == null) {
       return (false, 'Pesanan tidak ditemukan.');
+    }
     final data = doc.data()!;
-    if ((data[_fieldDriverUid] as String?) != user.uid)
+    if ((data[_fieldDriverUid] as String?) != user.uid) {
       return (false, 'Bukan pesanan Anda.');
-    if ((data[_fieldStatus] as String?) == statusPickedUp)
+    }
+    if ((data[_fieldStatus] as String?) == statusPickedUp) {
       return (false, 'Penumpang sudah dijemput.');
-    if ((data[_fieldStatus] as String?) != statusAgreed)
+    }
+    if ((data[_fieldStatus] as String?) != statusAgreed) {
       return (false, 'Status pesanan tidak sesuai.');
+    }
 
     final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
     if (orderType != OrderModel.typeTravel) {
@@ -2680,8 +2722,9 @@ class OrderService {
     final destLng = (data['destLng'] as num?)?.toDouble();
     if (destLat != null && destLng != null) {
       if (_distanceMeters(dropLat, dropLng, destLat, destLng) >
-          radiusDekatMeter)
+          radiusDekatMeter) {
         return false;
+      }
     }
     return distKeDriver <= radiusDekatMeter;
   }
@@ -2699,15 +2742,19 @@ class OrderService {
         .collection(_collectionOrders)
         .doc(orderId);
     final doc = await ref.get();
-    if (!doc.exists || doc.data() == null)
+    if (!doc.exists || doc.data() == null) {
       return (false, 'Pesanan tidak ditemukan.');
+    }
     final data = doc.data()!;
-    if ((data[_fieldPassengerUid] as String?) != user.uid)
+    if ((data[_fieldPassengerUid] as String?) != user.uid) {
       return (false, 'Bukan pesanan Anda.');
-    if ((data[_fieldStatus] as String?) == statusCompleted)
+    }
+    if ((data[_fieldStatus] as String?) == statusCompleted) {
       return (false, 'Perjalanan sudah selesai.');
-    if ((data[_fieldStatus] as String?) != statusPickedUp)
+    }
+    if ((data[_fieldStatus] as String?) != statusPickedUp) {
       return (false, 'Status pesanan tidak sesuai.');
+    }
 
     final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
     if (orderType != OrderModel.typeTravel) {
@@ -2720,8 +2767,9 @@ class OrderService {
     final driverUid = data[_fieldDriverUid] as String?;
     if (driverUid == null) return (false, 'Data driver tidak valid.');
     final (driverLat, driverLng) = await _getDriverPosition(driverUid);
-    if (driverLat == null || driverLng == null)
+    if (driverLat == null || driverLng == null) {
       return (false, 'Lokasi driver tidak tersedia.');
+    }
     final distKeDriver = _distanceMeters(dropLat, dropLng, driverLat, driverLng);
     if (distKeDriver > radiusBerdekatanMeter) {
       final destLat = (data['destLat'] as num?)?.toDouble();
@@ -2820,13 +2868,16 @@ class OrderService {
         .collection(_collectionOrders)
         .doc(orderId);
     final doc = await ref.get();
-    if (!doc.exists || doc.data() == null)
+    if (!doc.exists || doc.data() == null) {
       return (false, 'Pesanan tidak ditemukan.');
+    }
     final data = doc.data()!;
-    if ((data[_fieldStatus] as String?) == statusCompleted)
+    if ((data[_fieldStatus] as String?) == statusCompleted) {
       return (false, 'Perjalanan sudah selesai.');
-    if ((data[_fieldStatus] as String?) != statusPickedUp)
+    }
+    if ((data[_fieldStatus] as String?) != statusPickedUp) {
       return (false, 'Status pesanan tidak sesuai.');
+    }
 
     final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
     if (orderType != OrderModel.typeTravel) {
@@ -2841,24 +2892,28 @@ class OrderService {
     double dropLat;
     double dropLng;
     if (isDriver) {
-      if ((data[_fieldDriverUid] as String?) != user.uid)
+      if ((data[_fieldDriverUid] as String?) != user.uid) {
         return (false, 'Bukan pesanan Anda.');
+      }
       final orderModel = OrderModel.fromFirestore(doc);
       final passCoords = orderModel.coordsForDriverPickupProximity;
-      if (passCoords == null)
+      if (passCoords == null) {
         return (false, 'Lokasi penumpang belum tersedia.');
+      }
       otherLat = passCoords.$1;
       otherLng = passCoords.$2;
       dropLat = otherLat;
       dropLng = otherLng;
     } else {
-      if ((data[_fieldPassengerUid] as String?) != user.uid)
+      if ((data[_fieldPassengerUid] as String?) != user.uid) {
         return (false, 'Bukan pesanan Anda.');
+      }
       final driverUid = data[_fieldDriverUid] as String?;
       if (driverUid == null) return (false, 'Data driver tidak valid.');
       final (driverLat, driverLng) = await _getDriverPosition(driverUid);
-      if (driverLat == null || driverLng == null)
+      if (driverLat == null || driverLng == null) {
         return (false, 'Lokasi driver tidak tersedia.');
+      }
       otherLat = driverLat;
       otherLng = driverLng;
       dropLat = callerLat;
@@ -2866,8 +2921,9 @@ class OrderService {
     }
 
     final distM = _distanceMeters(callerLat, callerLng, otherLat, otherLng);
-    if (distM <= radiusMenjauhMeter)
+    if (distM <= radiusMenjauhMeter) {
       return (false, 'Belum menjauh. Jarak masih ${distM.round()} m.');
+    }
 
     final violationFeeRupiah = await _getViolationFeeRupiah();
 
@@ -2944,8 +3000,9 @@ class OrderService {
     final receiverUid = data['receiverUid'] as String?;
     if (user.uid != driverUid &&
         user.uid != passengerUid &&
-        user.uid != receiverUid)
+        user.uid != receiverUid) {
       return false;
+    }
 
     await ref.update({
       'status': statusCompleted,
@@ -3184,29 +3241,37 @@ class OrderService {
     if (user == null) return (false, 'Anda belum login.', null);
 
     final (orderId, fase, parseError) = parseDriverBarcodePayloadWithPhase(rawPayload);
-    if (orderId == null || parseError != null)
+    if (orderId == null || parseError != null) {
       return (false, parseError ?? 'Payload tidak valid.', null);
-    if (fase == 'PICKUP')
+    }
+    if (fase == 'PICKUP') {
       return (false, 'Ini barcode penjemputan. Pengirim yang scan saat serah barang ke driver.', null);
+    }
 
     final ref = FirebaseFirestore.instance
         .collection(_collectionOrders)
         .doc(orderId);
     final doc = await ref.get();
-    if (!doc.exists || doc.data() == null)
+    if (!doc.exists || doc.data() == null) {
       return (false, 'Pesanan tidak ditemukan.', null);
+    }
     final data = doc.data()!;
-    if ((data['receiverUid'] as String?) != user.uid)
+    if ((data['receiverUid'] as String?) != user.uid) {
       return (false, 'Barcode ini bukan untuk pesanan Anda (penerima).', null);
-    if ((data['orderType'] as String?) != OrderModel.typeKirimBarang)
+    }
+    if ((data['orderType'] as String?) != OrderModel.typeKirimBarang) {
       return (false, 'Bukan pesanan kirim barang.', null);
-    if ((data[_fieldStatus] as String?) == statusCompleted)
+    }
+    if ((data[_fieldStatus] as String?) == statusCompleted) {
       return (false, 'Barang sudah diterima.', null);
-    if ((data[_fieldStatus] as String?) != statusPickedUp)
+    }
+    if ((data[_fieldStatus] as String?) != statusPickedUp) {
       return (false, 'Driver belum mengantarkan barang. Pengirim scan barcode penjemputan terlebih dahulu.', null);
+    }
 
-    if (dropLat == null || dropLng == null)
+    if (dropLat == null || dropLng == null) {
       return (false, 'Lokasi Anda tidak terdeteksi. Pastikan GPS aktif.', null);
+    }
 
     // Validasi: penerima di area tujuan (desa/kecamatan/kabupaten/provinsi)
     final destLevel = (data['destinationValidationLevel'] as String?) ?? 'kecamatan';

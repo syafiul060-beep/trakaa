@@ -523,7 +523,9 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                 .where((o) => o.status == OrderService.statusPickedUp)
                 .toList();
             final Map<String, OrderModel> merged = {};
-            for (final o in pickedPassenger) merged[o.id] = o;
+            for (final o in pickedPassenger) {
+              merged[o.id] = o;
+            }
             for (final o in pickedReceiver) {
               if (!merged.containsKey(o.id)) merged[o.id] = o;
             }
@@ -886,7 +888,9 @@ class _DataOrderScreenState extends State<DataOrderScreen>
             final passengerOrders = snapPassenger.data ?? [];
             final receiverOrders = snapReceiver.data ?? [];
             final Map<String, OrderModel> merged = {};
-            for (final o in passengerOrders) merged[o.id] = o;
+            for (final o in passengerOrders) {
+              merged[o.id] = o;
+            }
             for (final o in receiverOrders) {
               if (!merged.containsKey(o.id)) merged[o.id] = o;
             }

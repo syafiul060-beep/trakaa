@@ -535,8 +535,11 @@ class _LoginScreenState extends State<LoginScreen> {
               .doc(uid)
               .get(GetOptions(source: Source.server));
         } catch (e) {
-          if (r < 1) await Future.delayed(Duration(milliseconds: 100));
-          else rethrow;
+          if (r < 1) {
+            await Future.delayed(Duration(milliseconds: 100));
+          } else {
+            rethrow;
+          }
         }
       }
       return null;

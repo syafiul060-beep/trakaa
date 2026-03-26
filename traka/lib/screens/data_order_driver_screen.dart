@@ -335,11 +335,13 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
   }
 
   Stream<List<OrderModel>> get _ordersStream {
-    if (_routeJourneyNumber == null || _routeJourneyNumber!.isEmpty)
+    if (_routeJourneyNumber == null || _routeJourneyNumber!.isEmpty) {
       return Stream.value([]);
+    }
     final key = '${_routeJourneyNumber}_${_scheduleId ?? ""}';
-    if (_cachedOrdersStream != null && _cachedOrdersStreamKey == key)
+    if (_cachedOrdersStream != null && _cachedOrdersStreamKey == key) {
       return _cachedOrdersStream!;
+    }
     _cachedOrdersStreamKey = key;
     if (_routeJourneyNumber == OrderService.routeJourneyNumberScheduled &&
         _scheduleId != null &&
@@ -406,7 +408,9 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
         int count = 0;
         for (final o in orders) {
           if (o.status != OrderService.statusAgreed &&
-              o.status != OrderService.statusPickedUp) continue;
+              o.status != OrderService.statusPickedUp) {
+            continue;
+          }
           if (o.orderType == OrderModel.typeTravel) {
             count += o.totalPenumpang;
           } else if (o.orderType == OrderModel.typeKirimBarang &&

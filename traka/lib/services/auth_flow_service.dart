@@ -25,7 +25,9 @@ class AuthFlowService {
   ) async {
     if (currentDeviceId == null ||
         currentDeviceId.isEmpty ||
-        role == null) return false;
+        role == null) {
+      return false;
+    }
     final q = await FirebaseFirestore.instance
         .collection('users')
         .where('deviceId', isEqualTo: currentDeviceId)

@@ -512,8 +512,9 @@ class _DriverScreenState extends State<DriverScreen>
         final badgeService = ChatBadgeService.instance;
         for (final o in orders) {
           // Exclude completed/cancelled - sama dengan filter chat list
-          if (o.isCompleted || o.status == OrderService.statusCancelled)
+          if (o.isCompleted || o.status == OrderService.statusCancelled) {
             continue;
+          }
           if (!badgeService.isOptimisticRead(o.id) &&
               o.hasUnreadChatForDriver(uid)) {
             count++;
@@ -1060,8 +1061,12 @@ class _DriverScreenState extends State<DriverScreen>
     double hysteresis = _bearingHysteresisDeg,
   }) {
     double diff = newBearing - current;
-    while (diff > 180) diff -= 360;
-    while (diff < -180) diff += 360;
+    while (diff > 180) {
+      diff -= 360;
+    }
+    while (diff < -180) {
+      diff += 360;
+    }
     if (diff.abs() < hysteresis) return current; // Hysteresis: abaikan getar
     final effectiveAlpha = diff.abs() > _bearingTurnThresholdDeg
         ? _bearingSmoothAlphaTurn
@@ -1077,8 +1082,9 @@ class _DriverScreenState extends State<DriverScreen>
     bool force = false,
     bool snapFocus = false,
   }) {
-    if (_mapController == null || !mounted || _displayedPosition == null)
+    if (_mapController == null || !mounted || _displayedPosition == null) {
       return;
+    }
     if (!_mapTabVisible) return;
     if (!_isDriverWorking && _navigatingToOrderId == null) return;
     try {
@@ -1128,8 +1134,12 @@ class _DriverScreenState extends State<DriverScreen>
         double bearingDiff = 180.0;
         if (_lastCameraBearing != null) {
           var d = camBearing - _lastCameraBearing!;
-          while (d > 180) d -= 360;
-          while (d < -180) d += 360;
+          while (d > 180) {
+            d -= 360;
+          }
+          while (d < -180) {
+            d += 360;
+          }
           bearingDiff = d.abs();
         }
         if (bearingDiff < 12.0) {
@@ -2260,10 +2270,11 @@ class _DriverScreenState extends State<DriverScreen>
               routeCategory: _currentRouteCategory,
             );
 
-            if (kDebugMode)
+            if (kDebugMode) {
               debugPrint(
                 'DriverScreen: Auto-switch ke rute index $nearestRouteIndex',
               );
+            }
           }
         }
       } else if (_originalRouteIndex >= 0 &&
@@ -4101,8 +4112,9 @@ class _DriverScreenState extends State<DriverScreen>
 
   /// Zoom out peta agar seluruh rute alternatif terlihat.
   void _fitAlternativeRoutesBounds() {
-    if (_mapController == null || _alternativeRoutes.isEmpty || !mounted)
+    if (_mapController == null || _alternativeRoutes.isEmpty || !mounted) {
       return;
+    }
     double minLat = double.infinity;
     double maxLat = -double.infinity;
     double minLng = double.infinity;
@@ -5037,7 +5049,9 @@ class _DriverScreenState extends State<DriverScreen>
     for (final order in _driverOrders) {
       if (order.status != OrderService.statusPickedUp) continue;
       if (order.orderType != OrderModel.typeTravel &&
-          order.orderType != OrderModel.typeKirimBarang) continue;
+          order.orderType != OrderModel.typeKirimBarang) {
+        continue;
+      }
       if (!_isOrderForCurrentRoute(order, todayYmd)) continue;
       final (lat, lng) = _getOrderDestinationLatLng(order);
       if (lat == null || lng == null) continue;
@@ -5162,7 +5176,9 @@ class _DriverScreenState extends State<DriverScreen>
     final list = <OrderModel>[];
     for (final order in _driverOrders) {
       if (order.status != OrderService.statusAgreed ||
-          order.hasDriverScannedPassenger) continue;
+          order.hasDriverScannedPassenger) {
+        continue;
+      }
       final lat = order.passengerLat ?? order.originLat;
       final lng = order.passengerLng ?? order.originLng;
       if (lat == null || lng == null) continue;
@@ -5210,11 +5226,13 @@ class _DriverScreenState extends State<DriverScreen>
   int get _scheduledAgreedCountForToday {
     final todayYmd = _todayYmd();
     return _driverOrders.where((o) {
-      if (!o.isScheduledOrder || (o.scheduledDate ?? '') != todayYmd)
+      if (!o.isScheduledOrder || (o.scheduledDate ?? '') != todayYmd) {
         return false;
+      }
       if (o.status != OrderService.statusAgreed &&
-          o.status != OrderService.statusPickedUp)
+          o.status != OrderService.statusPickedUp) {
         return false;
+      }
       return !o.hasDriverScannedPassenger;
     }).length;
   }
@@ -5810,7 +5828,9 @@ class _DriverScreenState extends State<DriverScreen>
     if (_mapController == null ||
         _polylineToDestination == null ||
         _polylineToDestination!.isEmpty ||
-        !mounted) return;
+        !mounted) {
+      return;
+    }
     double minLat = _polylineToDestination!.first.latitude;
     double maxLat = minLat;
     double minLng = _polylineToDestination!.first.longitude;
@@ -5924,8 +5944,9 @@ class _DriverScreenState extends State<DriverScreen>
     if (_mapController == null ||
         _polylineToPassenger == null ||
         _polylineToPassenger!.isEmpty ||
-        !mounted)
+        !mounted) {
       return;
+    }
     double minLat = _polylineToPassenger!.first.latitude;
     double maxLat = minLat;
     double minLng = _polylineToPassenger!.first.longitude;
@@ -6227,7 +6248,9 @@ class _DriverScreenState extends State<DriverScreen>
   void _speakCurrentStep() {
     if (_routeSteps.isEmpty ||
         _currentStepIndex < 0 ||
-        _currentStepIndex >= _routeSteps.length) return;
+        _currentStepIndex >= _routeSteps.length) {
+      return;
+    }
     final step = _routeSteps[_currentStepIndex];
     final formatted = InstructionFormatter.formatStep(step);
     VoiceNavigationService.instance.speakCue(formatted);

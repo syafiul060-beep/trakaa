@@ -513,8 +513,9 @@ class DriverScheduleService {
           );
           if (scheduleDateOnly != dateStart) continue;
           if (map['hiddenAt'] != null) continue;
-          if (scheduleDateOnly == _todayStartWib && _isDepartureTimePassed(map))
+          if (scheduleDateOnly == _todayStartWib && _isDepartureTimePassed(map)) {
             continue;
+          }
           final origin = (map['origin'] as String?)?.trim().toLowerCase() ?? '';
           final dest =
               (map['destination'] as String?)?.trim().toLowerCase() ?? '';

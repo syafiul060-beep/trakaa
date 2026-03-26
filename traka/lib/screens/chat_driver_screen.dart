@@ -73,8 +73,9 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
     _loadOrder();
     _contributionSub = DriverContributionService.streamContributionStatus()
         .listen((s) {
-          if (mounted)
+          if (mounted) {
             setState(() => _mustPayContribution = s.mustPayContribution);
+          }
         });
   }
 
@@ -425,8 +426,9 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                       final n = int.tryParse(
                         v?.replaceAll(RegExp(r'[^\d]'), '') ?? '',
                       );
-                      if (n == null || n < 0)
+                      if (n == null || n < 0) {
                         return 'Masukkan harga yang valid';
+                      }
                       return null;
                     },
                   ),

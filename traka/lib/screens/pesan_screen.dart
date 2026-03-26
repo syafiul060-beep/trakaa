@@ -250,8 +250,9 @@ class _PesanScreenState extends State<PesanScreen> {
 
   Future<void> _loadSchedulesForDate(DateTime date) async {
     final key = _dateKey(date);
-    if (_scheduleCache.containsKey(key) || _scheduleLoading[key] == true)
+    if (_scheduleCache.containsKey(key) || _scheduleLoading[key] == true) {
       return;
+    }
     _scheduleLoading[key] = true;
     if (mounted) setState(() {});
 
@@ -1210,8 +1211,9 @@ class _FormCariTravelState extends State<_FormCariTravel> {
         if ((p.name ?? '').isNotEmpty) parts.add(p.name!);
         if ((p.thoroughfare ?? '').isNotEmpty) parts.add(p.thoroughfare!);
         if ((p.subLocality ?? '').isNotEmpty) parts.add(p.subLocality!);
-        if ((p.administrativeArea ?? '').isNotEmpty)
+        if ((p.administrativeArea ?? '').isNotEmpty) {
           parts.add(p.administrativeArea!);
+        }
         if (parts.isNotEmpty) {
           _originController.text = parts.join(', ');
         } else {

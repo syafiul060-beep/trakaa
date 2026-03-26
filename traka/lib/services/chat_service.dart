@@ -56,8 +56,9 @@ class ChatService {
   ) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || orderId.isEmpty || payload.isEmpty) return false;
-    if (barcodeType != 'barcode_passenger' && barcodeType != 'barcode_driver')
+    if (barcodeType != 'barcode_passenger' && barcodeType != 'barcode_driver') {
       return false;
+    }
     try {
       final ref = FirebaseFirestore.instance
           .collection(_collectionOrders)
@@ -346,8 +347,9 @@ class ChatService {
         .doc(uid)
         .get();
     final d = doc.data();
-    if (d == null)
+    if (d == null) {
       return {'displayName': null, 'photoUrl': null, 'verified': false, 'phoneNumber': null};
+    }
     final verified = d['driverSIMVerifiedAt'] != null ||
         d['driverSIMNomorHash'] != null ||
         d['passengerKTPVerifiedAt'] != null;
