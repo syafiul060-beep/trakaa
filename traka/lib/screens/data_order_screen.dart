@@ -17,6 +17,7 @@ import '../services/exemption_service.dart';
 import '../services/chat_service.dart';
 import '../services/geocoding_service.dart';
 import '../services/location_service.dart';
+import '../services/driver_schedule_service.dart';
 import '../services/order_service.dart';
 import '../services/order_receipt_pdf_flow.dart';
 import '../services/rating_service.dart';
@@ -1314,13 +1315,9 @@ class _DataOrderScreenState extends State<DataOrderScreen>
 
   static String _formatScheduledDateForDisplay(String ymd) {
     if (ymd.length != 10 || ymd[4] != '-' || ymd[7] != '-') return ymd;
-    final now = DateTime.now();
-    final todayYmd =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final todayYmd = DriverScheduleService.todayYmdWibString;
     if (ymd == todayYmd) return 'Hari ini';
-    final tomorrow = now.add(const Duration(days: 1));
-    final tomorrowYmd =
-        '${tomorrow.year}-${tomorrow.month.toString().padLeft(2, '0')}-${tomorrow.day.toString().padLeft(2, '0')}';
+    final tomorrowYmd = DriverScheduleService.ymdWibStringAfterDays(1);
     if (ymd == tomorrowYmd) return 'Besok';
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',

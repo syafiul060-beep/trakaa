@@ -4,7 +4,11 @@ const nodemailer = require("nodemailer");
 const { verifyProductPurchase } = require("./lib/verifyGooglePlay.js");
 const billingValidation = require("./lib/billingValidation.js");
 const publicReceiptProof = require("./lib/publicReceiptProof.js");
-const { sanitizeDriverSchedulesIfNeeded } = require("./lib/driverScheduleValidation.js");
+const {
+  sanitizeDriverSchedulesIfNeeded,
+  shouldKeepSlot,
+  fetchActiveScheduleIdsForDriver,
+} = require("./lib/driverScheduleValidation.js");
 
 // Load .env untuk development lokal (emulator). Production pakai env var dari Cloud Console.
 try {
@@ -2070,6 +2074,89 @@ exports.onDriverTransferScanned = functions.firestore
       return null;
     });
 
+/** @param {string} driverId @param {object[]} newSchedules */
+async function notifyPassengersNewScheduleSlots(driverId, newSchedules) {
+  if (!Array.isArray(newSchedules) || newSchedules.length === 0) return;
+  const driverSnap = await admin.firestore().collection("users").doc(driverId).get();
+  const driverName = (driverSnap.data()?.displayName || "Driver").trim();
+  const regionKeywords = new Set();
+  for (const s of newSchedules) {
+    const origin = ((s?.origin || "") + " " + (s?.destination || "")).toLowerCase();
+    const parts = origin.split(/[\s,]+/).filter(Boolean);
+    for (const p of parts) {
+      if (p.length >= 3) regionKeywords.add(p);
+    }
+  }
+  if (regionKeywords.size === 0) return;
+  const usersSnap = await admin.firestore().collection("users")
+      .where("role", "==", "penumpang")
+      .limit(500)
+      .get();
+  let sent = 0;
+  for (const doc of usersSnap.docs) {
+    const d = doc.data();
+    const fcmToken = d?.fcmToken;
+    const region = (d?.region || "").trim().toLowerCase();
+    if (!fcmToken || !region) continue;
+    const regionParts = region.split(/[\s,]+/).filter(Boolean);
+    const match = regionParts.some((r) => regionKeywords.has(r)) ||
+        [...regionKeywords].some((k) => region.includes(k));
+    if (!match) continue;
+    const payload = {
+      notification: {
+        title: "Jadwal travel baru",
+        body: `${driverName} menambah jadwal baru. Cek di Pesan nanti.`,
+      },
+      data: { type: "schedule_new", driverId },
+      token: fcmToken,
+      android: {
+        priority: "high",
+        notification: { channelId: "traka_order_channel", priority: "high" },
+      },
+    };
+    try {
+      await sendFcmWithCollapse(payload, {
+        collapseKey: `schedule_new_${driverId}`,
+        tag: `schedule_new_${driverId}`,
+      });
+      sent++;
+    } catch (e) {
+      console.error("notifyPassengersNewScheduleSlots FCM error for", doc.id, e);
+    }
+  }
+  if (sent > 0) {
+    console.log("notifyPassengersNewScheduleSlots: sent", sent, "for driver", driverId);
+  }
+}
+
+// --- Subkoleksi schedule_items: sanitasi per dokumen + notifikasi create ---
+exports.onDriverScheduleItemWritten = functions.firestore
+    .document("driver_schedules/{driverId}/schedule_items/{itemId}")
+    .onWrite(async (change, context) => {
+      const driverId = context.params.driverId;
+      if (!change.after.exists) return null;
+      const slot = change.after.data();
+      let activeIds;
+      try {
+        activeIds = await fetchActiveScheduleIdsForDriver(driverId);
+      } catch (e) {
+        console.error("onDriverScheduleItemWritten: active ids", driverId, e);
+        return null;
+      }
+      if (!shouldKeepSlot(slot, driverId, activeIds)) {
+        try {
+          await change.after.ref.delete();
+        } catch (e) {
+          console.error("onDriverScheduleItemWritten: delete slot", driverId, e);
+        }
+        return null;
+      }
+      if (!change.before.exists) {
+        await notifyPassengersNewScheduleSlots(driverId, [slot]);
+      }
+      return null;
+    });
+
 // --- Notifikasi jadwal baru: saat driver menambah jadwal di driver_schedules ---
 // Target: penumpang dengan region (provinsi) yang cocok dengan origin/destination jadwal
 // + Enforcement jendela 7 hari WIB (strip slot di luar jendela tanpa order aktif).
@@ -2119,62 +2206,7 @@ exports.onDriverScheduleWritten = functions.firestore
         newSchedules = afterSchedules.slice(beforeSchedules.length);
       }
 
-      const driverSnap = await admin.firestore().collection("users").doc(driverId).get();
-      const driverName = (driverSnap.data()?.displayName || "Driver").trim();
-
-      const regionKeywords = new Set();
-      for (const s of newSchedules) {
-        const origin = ((s?.origin || "") + " " + (s?.destination || "")).toLowerCase();
-        const parts = origin.split(/[\s,]+/).filter(Boolean);
-        for (const p of parts) {
-          if (p.length >= 3) regionKeywords.add(p);
-        }
-      }
-      if (regionKeywords.size === 0) return null;
-
-      const usersSnap = await admin.firestore().collection("users")
-          .where("role", "==", "penumpang")
-          .limit(500)
-          .get();
-
-      let sent = 0;
-      for (const doc of usersSnap.docs) {
-        const d = doc.data();
-        const fcmToken = d?.fcmToken;
-        const region = (d?.region || "").trim().toLowerCase();
-        if (!fcmToken || !region) continue;
-
-        const regionParts = region.split(/[\s,]+/).filter(Boolean);
-        const match = regionParts.some((r) => regionKeywords.has(r)) ||
-            [...regionKeywords].some((k) => region.includes(k));
-        if (!match) continue;
-
-        const payload = {
-          notification: {
-            title: "Jadwal travel baru",
-            body: `${driverName} menambah jadwal baru. Cek di Pesan nanti.`,
-          },
-          data: { type: "schedule_new", driverId },
-          token: fcmToken,
-          android: {
-            priority: "high",
-            notification: { channelId: "traka_order_channel", priority: "high" },
-          },
-        };
-        try {
-          await sendFcmWithCollapse(payload, {
-            collapseKey: `schedule_new_${driverId}`,
-            tag: `schedule_new_${driverId}`,
-          });
-          sent++;
-        } catch (e) {
-          console.error("onDriverScheduleUpdated FCM error for", doc.id, e);
-        }
-      }
-
-      if (sent > 0) {
-        console.log("onDriverScheduleUpdated: sent", sent, "notifications for driver", driverId);
-      }
+      await notifyPassengersNewScheduleSlots(driverId, newSchedules);
       return null;
     });
 

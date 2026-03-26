@@ -43,4 +43,32 @@ class DriverHybridDiagnostics {
   static void recordError(String context, Object e, [StackTrace? st]) {
     logError(context, e, st);
   }
+
+  /// Full-scan `driver_schedules` (semua dokumen). Breadcrumb di release hanya jika lambat / banyak dokumen.
+  static void recordSchedulesCollectionScan({
+    required String operation,
+    required int elapsedMs,
+    required int driverDocCount,
+    required int resultCount,
+  }) {
+    if (kDebugMode) {
+      debugPrint(
+        '[DriverHybrid] schedules.scan op=$operation docs=$driverDocCount '
+        'ms=$elapsedMs results=$resultCount',
+      );
+    }
+    const slowMs = 2500;
+    const manyDocs = 80;
+    if (elapsedMs < slowMs && driverDocCount < manyDocs) return;
+    breadcrumb(
+      'schedules.full_scan op=$operation docs=$driverDocCount ms=$elapsedMs results=$resultCount',
+    );
+    try {
+      FirebaseCrashlytics.instance
+          .setCustomKey('last_schedules_scan_ms', elapsedMs);
+      FirebaseCrashlytics.instance
+          .setCustomKey('last_schedules_scan_docs', driverDocCount);
+      FirebaseCrashlytics.instance.setCustomKey('last_schedules_scan_op', operation);
+    } catch (_) {}
+  }
 }

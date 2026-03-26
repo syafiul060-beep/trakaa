@@ -91,8 +91,10 @@ async function start() {
     await initRedis();
     await initPg();
 
-    // Rate limiting: Redis store (shared across instances) atau fallback memory
     const redis = getRedis();
+    driverRoutes.mountDriverLocationLimiter(redis);
+
+    // Rate limiting: Redis store (shared across instances) atau fallback memory
     const limiter = rateLimit({
       windowMs: 15 * 60 * 1000,
       limit: 100,

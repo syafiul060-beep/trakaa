@@ -51,7 +51,9 @@ class MapTypeZoomControls extends StatelessWidget {
   final bool showPickupDropoffShortcuts;
   final VoidCallback? onPickupShortcutTap;
   final VoidCallback? onDropoffShortcutTap;
+  /// Hanya gaya visual (border/warna). Tap tetap diarahkan ke handler (SnackBar penjelasan jika belum ada data).
   final bool pickupShortcutEnabled;
+  /// Hanya gaya visual. Tap tetap diarahkan ke handler.
   final bool dropoffShortcutEnabled;
   final String? pickupShortcutTooltip;
   final String? dropoffShortcutTooltip;
@@ -354,12 +356,10 @@ class _MapStopShortcutChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
         color: colorScheme.surface,
         child: InkWell(
-          onTap: enabled
-              ? () {
-                  HapticFeedback.lightImpact();
-                  onTap();
-                }
-              : null,
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onTap();
+          },
           borderRadius: BorderRadius.circular(4),
           child: Container(
             width: 36,

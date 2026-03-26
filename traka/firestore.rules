@@ -153,10 +153,14 @@ service cloud.firestore {
     }
 
     // driver_schedules – jadwal keberangkatan driver (tujuan awal/akhir, jam, tanggal)
-    // Baca: semua user login (penumpang butuh lihat jadwal tersedia). Tulis: hanya pemilik doc.
+    // Baca: semua user login (penumpang butuh lihat jadwal tersedia). Tulis: pemilik doc atau admin.
     match /driver_schedules/{driverId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == driverId;
+      allow write: if request.auth != null && (request.auth.uid == driverId || isAdmin());
+      match /schedule_items/{itemId} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null && (request.auth.uid == driverId || isAdmin());
+      }
     }
 
     // trips – riwayat perjalanan driver (rute yang sudah selesai)

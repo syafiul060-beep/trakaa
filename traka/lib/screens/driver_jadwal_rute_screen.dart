@@ -12,6 +12,7 @@ import '../utils/placemark_formatter.dart';
 import '../services/location_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/driver_schedule_service.dart';
+import '../services/driver_schedule_items_store.dart';
 import '../services/route_category_service.dart';
 import '../services/order_service.dart';
 import '../models/order_model.dart';
@@ -25,8 +26,10 @@ import '../services/schedule_reminder_service.dart';
 import '../services/driver_jadwal_route_category_prefs.dart';
 import '../services/hybrid_foreground_recovery.dart';
 import '../services/driver_hybrid_diagnostics.dart';
+import '../services/app_analytics_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/shimmer_loading.dart';
+import '../widgets/traka_l10n_scope.dart';
 import 'package:geolocator/geolocator.dart';
 
 /// Batas waktu tunggu hapus jadwal dari sisi UI (batalkan tunggu, tutup overlay).
@@ -72,7 +75,9 @@ List<DirectionsResult> _onlyDrawableRouteAlternatives(
 }
 
 /// Plafon titik polyline per entri jadwal saat tulis ke Firestore (aman untuk batas ~1 MiB per dokumen).
-const int _kMaxFirestoreRoutePolylinePoints = 1200;
+/// Dikecilkan agar dokumen `driver_schedules` tidak memblokir klien Firestore (antre → profil putih, Siap Kerja macet).
+/// Garis di peta dari jadwal tetap cukup untuk bentuk umum; halus dari Directions hanya jika belum ada polyline.
+const int _kMaxFirestoreRoutePolylinePoints = 320;
 
 List<LatLng> _parsePolylineLatLngFromFirestoreRaw(dynamic raw) {
   if (raw == null) return [];
@@ -238,7 +243,7 @@ int? _indexOfScheduleInFirestoreList({
   return null;
 }
 
-/// Hapus satu slot di [driver_schedules]. Transaksi dilarikan dulu; bila perlu verifikasi [Source.server] + jalur legacy (retry).
+/// Hapus satu slot: baca subkoleksi → [persistReplaceAll].
 Future<bool> _deleteScheduleFromFirestore({
   required FirebaseFirestore firestore,
   required String driverUid,
@@ -250,85 +255,24 @@ Future<bool> _deleteScheduleFromFirestore({
   required String legacyScheduleId,
 }) async {
   final sw = Stopwatch()..start();
-  final docRef = firestore.collection('driver_schedules').doc(driverUid);
-
-  bool? txnRemoved;
-  try {
-    txnRemoved = await firestore.runTransaction<bool>((transaction) async {
-      final doc = await transaction.get(docRef);
-      final List<Map<String, dynamic>> schedules =
-          (doc.data()?['schedules'] as List<dynamic>?)
-              ?.map(
-                (e) => Map<String, dynamic>.from(e as Map<dynamic, dynamic>),
-              )
-              .toList() ??
-          [];
-      final docIndex = _indexOfScheduleInFirestoreList(
-        schedules: schedules,
-        driverUid: driverUid,
-        itemDate: itemDate,
-        itemJam: itemJam,
-        originTrimmed: originTrimmed,
-        destTrimmed: destTrimmed,
-        scheduleId: scheduleId,
-        legacyScheduleId: legacyScheduleId,
-      );
-      if (docIndex == null || docIndex < 0 || docIndex >= schedules.length) {
-        return false;
-      }
-      schedules.removeAt(docIndex);
-      transaction.set(docRef, {
-        'schedules': _shrunkSchedulesForFirestoreDocument(schedules),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-      return true;
-    }, timeout: const Duration(seconds: 18), maxAttempts: 2);
-  } catch (e, st) {
-    txnRemoved = null;
-    DriverHybridDiagnostics.recordScheduleOp(
-      'delete',
-      outcome: 'txn_error',
-      ms: sw.elapsedMilliseconds,
-      detail: e.toString(),
-    );
-    DriverHybridDiagnostics.recordError('jadwal.delete.txn', e, st);
-  }
-
-  if (txnRemoved == true) {
-    DriverHybridDiagnostics.recordScheduleOp(
-      'delete',
-      outcome: 'txn_ok',
-      ms: sw.elapsedMilliseconds,
-    );
-    return true;
-  }
-
   const readTimeout = Duration(seconds: 60);
   try {
-    final verifyDoc = await firestore
-        .collection('driver_schedules')
-        .doc(driverUid)
-        .get(const GetOptions(source: Source.server))
-        .timeout(readTimeout);
-    final verifyList =
-        (verifyDoc.data()?['schedules'] as List<dynamic>?)
-            ?.map(
-              (e) => Map<String, dynamic>.from(e as Map<dynamic, dynamic>),
-            )
-            .toList() ??
-        [];
-    final stillThere = _indexOfScheduleInFirestoreList(
-          schedules: verifyList,
-          driverUid: driverUid,
-          itemDate: itemDate,
-          itemJam: itemJam,
-          originTrimmed: originTrimmed,
-          destTrimmed: destTrimmed,
-          scheduleId: scheduleId,
-          legacyScheduleId: legacyScheduleId,
-        ) !=
-        null;
-    if (!stillThere) {
+    final merged = await DriverScheduleItemsStore.loadScheduleMaps(
+      firestore,
+      driverUid,
+      options: const GetOptions(source: Source.server),
+    ).timeout(readTimeout);
+    final docIndex = _indexOfScheduleInFirestoreList(
+      schedules: merged,
+      driverUid: driverUid,
+      itemDate: itemDate,
+      itemJam: itemJam,
+      originTrimmed: originTrimmed,
+      destTrimmed: destTrimmed,
+      scheduleId: scheduleId,
+      legacyScheduleId: legacyScheduleId,
+    );
+    if (docIndex == null) {
       DriverHybridDiagnostics.recordScheduleOp(
         'delete',
         outcome: 'already_gone',
@@ -336,133 +280,29 @@ Future<bool> _deleteScheduleFromFirestore({
       );
       return true;
     }
-  } catch (e, st) {
-    DriverHybridDiagnostics.recordError('jadwal.delete.verify', e, st);
-  }
-
-  try {
-    final legacyOk = await _deleteScheduleFromFirestoreLegacy(
-      firestore: firestore,
-      driverUid: driverUid,
-      itemDate: itemDate,
-      itemJam: itemJam,
-      originTrimmed: originTrimmed,
-      destTrimmed: destTrimmed,
-      scheduleId: scheduleId,
-      legacyScheduleId: legacyScheduleId,
-    );
+    final next = List<Map<String, dynamic>>.from(merged);
+    next.removeAt(docIndex);
+    await DriverScheduleItemsStore.persistReplaceAll(
+      firestore,
+      driverUid,
+      _shrunkSchedulesForFirestoreDocument(next),
+    ).timeout(readTimeout);
     DriverHybridDiagnostics.recordScheduleOp(
       'delete',
-      outcome: legacyOk ? 'legacy_ok' : 'legacy_fail',
+      outcome: 'persist_ok',
       ms: sw.elapsedMilliseconds,
     );
-    return legacyOk;
+    return true;
   } catch (e, st) {
     DriverHybridDiagnostics.recordScheduleOp(
       'delete',
-      outcome: 'legacy_throw',
+      outcome: 'persist_fail',
       ms: sw.elapsedMilliseconds,
       detail: e.toString(),
     );
-    DriverHybridDiagnostics.recordError('jadwal.delete.legacy', e, st);
+    DriverHybridDiagnostics.recordError('jadwal.delete.persist', e, st);
     rethrow;
   }
-}
-
-/// [merge: true]. Retry bila timeout atau dokumen belum konsisten setelah simpan baru.
-Future<bool> _deleteScheduleFromFirestoreLegacy({
-  required FirebaseFirestore firestore,
-  required String driverUid,
-  required DateTime itemDate,
-  required TimeOfDay itemJam,
-  required String originTrimmed,
-  required String destTrimmed,
-  required String scheduleId,
-  required String legacyScheduleId,
-}) async {
-  const readTimeout = Duration(seconds: 60);
-  const writeTimeout = Duration(seconds: 60);
-  var sawMissingIndex = false;
-
-  bool entryStillOnServer(List<Map<String, dynamic>> list) {
-    final idx = _indexOfScheduleInFirestoreList(
-      schedules: list,
-      driverUid: driverUid,
-      itemDate: itemDate,
-      itemJam: itemJam,
-      originTrimmed: originTrimmed,
-      destTrimmed: destTrimmed,
-      scheduleId: scheduleId,
-      legacyScheduleId: legacyScheduleId,
-    );
-    return idx != null;
-  }
-
-  for (var attempt = 0; attempt < 4; attempt++) {
-    if (attempt > 0) {
-      await Future<void>.delayed(const Duration(seconds: 2));
-    }
-    try {
-      final doc = await firestore
-          .collection('driver_schedules')
-          .doc(driverUid)
-          .get(const GetOptions(source: Source.server))
-          .timeout(readTimeout);
-      final List<Map<String, dynamic>> schedules =
-          (doc.data()?['schedules'] as List<dynamic>?)
-              ?.map(
-                (e) => Map<String, dynamic>.from(e as Map<dynamic, dynamic>),
-              )
-              .toList() ??
-          [];
-      final docIndex = _indexOfScheduleInFirestoreList(
-        schedules: schedules,
-        driverUid: driverUid,
-        itemDate: itemDate,
-        itemJam: itemJam,
-        originTrimmed: originTrimmed,
-        destTrimmed: destTrimmed,
-        scheduleId: scheduleId,
-        legacyScheduleId: legacyScheduleId,
-      );
-      if (docIndex == null || docIndex < 0 || docIndex >= schedules.length) {
-        sawMissingIndex = true;
-        continue;
-      }
-      schedules.removeAt(docIndex);
-      try {
-        await firestore.collection('driver_schedules').doc(driverUid).set({
-          'schedules': _shrunkSchedulesForFirestoreDocument(schedules),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true)).timeout(writeTimeout);
-      } on TimeoutException {
-        await Future<void>.delayed(const Duration(milliseconds: 1200));
-        final verifyDoc = await firestore
-            .collection('driver_schedules')
-            .doc(driverUid)
-            .get(const GetOptions(source: Source.server))
-            .timeout(readTimeout);
-        final verifyList =
-            (verifyDoc.data()?['schedules'] as List<dynamic>?)
-                ?.map(
-                  (e) => Map<String, dynamic>.from(e as Map<dynamic, dynamic>),
-                )
-                .toList() ??
-            [];
-        if (!entryStillOnServer(verifyList)) {
-          return true;
-        }
-        continue;
-      }
-      return true;
-    } on TimeoutException {
-      continue;
-    }
-  }
-  if (sawMissingIndex) return false;
-  throw TimeoutException(
-    'Hapus jadwal: permintaan habis waktu setelah beberapa percobaan.',
-  );
 }
 
 class DriverJadwalRuteScreen extends StatefulWidget {
@@ -509,6 +349,10 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
   int _silentJadwalGen = 0;
   /// Hapus jadwal dari kartu: overlay agar jelas ada proses ke server.
   bool _firestoreCardBusy = false;
+
+  /// Tulis `driver_schedules` setelah UI optimistik — satu per satu (hindari tabrakan saat jaringan buruk).
+  Future<void> _jadwalPersistWriteChain = Future<void>.value();
+  bool _jadwalPersistWriteActive = false;
 
   /// Gabung beberapa permintaan baca `driver_schedules` setelah tulis — kurangi antrean klien Firestore.
   Timer? _debouncedJadwalSyncTimer;
@@ -592,6 +436,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
       _showLoadingSpinner = false;
       _syncingWithServer = false;
       _firestoreCardBusy = false;
+      _jadwalPersistWriteActive = false;
     });
   }
 
@@ -864,11 +709,11 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     return out;
   }
 
-  /// Tunda baca server ±500ms & satukan beberapa pemicu — setelah `set` besar antrean klien sempat turun.
+  /// Tunda baca ~2,8s — setelah tulis `driver_schedules` besar, antrean klien butuh waktu sebelum baca aman.
   void _scheduleDebouncedJadwalServerSync({_JadwalItem? mergeIfMissing}) {
     _debouncedJadwalSyncMergeHint = mergeIfMissing;
     _debouncedJadwalSyncTimer?.cancel();
-    _debouncedJadwalSyncTimer = Timer(const Duration(milliseconds: 520), () {
+    _debouncedJadwalSyncTimer = Timer(const Duration(milliseconds: 2800), () {
       _debouncedJadwalSyncTimer = null;
       if (!mounted) return;
       final merge = _debouncedJadwalSyncMergeHint;
@@ -890,12 +735,18 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     if (!mounted || gen != _loadJadwalGen) return;
     try {
       List<Map<String, dynamic>> maps;
-      try {
-        maps = await DriverScheduleService.readSchedulesRawFromServer(user.uid);
-      } on TimeoutException {
-        await Future<void>.delayed(const Duration(milliseconds: 480));
-        if (!mounted || gen != _loadJadwalGen) return;
-        maps = await DriverScheduleService.readSchedulesRawFromServer(user.uid);
+      final fromLocal =
+          await DriverScheduleService.tryReadSchedulesRawFromCache(user.uid);
+      if (fromLocal != null) {
+        maps = fromLocal;
+      } else {
+        try {
+          maps = await DriverScheduleService.readSchedulesRawFromServer(user.uid);
+        } on TimeoutException {
+          await Future<void>.delayed(const Duration(milliseconds: 480));
+          if (!mounted || gen != _loadJadwalGen) return;
+          maps = await DriverScheduleService.readSchedulesRawFromServer(user.uid);
+        }
       }
       if (!mounted || gen != _loadJadwalGen) return;
       _items
@@ -953,27 +804,57 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     if (mounted) setState(() {});
   }
 
-  /// Tulis hasil merge [schedulesToWrite] setelah UI optimistik; gagal → samakan lagi dari server.
+  /// Antre tulisan ke Firestore agar tidak paralel (beban jaringan / race pada dokumen yang sama).
   Future<void> _persistSchedulesAfterOptimisticUi({
     required String driverUid,
     required List<Map<String, dynamic>> schedulesToWrite,
     required _JadwalItem newItem,
+  }) {
+    final run = _jadwalPersistWriteChain.then(
+      (_) => _runPersistSchedulesAfterOptimisticUi(
+        driverUid: driverUid,
+        schedulesToWrite: schedulesToWrite,
+        newItem: newItem,
+      ),
+    );
+    _jadwalPersistWriteChain = run.catchError((Object e, StackTrace _) {
+      if (kDebugMode) {
+        debugPrint('DriverJadwal persist chain error (lanjut antrean): $e');
+      }
+    });
+    return run;
+  }
+
+  Future<void> _runPersistSchedulesAfterOptimisticUi({
+    required String driverUid,
+    required List<Map<String, dynamic>> schedulesToWrite,
+    required _JadwalItem newItem,
   }) async {
+    if (!mounted) return;
+    setState(() => _jadwalPersistWriteActive = true);
+    final persistCount = schedulesToWrite.length;
+    AppAnalyticsService.logDriverJadwalPersistStart(scheduleCount: persistCount);
     const writeTimeout = Duration(seconds: 32);
     try {
-      await _firestore.collection('driver_schedules').doc(driverUid).set({
-        'schedules': schedulesToWrite,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true)).timeout(
+      await DriverScheduleItemsStore.persistReplaceAll(
+        _firestore,
+        driverUid,
+        schedulesToWrite,
+      ).timeout(
         writeTimeout,
         onTimeout: () => throw TimeoutException('Simpan timeout. Cek jaringan dan coba lagi.'),
       );
+      AppAnalyticsService.logDriverJadwalPersistSuccess(scheduleCount: persistCount);
       if (!mounted) return;
       _scheduleDebouncedJadwalServerSync(mergeIfMissing: newItem);
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('DriverJadwal optimistic persist failed: $e\n$st');
       }
+      AppAnalyticsService.logDriverJadwalPersistFail(
+        failureKind: e is TimeoutException ? 'timeout' : 'error',
+        scheduleCount: persistCount,
+      );
       if (!mounted) return;
       try {
         await _syncJadwalListAfterMutation();
@@ -990,6 +871,10 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
           duration: const Duration(seconds: 12),
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _jadwalPersistWriteActive = false);
+      }
     }
   }
 
@@ -1099,9 +984,11 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     return DateTime.now().isAfter(departure);
   }
 
-  /// Tombol rute aktif selama jadwal belum lewat (tanggal+jam). Tanpa jendela «4 jam sebelum» —
-  /// aturan itu membuat tombol terasa tidak bisa diklik seharian di Android.
+  /// Tombol **Rute** hanya untuk jadwal **tanggal hari ini** (WIB) dan jam keberangkatan belum lewat.
+  /// Jadwal besok/lusa (beda tanggal di chip) tidak aktif — beda hari; setelah jam lewat pada hari yang sama juga nonaktif.
   bool _isRuteAvailableForJadwal(_JadwalItem item) {
+    final scheduleDate = _dateOnly(item.tanggal);
+    if (scheduleDate != _today) return false;
     return !_isScheduleTimePassed(item);
   }
 
@@ -1295,9 +1182,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     }
     final wibFirst = DriverScheduleService.todayDateOnlyWib;
     final wibLast = DriverScheduleService.lastScheduleDateInclusiveWib;
-    var initialDate = _dateOnly(DateTime.now());
-    if (initialDate.isBefore(wibFirst)) initialDate = wibFirst;
-    if (initialDate.isAfter(wibLast)) initialDate = wibLast;
+    var initialDate = wibFirst;
     final picked = await showDatePicker(
       context: context,
       initialDate: initialDate,
@@ -1632,7 +1517,9 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
             IconButton(
               icon: const Icon(Icons.alt_route_outlined),
               tooltip: 'Kategori rute',
-              onPressed: () => _showKategoriRuteSheet(context),
+              onPressed: (_firestoreCardBusy || _jadwalPersistWriteActive)
+                  ? null
+                  : () => _showKategoriRuteSheet(context),
             ),
         ],
       ),
@@ -1640,9 +1527,12 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
         // Angkat FAB sedikit agar tidak menutupi chip tanggal yang digulir ke kanan.
         padding: const EdgeInsets.only(bottom: 20),
         child: FloatingActionButton(
-          tooltip: 'Tambah jadwal',
-          // Tetap boleh tambah jadwal saat garis sinkron (muat ulang); hanya blok saat overlay hapus kartu.
-          onPressed: _firestoreCardBusy ? null : () => _onFabTambahJadwalTapped(),
+          tooltip: _jadwalPersistWriteActive
+              ? 'Menunggu penyimpanan jadwal ke server…'
+              : 'Tambah jadwal',
+          onPressed: (_firestoreCardBusy || _jadwalPersistWriteActive)
+              ? null
+              : () => _onFabTambahJadwalTapped(),
           child: const Icon(Icons.add),
         ),
       ),
@@ -1690,6 +1580,21 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
                                       style: TextStyle(
                                         fontSize: 14,
                                         color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    child: Text(
+                                      TrakaL10n.of(context).driverScheduleNetworkSerializeHint,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant
+                                            .withValues(alpha: 0.9),
                                       ),
                                       textAlign: TextAlign.center,
                                     ),
@@ -1974,7 +1879,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
                   ],
                 ),
               ),
-            if (_syncingWithServer)
+            if (_syncingWithServer || _jadwalPersistWriteActive)
               Positioned(
                 top: 0,
                 left: 0,
@@ -2295,10 +2200,23 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
             Builder(
               builder: (context) {
                 final timePassed = _isScheduleTimePassed(item);
+                final scheduleDate = _dateOnly(item.tanggal);
+                final wrongDay = scheduleDate != _today;
                 final disableByHomeRoute =
                     widget.disableRouteIconForToday &&
-                    _dateOnly(item.tanggal) == _today;
+                    scheduleDate == _today;
                 final routeEnabled = _isRuteAvailableForJadwal(item);
+                String? ruteDisabledHint;
+                if (!routeEnabled) {
+                  if (wrongDay) {
+                    ruteDisabledHint = scheduleDate.isAfter(_today)
+                        ? 'Tombol Rute aktif pada tanggal keberangkatan. Pilih chip tanggal yang sama di atas.'
+                        : 'Jadwal ini bukan hari ini; buka rute pada tanggal keberangkatan.';
+                  } else if (_isScheduleTimePassed(item)) {
+                    ruteDisabledHint =
+                        'Jam keberangkatan untuk hari ini sudah lewat.';
+                  }
+                }
                 return SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
@@ -2308,6 +2226,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
                         enabled: routeEnabled,
                         disableByHomeRoute: disableByHomeRoute,
                         item: item,
+                        disabledHint: ruteDisabledHint,
                       ),
                       const SizedBox(width: 8),
                       _buildPemesanChip(item: item, timePassed: timePassed),
@@ -2328,35 +2247,48 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     required bool enabled,
     required bool disableByHomeRoute,
     required _JadwalItem item,
+    String? disabledHint,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final highlight = enabled && !disableByHomeRoute;
-    return Material(
+    Widget button = Material(
       color: highlight ? colorScheme.primary : colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
-        onTap: enabled
-            ? () {
-                if (disableByHomeRoute) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Rute aktif berasal dari Beranda. Selesaikan rute tersebut terlebih dahulu.',
-                      ),
-                      backgroundColor: Colors.orange,
-                    ),
-                  );
-                  return;
-                }
-                widget.onOpenRuteFromJadwal?.call(
-                  item.tujuanAwal,
-                  item.tujuanAkhir,
-                  _scheduleIdForItem(item),
-                  item.routePolyline,
-                  item.routeCategory,
-                );
-              }
-            : null,
+        onTap: () {
+          if (!enabled) {
+            final msg = disabledHint;
+            if (msg != null &&
+                msg.isNotEmpty &&
+                context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(msg),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+            return;
+          }
+          if (disableByHomeRoute) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Rute aktif berasal dari Beranda. Selesaikan rute tersebut terlebih dahulu.',
+                ),
+                backgroundColor: Colors.orange,
+              ),
+            );
+            return;
+          }
+          widget.onOpenRuteFromJadwal?.call(
+            item.tujuanAwal,
+            item.tujuanAkhir,
+            _scheduleIdForItem(item),
+            item.routePolyline,
+            item.routeCategory,
+          );
+        },
         borderRadius: BorderRadius.circular(10),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -2382,6 +2314,12 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
         ),
       ),
     );
+    if (!enabled &&
+        disabledHint != null &&
+        disabledHint.isNotEmpty) {
+      button = Tooltip(message: disabledHint, child: button);
+    }
+    return button;
   }
 
   Widget _buildPemesanChip({
@@ -2402,7 +2340,10 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
           icon: Icons.people_outline_rounded,
           label: 'Pemesan',
           enabled: !timePassed,
-          onTap: () => _showPemesanSheet(scheduleId),
+          onTap: () => _showPemesanSheet(
+                scheduleId,
+                legacyScheduleId: legacyScheduleId,
+              ),
           badgeCount: hasBadge ? n : null,
         );
       },
@@ -2576,7 +2517,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
 
   void _onEditJadwalTapped(_JadwalItem item, int index, bool hasBookings) {
     if (hasBookings) {
-      final scheduleId = _scheduleIdForItem(item);
+      final (sid, leg) = _scheduleIdPairForItem(item);
       showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -2592,7 +2533,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
             FilledButton(
               onPressed: () {
                 Navigator.pop(ctx);
-                _showPemesanSheet(scheduleId);
+                _showPemesanSheet(sid, legacyScheduleId: leg);
               },
               child: const Text('Lihat pemesan'),
             ),
@@ -2604,7 +2545,10 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     _showAturJadwalForm(item.tanggal, editIndex: index, editItem: item);
   }
 
-  void _showPemesanSheet(String scheduleId) {
+  void _showPemesanSheet(
+    String scheduleId, {
+    String? legacyScheduleId,
+  }) {
     final uid = _auth.currentUser?.uid ?? '';
     showModalBottomSheet<void>(
       context: context,
@@ -2613,6 +2557,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
       ),
       builder: (ctx) => _ScheduledPassengersSheet(
         scheduleId: scheduleId,
+        legacyScheduleId: legacyScheduleId,
         driverUid: uid,
         title: 'Penumpang yang sudah pesan',
         travelOnly: true,
@@ -2620,7 +2565,10 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     );
   }
 
-  void _showBarangSheet(String scheduleId) {
+  void _showBarangSheet(
+    String scheduleId, {
+    String? legacyScheduleId,
+  }) {
     final uid = _auth.currentUser?.uid ?? '';
     showModalBottomSheet<void>(
       context: context,
@@ -2629,6 +2577,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
       ),
       builder: (ctx) => _ScheduledPassengersSheet(
         scheduleId: scheduleId,
+        legacyScheduleId: legacyScheduleId,
         driverUid: uid,
         title: 'Pesanan kirim barang',
         kirimBarangOnly: true,
@@ -2699,6 +2648,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
 /// Tombol Pindah ke jadwal lain dan Oper Driver (hanya travel, picked_up).
 class _ScheduledPassengersSheet extends StatefulWidget {
   final String scheduleId;
+  final String? legacyScheduleId;
   final String driverUid;
   final String title;
   final bool? travelOnly;
@@ -2706,6 +2656,7 @@ class _ScheduledPassengersSheet extends StatefulWidget {
 
   const _ScheduledPassengersSheet({
     required this.scheduleId,
+    this.legacyScheduleId,
     required this.driverUid,
     required this.title,
     this.travelOnly,
@@ -2728,6 +2679,7 @@ class _ScheduledPassengersSheetState extends State<_ScheduledPassengersSheet> {
 
   Future<List<OrderModel>> _loadOrders() => OrderService.getScheduledOrdersForSchedule(
         widget.scheduleId,
+        legacyScheduleId: widget.legacyScheduleId,
         travelOnly: widget.travelOnly,
         kirimBarangOnly: widget.kirimBarangOnly,
       );
@@ -4602,18 +4554,17 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
     widget.formSaving.value = true;
     const readTimeout = Duration(seconds: 16);
     try {
-      final doc = await widget.firestore
-          .collection('driver_schedules')
-          .doc(user.uid)
-          .get(const GetOptions(source: Source.serverAndCache))
-          .timeout(readTimeout, onTimeout: () => throw TimeoutException('Koneksi timeout. Cek jaringan dan coba lagi.'));
-      final List<Map<String, dynamic>> schedules =
-          (doc.data()?['schedules'] as List<dynamic>?)
-              ?.map(
-                (e) => Map<String, dynamic>.from(e as Map<dynamic, dynamic>),
-              )
-              .toList() ??
-          [];
+      final schedules =
+          await DriverScheduleItemsStore.loadScheduleMaps(
+        widget.firestore,
+        user.uid,
+        options: const GetOptions(source: Source.serverAndCache),
+      ).timeout(
+        readTimeout,
+        onTimeout: () => throw TimeoutException(
+          'Koneksi timeout. Cek jaringan dan coba lagi.',
+        ),
+      );
       final newMap = <String, dynamic>{
         'origin': origin,
         'destination': dest,

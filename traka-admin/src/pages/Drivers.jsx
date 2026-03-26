@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { isApiEnabled } from '../config/apiConfig'
@@ -12,25 +13,30 @@ export default function Drivers() {
   const [searchQuery, setSearchQuery] = useState('')
   const [hybridApiWarning, setHybridApiWarning] = useState(null)
 
+  const loadFirestoreDriverStatus = async () => {
+    const statusSnap = await getDocs(collection(db, 'driver_status'))
+    return statusSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+  }
+
   const load = useCallback(async () => {
     try {
       let driverList = []
       if (isApiEnabled) {
         const { status: listStatus, drivers: apiDrivers, httpStatus } = await getDriverStatusList()
-        if (listStatus === 'network' || listStatus === 'error') {
+        if (listStatus === 'ok') {
+          setHybridApiWarning(null)
+          driverList = apiDrivers.map((d) => ({ ...d, id: d.uid || d.id }))
+        } else {
+          driverList = await loadFirestoreDriverStatus()
           setHybridApiWarning(
             listStatus === 'network'
-              ? 'Tidak dapat menghubungi API driver. Daftar di bawah mungkin kosong padahal driver ada.'
-              : `API driver error${httpStatus ? ` (${httpStatus})` : ''}. Coba muat ulang atau cek backend.`
+              ? 'API hybrid tidak terjangkau (jaringan/CORS/server). Menampilkan snapshot dari Firestore — status rute mungkin kurang real-time. Di Railway, pastikan ALLOWED_ORIGINS memuat https://traka-admin.web.app'
+              : `API hybrid mengembalikan error${httpStatus ? ` (${httpStatus})` : ''}. Menampilkan snapshot dari Firestore. Periksa backend atau CORS.`
           )
-        } else {
-          setHybridApiWarning(null)
         }
-        driverList = apiDrivers.map((d) => ({ ...d, id: d.uid || d.id }))
       } else {
         setHybridApiWarning(null)
-        const statusSnap = await getDocs(collection(db, 'driver_status'))
-        driverList = statusSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        driverList = await loadFirestoreDriverStatus()
       }
 
       const exemptSnap = await getDoc(doc(db, 'app_config', 'contribution_exempt_drivers'))
@@ -104,6 +110,7 @@ export default function Drivers() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rute</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Kontribusi</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jadwal</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -138,6 +145,14 @@ export default function Drivers() {
                     ) : (
                       <span className="text-gray-400 text-sm">-</span>
                     )}
+                  </td>
+                  <td className="px-6 py-4">
+                    <Link
+                      to={`/driver-schedules?uid=${encodeURIComponent(d.id)}`}
+                      className="text-sm font-medium text-orange-600 hover:text-orange-700"
+                    >
+                      Lihat jadwal
+                    </Link>
                   </td>
                 </tr>
               )

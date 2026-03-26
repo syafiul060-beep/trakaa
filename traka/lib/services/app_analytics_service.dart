@@ -299,4 +299,57 @@ class AppAnalyticsService {
       },
     );
   }
+
+  /// Driver mengetuk shortcut penjemputan/pengantaran saat belum ada aksi (SnackBar edukasi).
+  /// [shortcut]: `pickup` | `dropoff` — [reason]: `no_agreed_pickups` | `need_pickup_first` | `no_flow_yet`
+  static void logDriverStopShortcutEducationalTap({
+    required String shortcut,
+    required String reason,
+  }) {
+    _analytics.logEvent(
+      name: 'driver_stop_shortcut_educational_tap',
+      parameters: {
+        'shortcut': shortcut,
+        'reason': reason,
+      },
+    );
+  }
+
+  /// Tulis `driver_schedules` setelah UI optimistik — mulai satu job persist (antrean serial).
+  static void logDriverJadwalPersistStart({required int scheduleCount}) {
+    _analytics.logEvent(
+      name: 'driver_jadwal_persist_start',
+      parameters: {
+        'schedule_count': scheduleCount.clamp(0, 500).toString(),
+      },
+    );
+  }
+
+  static void logDriverJadwalPersistSuccess({required int scheduleCount}) {
+    _analytics.logEvent(
+      name: 'driver_jadwal_persist_success',
+      parameters: {
+        'schedule_count': scheduleCount.clamp(0, 500).toString(),
+      },
+    );
+  }
+
+  /// [failureKind]: `timeout` | `error`
+  static void logDriverJadwalPersistFail({
+    required String failureKind,
+    required int scheduleCount,
+  }) {
+    _analytics.logEvent(
+      name: 'driver_jadwal_persist_fail',
+      parameters: {
+        'failure_kind': failureKind,
+        'schedule_count': scheduleCount.clamp(0, 500).toString(),
+      },
+    );
+  }
+
+  /// Hybrid: `POST /api/driver/location` ditolak rate limit server (biasanya 429).
+  static void logHybridDriverLocationRateLimited() {
+    _analytics.logEvent(name: 'hybrid_driver_location_rate_limited');
+  }
 }

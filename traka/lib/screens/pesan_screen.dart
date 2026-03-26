@@ -116,7 +116,7 @@ class _PesanScreenState extends State<PesanScreen> {
 
   /// Rekomendasi: lokasi penumpang, tanggal, dan daftar jadwal.
   String _recommendationLocationText = 'Mengambil lokasi...';
-  DateTime _recommendationDate = DateTime.now();
+  DateTime _recommendationDate = DriverScheduleService.todayDateOnlyWib;
   List<ScheduledDriverRoute>? _recommendationList;
   bool _recommendationLoading = true;
   double? _recommendationLat;
@@ -469,7 +469,7 @@ class _PesanScreenState extends State<PesanScreen> {
   }
 
   void _showCariRuteLain() {
-    _openCariRuteForm(initialDate: DateTime.now());
+    _openCariRuteForm(initialDate: DriverScheduleService.todayDateOnlyWib);
   }
 
   void _openCariRuteForm({required DateTime initialDate}) {
@@ -714,8 +714,7 @@ class _PesanScreenState extends State<PesanScreen> {
   }
 
   String _formatRecommendationDateLabel(DateTime d) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    final today = DriverScheduleService.todayDateOnlyWib;
     final dOnly = DateTime(d.year, d.month, d.day);
     final diff = dOnly.difference(today).inDays;
     if (diff == 0) return 'Hari ini';
@@ -742,8 +741,7 @@ class _PesanScreenState extends State<PesanScreen> {
   }
 
   Widget _buildRecommendationView() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    final today = DriverScheduleService.todayDateOnlyWib;
 
     return Padding(
       padding: EdgeInsets.all(context.responsive.horizontalPadding),
@@ -1256,15 +1254,21 @@ class _FormCariTravelState extends State<_FormCariTravel> {
   }
 
   Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    final first = DriverScheduleService.todayDateOnlyWib;
+    final last = DriverScheduleService.lastScheduleDateInclusiveWib;
+    var initial = DateTime(_pickedDate.year, _pickedDate.month, _pickedDate.day);
+    if (initial.isBefore(first)) initial = first;
+    if (initial.isAfter(last)) initial = last;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _pickedDate.isBefore(today) ? today : _pickedDate,
-      firstDate: today,
-      lastDate: today.add(const Duration(days: 365)),
+      initialDate: initial,
+      firstDate: first,
+      lastDate: last,
+      helpText: 'Tanggal keberangkatan (WIB, sesuai jendela jadwal driver)',
     );
-    if (picked != null && mounted) setState(() => _pickedDate = picked);
+    if (picked != null && mounted) {
+      setState(() => _pickedDate = DateTime(picked.year, picked.month, picked.day));
+    }
   }
 
   @override

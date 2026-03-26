@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,6 +7,7 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest_all.dart' as tz_data;
 
 import 'route_notification_service.dart';
+import 'driver_schedule_service.dart';
 
 /// Notifikasi pengingat jadwal driver: 1 jam sebelum keberangkatan.
 class ScheduleReminderService {
@@ -33,14 +35,26 @@ class ScheduleReminderService {
     await RouteNotificationService.requestPermissionIfNeeded();
 
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('driver_schedules')
-          .doc(driverUid)
-          .get(const GetOptions(source: Source.server));
+      List<Map<String, dynamic>> list;
+      try {
+        list = await DriverScheduleService.readSchedulesRawFromServer(
+          driverUid,
+        ).timeout(const Duration(seconds: 10));
+      } on TimeoutException {
+        final cached = await DriverScheduleService.tryReadSchedulesRawFromCache(
+          driverUid,
+        );
+        if (cached == null) return;
+        list = cached;
+      } catch (_) {
+        final cached = await DriverScheduleService.tryReadSchedulesRawFromCache(
+          driverUid,
+        );
+        if (cached == null) return;
+        list = cached;
+      }
 
-      if (!doc.exists || doc.data() == null) return;
-      final list = doc.data()!['schedules'] as List<dynamic>?;
-      if (list == null || list.isEmpty) {
+      if (list.isEmpty) {
         await cancelAllReminders();
         return;
       }
@@ -50,7 +64,7 @@ class ScheduleReminderService {
       final todayStart = DateTime(now.year, now.month, now.day);
 
       for (var i = 0; i < list.length; i++) {
-        final map = list[i] as Map<dynamic, dynamic>;
+        final map = list[i];
         final dateStamp = map['date'] as Timestamp?;
         final depStamp = map['departureTime'] as Timestamp?;
         if (dateStamp == null || depStamp == null) continue;

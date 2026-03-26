@@ -107,6 +107,20 @@ class _DriverScreenState extends State<DriverScreen>
       _visitedTabIndices.add(index);
     }
   }
+
+  /// Jangan membuat stream shell baru tiap [build] — [StreamBuilder] akan reset dan layar driver
+  /// "putih" (hanya spinner) sampai baca Firestore awal selesai lagi.
+  Stream<UserShellRebuild>? _cachedDriverUserShellStream;
+  String? _cachedDriverUserShellStreamUid;
+
+  Stream<UserShellRebuild> _driverUserShellStreamFor(String uid) {
+    if (_cachedDriverUserShellStreamUid != uid) {
+      _cachedDriverUserShellStreamUid = uid;
+      _cachedDriverUserShellStream = driverUserShellStream(uid);
+    }
+    return _cachedDriverUserShellStream!;
+  }
+
   /// Increment saat tab Data Order dipilih agar Data Order refresh (mis. setelah kesepakatan di chat).
   int _dataOrderRefreshKey = 0;
   GoogleMapController? _mapController;
@@ -131,6 +145,10 @@ class _DriverScreenState extends State<DriverScreen>
 
   /// Posisi yang ditampilkan di map (interpolasi untuk pergerakan halus).
   LatLng? _displayedPosition;
+
+  /// Bila jarak driver ke titik geocode "tujuan awal" jadwal lebih dari ini, rute biru diminta dari lokasi driver (bukan dari titik jadwal).
+  /// Nilai lebih kecil = lebih sering mengikuti posisi driver (garis tidak "janggal" di ujung jadwal).
+  static const double _jadwalRouteStartFromDriverBeyondMeters = 200;
 
   /// Target posisi untuk interpolasi.
   LatLng? _targetPosition;
@@ -288,6 +306,8 @@ class _DriverScreenState extends State<DriverScreen>
   // Badge chat: jumlah order dengan pesan belum dibaca driver
   StreamSubscription<List<OrderModel>>? _driverOrdersSub;
   List<OrderModel> _driverOrders = [];
+  /// Set true setelah stream order driver pernah memuat snapshot — Siap Kerja bisa percaya daftar in-memory.
+  bool _driverOrdersStreamReady = false;
   /// Gabungkan snapshot order cepat dari Firestore → satu setState (~180ms) agar UI tidak macet.
   Timer? _driverOrdersUiDebounce;
   /// Cache untuk #8 insert optimization: route dan order IDs terakhir.
@@ -774,6 +794,7 @@ class _DriverScreenState extends State<DriverScreen>
     void apply() {
       if (!mounted) return;
       setState(() {
+        _driverOrdersStreamReady = true;
         _driverOrders = orders;
         _chatUnreadCount = count;
         _hasActiveOrder = hasActive;
@@ -2842,21 +2863,19 @@ class _DriverScreenState extends State<DriverScreen>
 
   /// Jika driver punya pesanan terjadwal (agreed/picked_up), tawarkan gunakan rute jadwal; else tampilkan sheet pilih jenis rute.
   Future<void> _checkScheduledOrdersThenShowRouteSheet() async {
-    final existing = _driverStartWorkCheckFuture;
-    if (existing != null) {
-      // Jangan `await` tanpa batas lalu `return` — pengguna menganggap tombol mati. Lepaskan future macet.
-      try {
-        await existing.timeout(const Duration(seconds: 26));
-      } catch (_) {}
-      if (identical(_driverStartWorkCheckFuture, existing)) {
-        _driverStartWorkCheckFuture = null;
-      }
+    if (_driverStartWorkCheckFuture != null) {
+      // Jangan tunggu future lama (bisa ~20+ detik) — tap ulang harus segera memulai cek baru.
+      _startWorkCheckGen++;
+      _startWorkLoadingSnackTimer?.cancel();
+      _startWorkLoadingSnackTimer = null;
+      if (mounted) ScaffoldMessenger.of(context).clearSnackBars();
+      _driverStartWorkCheckFuture = null;
     }
 
     Future<void> guardedRun() async {
       try {
         await _checkScheduledOrdersThenShowRouteSheetBody()
-            .timeout(const Duration(seconds: 22));
+            .timeout(const Duration(seconds: 12));
       } on TimeoutException {
         _startWorkCheckGen++;
         _startWorkLoadingSnackTimer?.cancel();
@@ -2896,25 +2915,41 @@ class _DriverScreenState extends State<DriverScreen>
     if (mounted) {
       ScaffoldMessenger.of(context).clearSnackBars();
     }
-    // SnackBar baru setelah jeda: cek Firestore sering selesai cepat — tanpa ini
-    // tap Siap Kerja terasa "memuat pesan terjadwal" setiap kali (mengganggu).
+    // SnackBar baru setelah jeda lama — sebagian besar cek selesai dari cache; kalau 450ms snack
+    // sering muncul lalu menggantung saat antrean tulis jadwal penuh.
     _startWorkLoadingSnackTimer?.cancel();
     if (mounted) {
-      _startWorkLoadingSnackTimer = Timer(const Duration(milliseconds: 450), () {
+      // Hanya jika masih perlu nunggu query Firestore (stream belum pernah emit).
+      _startWorkLoadingSnackTimer = Timer(const Duration(milliseconds: 2800), () {
         _startWorkLoadingSnackTimer = null;
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Memeriksa pesanan terjadwal…'),
             behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 12),
+            duration: Duration(seconds: 8),
           ),
         );
       });
     }
     var postedFollowUpSnack = false;
     try {
-      final orders = await OrderService.getDriverScheduledOrdersWithAgreed();
+      // Stream beranda: hindari query orders tambahan (sering mengantre di belakang tulis jadwal besar).
+      var orders = OrderService.scheduledOrdersWithAgreedFromList(_driverOrders);
+      final needsFirestoreOrders =
+          orders.isEmpty && !_driverOrdersStreamReady;
+      if (!needsFirestoreOrders) {
+        _startWorkLoadingSnackTimer?.cancel();
+        _startWorkLoadingSnackTimer = null;
+      }
+      if (needsFirestoreOrders) {
+        orders = await OrderService.getDriverScheduledOrdersWithAgreed();
+      }
+      if (mounted) {
+        _startWorkLoadingSnackTimer?.cancel();
+        _startWorkLoadingSnackTimer = null;
+        ScaffoldMessenger.of(context).clearSnackBars();
+      }
       if (!mounted) return;
       if (gen != _startWorkCheckGen) {
         if (mounted) ScaffoldMessenger.of(context).clearSnackBars();
@@ -3698,22 +3733,103 @@ class _DriverScreenState extends State<DriverScreen>
     });
   }
 
-  /// Buang hanya rute API yang geometrinya hampir sama dengan rute tersimpan
-  /// (garis bertumpuk). Alternatif dengan panjang mirip Google tapi jalur beda tetap tampil.
-  List<DirectionsResult> _filterApiRoutesDuplicateOfSaved(
-    DirectionsResult saved,
-    List<DirectionsResult> api,
+  /// Titik awal permintaan Directions: [nominalOrigin] (geocode jadwal / form). Jika mobil cukup jauh + GPS oke, pakai posisi driver — sama untuk jadwal maupun Siap Kerja.
+  ({double lat, double lng, bool routeStartsFromDriver})
+      _directionsOriginFromDriverIfFarFromNominal(
+    double nominalOriginLat,
+    double nominalOriginLng,
   ) {
-    if (api.isEmpty) return api;
-    return api
-        .where(
-          (r) => !RouteUtils.polylinesLikelyDuplicate(saved.points, r.points),
-        )
-        .toList();
+    LatLng? car;
+    if (_displayedPosition != null) {
+      car = _displayedPosition;
+    } else if (_currentPosition != null) {
+      car = LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
+    }
+    if (car == null) {
+      return (
+        lat: nominalOriginLat,
+        lng: nominalOriginLng,
+        routeStartsFromDriver: false,
+      );
+    }
+    final distM = Geolocator.distanceBetween(
+      car.latitude,
+      car.longitude,
+      nominalOriginLat,
+      nominalOriginLng,
+    );
+    final acc = _currentPosition?.accuracy;
+    final gpsOk = acc == null || acc <= 250;
+    if (distM > _jadwalRouteStartFromDriverBeyondMeters && gpsOk) {
+      return (
+        lat: car.latitude,
+        lng: car.longitude,
+        routeStartsFromDriver: true,
+      );
+    }
+    return (
+      lat: nominalOriginLat,
+      lng: nominalOriginLng,
+      routeStartsFromDriver: false,
+    );
+  }
+
+  /// Polyline di Firestore dipangkas (ringan); setelah peta tampil, satukan geometri halus dari Google Directions
+  /// di latar — tanpa sheet pilih alternatif (tetap satu rute, [_routeSelected] true).
+  Future<void> _refineJadwalPolylineWithGoogleDirections({
+    required int loadGen,
+    required String? scheduleId,
+    required double originLat,
+    required double originLng,
+    required double destLat,
+    required double destLng,
+  }) async {
+    try {
+      var list = await DirectionsService.getAlternativeRoutes(
+        originLat: originLat,
+        originLng: originLng,
+        destLat: destLat,
+        destLng: destLng,
+        trafficAware: _trafficEnabled,
+      );
+      if (list.isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        if (!mounted || loadGen != _loadRouteFromJadwalGen) return;
+        list = await DirectionsService.getAlternativeRoutes(
+          originLat: originLat,
+          originLng: originLng,
+          destLat: destLat,
+          destLng: destLng,
+          trafficAware: false,
+        );
+      }
+      if (!mounted || loadGen != _loadRouteFromJadwalGen) return;
+      if (list.isEmpty) return;
+      if (scheduleId != null &&
+          scheduleId.isNotEmpty &&
+          _currentScheduleId != scheduleId) {
+        return;
+      }
+      final smooth = list.first;
+      if (smooth.points.length < 2) return;
+      if (!mounted || loadGen != _loadRouteFromJadwalGen) return;
+      setState(() {
+        _alternativeRoutes = [smooth];
+        _selectedRouteIndex = 0;
+        _routeSelected = true;
+        _routePolyline = smooth.points;
+        _routeDistanceText = smooth.distanceText;
+        _routeDurationText = smooth.durationText;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _fitAlternativeRoutesBounds();
+      });
+    } catch (_) {}
   }
 
   /// Dari Jadwal & Rute (icon rute): muat rute dari tujuan awal/akhir jadwal.
-  /// [routePolyline] dari Firestore dipangkas — dipakai hanya untuk menyaring duplikat Directions; garis di peta utamanya dari API.
+  /// Bila [routePolyline] ada (disimpan saat buat jadwal), dulu garis cepat dari snapshot Firestore;
+  /// lalu [_refineJadwalPolylineWithGoogleDirections] memperhalus di latar (satu rute, tanpa pilih lagi).
   Future<void> _loadRouteFromJadwal(
     String originText,
     String destText, [
@@ -3751,17 +3867,28 @@ class _DriverScreenState extends State<DriverScreen>
         }
         return;
       }
-      final originLat = originLocations.first.latitude;
-      final originLng = originLocations.first.longitude;
+      final scheduleOriginLat = originLocations.first.latitude;
+      final scheduleOriginLng = originLocations.first.longitude;
       final destLat = destLocations.first.latitude;
       final destLng = destLocations.first.longitude;
+
+      final originAdj = _directionsOriginFromDriverIfFarFromNominal(
+        scheduleOriginLat,
+        scheduleOriginLng,
+      );
+      var originLat = originAdj.lat;
+      var originLng = originAdj.lng;
+      final routeStartsFromDriver = originAdj.routeStartsFromDriver;
 
       List<DirectionsResult> alternatives;
       int preSelectedIndex;
       bool preSelected;
 
+      // Polyline tersimpan = jadwal O→D dari geocode; tidak cocok jika garis dimulai dari mobil.
       DirectionsResult? savedFromPolyline;
-      if (routePolyline != null && routePolyline.length >= 2) {
+      if (!routeStartsFromDriver &&
+          routePolyline != null &&
+          routePolyline.length >= 2) {
         double totalM = 0;
         for (int i = 0; i < routePolyline.length - 1; i++) {
           totalM += Geolocator.distanceBetween(
@@ -3784,46 +3911,41 @@ class _DriverScreenState extends State<DriverScreen>
         );
       }
 
-      var apiAlternatives = await DirectionsService.getAlternativeRoutes(
-        originLat: originLat,
-        originLng: originLng,
-        destLat: destLat,
-        destLng: destLng,
-        trafficAware: _trafficEnabled,
-      );
-      if (!mounted) return;
-      if (apiAlternatives.isEmpty) {
-        await Future<void>.delayed(const Duration(milliseconds: 600));
-        if (!mounted) return;
-        apiAlternatives = await DirectionsService.getAlternativeRoutes(
-          originLat: originLat,
-          originLng: originLng,
-          destLat: destLat,
-          destLng: destLng,
-          trafficAware: false,
-        );
-      }
-
-      // Polyline di Firestore wajib dipangkas agar dokumen muat — jangan jadikan garis utama di peta
-      // (titik sedikit = tampak patah memotong blok). Bila ada hasil Directions, pakai geometri API (halus).
-      if (savedFromPolyline != null && apiAlternatives.isNotEmpty) {
-        final extra = _filterApiRoutesDuplicateOfSaved(
-          savedFromPolyline,
-          apiAlternatives,
-        );
-        alternatives = extra.isNotEmpty
-            ? extra
-            : List<DirectionsResult>.from(apiAlternatives);
-        preSelectedIndex = 0;
-        preSelected = true;
-      } else if (savedFromPolyline != null) {
+      if (savedFromPolyline != null) {
+        // Rute sudah dipilih saat buat jadwal: satu garis saja, langsung siap "Mulai Rute"
+        // (jangan panggil Directions untuk alternatif — hindari pilih rute lagi di beranda).
         alternatives = [savedFromPolyline];
         preSelectedIndex = 0;
         preSelected = true;
       } else {
+        var apiAlternatives = await DirectionsService.getAlternativeRoutes(
+          originLat: originLat,
+          originLng: originLng,
+          destLat: destLat,
+          destLng: destLng,
+          trafficAware: _trafficEnabled,
+        );
+        if (!mounted) return;
+        if (apiAlternatives.isEmpty) {
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          if (!mounted) return;
+          apiAlternatives = await DirectionsService.getAlternativeRoutes(
+            originLat: originLat,
+            originLng: originLng,
+            destLat: destLat,
+            destLng: destLng,
+            trafficAware: false,
+          );
+        }
         alternatives = apiAlternatives;
-        preSelectedIndex = -1;
-        preSelected = false;
+        // Sama seperti Siap Kerja: satu alternatif → langsung dipilih (boleh Mulai Rute ini).
+        if (alternatives.length == 1) {
+          preSelectedIndex = 0;
+          preSelected = true;
+        } else {
+          preSelectedIndex = -1;
+          preSelected = false;
+        }
       }
 
       if (!mounted) return;
@@ -3858,6 +3980,20 @@ class _DriverScreenState extends State<DriverScreen>
         _currentScheduleId = scheduleId;
         _currentRouteCategory = routeCategory;
         _pendingJadwalRouteLoad = false;
+        if (preSelected && selRoute != null) {
+          _routeEstimatedDurationSeconds = selRoute.durationSeconds;
+          _routeStartedAt = DateTime.now();
+          if (scheduleId != null && scheduleId.isNotEmpty) {
+            _routeJourneyNumber = OrderService.routeJourneyNumberScheduled;
+          } else {
+            _routeJourneyNumber = null;
+            unawaited(_awaitJourneyNumberAfterSelectWithSnacks());
+          }
+        } else {
+          _routeEstimatedDurationSeconds = null;
+          _routeStartedAt = null;
+          _routeJourneyNumber = null;
+        }
       });
 
       if (alternatives.length > 1) {
@@ -3879,7 +4015,11 @@ class _DriverScreenState extends State<DriverScreen>
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(TrakaL10n.of(context).selectRouteOnMapHint),
+              content: Text(
+                routeStartsFromDriver
+                    ? 'Rute dari lokasi Anda ke tujuan jadwal. Pilih garis di peta jika ada beberapa alternatif.'
+                    : TrakaL10n.of(context).selectRouteOnMapHint,
+              ),
               behavior: SnackBarBehavior.floating,
               duration: const Duration(seconds: 4),
             ),
@@ -3888,6 +4028,18 @@ class _DriverScreenState extends State<DriverScreen>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _fitAlternativeRoutesBounds();
         });
+        if (savedFromPolyline != null) {
+          unawaited(
+            _refineJadwalPolylineWithGoogleDirections(
+              loadGen: loadGen,
+              scheduleId: scheduleId,
+              originLat: originLat,
+              originLng: originLng,
+              destLat: destLat,
+              destLng: destLng,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -3935,46 +4087,91 @@ class _DriverScreenState extends State<DriverScreen>
       _currentScheduleId = null;
       _currentRouteCategory = null;
     });
-    // Ambil semua alternatif rute (dengan ETA lalu lintas jika layer aktif)
-    final alternatives = await DirectionsService.getAlternativeRoutes(
-      originLat: newOrigin.latitude,
-      originLng: newOrigin.longitude,
+
+    final originAdj = _directionsOriginFromDriverIfFarFromNominal(
+      newOrigin.latitude,
+      newOrigin.longitude,
+    );
+    final dirOriginLat = originAdj.lat;
+    final dirOriginLng = originAdj.lng;
+    final routeStartsFromDriver = originAdj.routeStartsFromDriver;
+
+    var alternatives = await DirectionsService.getAlternativeRoutes(
+      originLat: dirOriginLat,
+      originLng: dirOriginLng,
       destLat: newDest.latitude,
       destLng: newDest.longitude,
       trafficAware: _trafficEnabled,
     );
-    if (mounted && alternatives.isNotEmpty) {
-      // Tampilkan alternatif rute di map, tunggu driver pilih
+    if (!mounted) return;
+    if (alternatives.isEmpty) {
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+      alternatives = await DirectionsService.getAlternativeRoutes(
+        originLat: dirOriginLat,
+        originLng: dirOriginLng,
+        destLat: newDest.latitude,
+        destLng: newDest.longitude,
+        trafficAware: false,
+      );
+    }
+    if (!mounted) return;
+    if (alternatives.isNotEmpty) {
       _resetJourneyNumberPrefetch();
       setState(() {
-        _routeOriginLatLng = newOrigin;
+        _routeOriginLatLng = LatLng(dirOriginLat, dirOriginLng);
         _routeDestLatLng = newDest;
         _routeOriginText = prevDestText;
         _routeDestText = prevOriginText;
         _alternativeRoutes = alternatives;
-        _selectedRouteIndex = -1; // Belum dipilih
-        _routeSelected = false; // Belum dipilih
-        _isDriverWorking =
-            false; // Tombol tetap "Siap Kerja" sampai rute dipilih
-        _routePolyline = null; // Belum ada rute yang dipilih
-        _routeDistanceText = '';
-        _routeDurationText = '';
+        _isDriverWorking = false;
         _activeRouteFromJadwal = false;
         _currentScheduleId = null;
-        _routeJourneyNumber = null;
+        if (alternatives.length > 1) {
+          _selectedRouteIndex = -1;
+          _routeSelected = false;
+          _routePolyline = null;
+          _routeDistanceText = '';
+          _routeDurationText = '';
+          _routeJourneyNumber = null;
+          _routeEstimatedDurationSeconds = null;
+          _routeStartedAt = null;
+        }
       });
-      _startJourneyNumberPrefetch();
-
+      if (alternatives.length == 1) {
+        await _selectRouteAndStart(0);
+      } else {
+        _startJourneyNumberPrefetch();
+      }
+      if (!mounted) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _fitAlternativeRoutesBounds();
       });
+      final l10n = TrakaL10n.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Pilih rute yang diinginkan di map. Gunakan tombol di bawah peta atau tap garis rute.',
+            alternatives.length == 1
+                ? 'Rute sudah dipilih. Tap Mulai Rute ini untuk mulai bekerja.'
+                : routeStartsFromDriver
+                ? 'Rute dari lokasi Anda ke tujuan. Pilih garis di peta jika ada beberapa alternatif.'
+                : l10n.selectRouteOnMapHint,
           ),
           behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 4),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            TrakaL10n.of(context).failedToLoadRouteDirections,
+            style: const TextStyle(fontWeight: FontWeight.w500),
+          ),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
         ),
       );
     }
@@ -4041,46 +4238,75 @@ class _DriverScreenState extends State<DriverScreen>
               destText,
             ) async {
               Navigator.pop(ctx);
-              // Ambil semua alternatif rute (dengan ETA lalu lintas jika layer aktif)
-              final alternatives = await DirectionsService.getAlternativeRoutes(
-                originLat: originLat,
-                originLng: originLng,
+              final originAdj = _directionsOriginFromDriverIfFarFromNominal(
+                originLat,
+                originLng,
+              );
+              final dirOriginLat = originAdj.lat;
+              final dirOriginLng = originAdj.lng;
+              final routeStartsFromDriver = originAdj.routeStartsFromDriver;
+
+              var alternatives = await DirectionsService.getAlternativeRoutes(
+                originLat: dirOriginLat,
+                originLng: dirOriginLng,
                 destLat: destLat,
                 destLng: destLng,
                 trafficAware: _trafficEnabled,
               );
               if (!mounted) return;
+              if (alternatives.isEmpty) {
+                await Future<void>.delayed(const Duration(milliseconds: 600));
+                if (!mounted) return;
+                alternatives = await DirectionsService.getAlternativeRoutes(
+                  originLat: dirOriginLat,
+                  originLng: dirOriginLng,
+                  destLat: destLat,
+                  destLng: destLng,
+                  trafficAware: false,
+                );
+              }
+              if (!mounted) return;
               if (alternatives.isNotEmpty) {
-                // Tampilkan alternatif rute di map, tunggu driver pilih
                 _resetJourneyNumberPrefetch();
                 setState(() {
-                  _routeOriginLatLng = LatLng(originLat, originLng);
+                  _routeOriginLatLng = LatLng(dirOriginLat, dirOriginLng);
                   _routeDestLatLng = LatLng(destLat, destLng);
                   _routeOriginText = originText;
                   _routeDestText = destText;
                   _alternativeRoutes = alternatives;
-                  _selectedRouteIndex = -1; // Belum dipilih
-                  _routeSelected = false; // Belum dipilih
-                  _isDriverWorking =
-                      false; // Tombol tetap "Siap Kerja" sampai rute dipilih
-                  _routePolyline = null; // Belum ada rute yang dipilih
-                  _routeDistanceText = '';
-                  _routeDurationText = '';
-                  _routeJourneyNumber = null;
+                  _isDriverWorking = false;
+                  if (alternatives.length > 1) {
+                    _selectedRouteIndex = -1;
+                    _routeSelected = false;
+                    _routePolyline = null;
+                    _routeDistanceText = '';
+                    _routeDurationText = '';
+                    _routeJourneyNumber = null;
+                    _routeEstimatedDurationSeconds = null;
+                    _routeStartedAt = null;
+                  }
                 });
-                _startJourneyNumberPrefetch();
-
-                if (!context.mounted) return;
+                if (alternatives.length == 1) {
+                  await _selectRouteAndStart(0);
+                } else {
+                  _startJourneyNumberPrefetch();
+                }
+                if (!mounted) return;
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (mounted) _fitAlternativeRoutesBounds();
                 });
+                final l10n = TrakaL10n.of(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
+                  SnackBar(
                     content: Text(
-                      'Pilih rute yang diinginkan di map. Gunakan tombol di bawah peta atau tap garis rute.',
+                      alternatives.length == 1
+                          ? 'Rute sudah dipilih. Tap Mulai Rute ini untuk mulai bekerja.'
+                          : routeStartsFromDriver
+                          ? 'Rute dari lokasi Anda ke tujuan. Pilih garis di peta jika ada beberapa alternatif.'
+                          : l10n.selectRouteOnMapHint,
                     ),
                     behavior: SnackBarBehavior.floating,
-                    duration: Duration(seconds: 4),
+                    duration: const Duration(seconds: 4),
                   ),
                 );
               } else {
@@ -4662,21 +4888,15 @@ class _DriverScreenState extends State<DriverScreen>
     return markers;
   }
 
-  static String _todayYmd() {
-    final n = DateTime.now();
-    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
-  }
-
   /// Sama filter pin [_buildMarkers] — urut **terdekat dari posisi driver** (bukan sepanjang polyline utama).
   List<OrderModel> _ordersForMapPickupsSorted() {
     final chaseCamActive = _isDriverWorking || _navigatingToOrderId != null;
     final hasRoute = _routeOriginLatLng != null && _routeDestLatLng != null;
-    final todayYmd = _todayYmd();
     final list = <OrderModel>[];
     if (chaseCamActive || hasRoute) {
       for (final order in _driverOrders) {
         if (order.status == OrderService.statusCompleted) continue;
-        if (!_isOrderForCurrentRoute(order, todayYmd)) continue;
+        if (!_isOrderForCurrentRoute(order)) continue;
         if (order.orderType != OrderModel.typeTravel &&
             order.orderType != OrderModel.typeKirimBarang) {
           continue;
@@ -4705,12 +4925,11 @@ class _DriverScreenState extends State<DriverScreen>
   List<OrderModel> _ordersForMapDropoffsSorted() {
     final chaseCamActive = _isDriverWorking || _navigatingToOrderId != null;
     final hasRoute = _routeOriginLatLng != null && _routeDestLatLng != null;
-    final todayYmd = _todayYmd();
     final list = <OrderModel>[];
     if (chaseCamActive || hasRoute) {
       for (final order in _driverOrders) {
         if (order.status == OrderService.statusCompleted) continue;
-        if (!_isOrderForCurrentRoute(order, todayYmd)) continue;
+        if (!_isOrderForCurrentRoute(order)) continue;
         if (order.orderType != OrderModel.typeTravel &&
             order.orderType != OrderModel.typeKirimBarang) {
           continue;
@@ -5047,7 +5266,6 @@ class _DriverScreenState extends State<DriverScreen>
 
   /// Daftar penumpang/barang yang sudah dijemput dan menunggu diantar - untuk overlay "Menuju tujuan".
   List<OrderModel> get _pickedUpOrdersForDestination {
-    final todayYmd = _todayYmd();
     final list = <OrderModel>[];
     for (final order in _driverOrders) {
       if (order.status != OrderService.statusPickedUp) continue;
@@ -5055,7 +5273,7 @@ class _DriverScreenState extends State<DriverScreen>
           order.orderType != OrderModel.typeKirimBarang) {
         continue;
       }
-      if (!_isOrderForCurrentRoute(order, todayYmd)) continue;
+      if (!_isOrderForCurrentRoute(order)) continue;
       final (lat, lng) = _getOrderDestinationLatLng(order);
       if (lat == null || lng == null) continue;
       list.add(order);
@@ -5154,15 +5372,29 @@ class _DriverScreenState extends State<DriverScreen>
     return (order.destLat, order.destLng);
   }
 
+  /// Pesanan terjadwal: cocokkan [scheduleId] format baru (`…_h…`) vs legacy (`…_depMillis`).
+  bool _scheduleIdsMatchForActiveJadwal(String orderScheduleId) {
+    final cur = _currentScheduleId;
+    if (cur == null || cur.isEmpty) return false;
+    if (orderScheduleId.isEmpty) return false;
+    if (cur == orderScheduleId) return true;
+    return ScheduleIdUtil.toLegacy(cur) ==
+        ScheduleIdUtil.toLegacy(orderScheduleId);
+  }
+
   /// Cek apakah order termasuk dalam rute aktif saat ini (untuk tampilan map).
-  bool _isOrderForCurrentRoute(OrderModel order, String todayYmd) {
+  /// Pesanan terjadwal memakai tanggal **[DriverScheduleService.todayYmdWibString]** + [scheduleId].
+  bool _isOrderForCurrentRoute(OrderModel order) {
     if (order.isScheduledOrder) {
-      if (_currentScheduleId == null ||
-          _currentScheduleId != order.scheduleId ||
-          (order.scheduledDate ?? '') != todayYmd) {
+      if (_currentScheduleId == null) return false;
+      final oid = order.scheduleId;
+      if (oid == null || oid.isEmpty) return false;
+      // Satu kalender dengan chip Jadwal (WIB), bukan jam lokal perangkat saja.
+      if ((order.scheduledDate ?? '') !=
+          DriverScheduleService.todayYmdWibString) {
         return false;
       }
-      return true;
+      return _scheduleIdsMatchForActiveJadwal(oid);
     }
     if (_isDriverWorking && _routeJourneyNumber != null) {
       return order.routeJourneyNumber == _routeJourneyNumber;
@@ -5175,7 +5407,6 @@ class _DriverScreenState extends State<DriverScreen>
 
   /// Daftar penumpang/barang yang menunggu (agreed, belum dijemput) - untuk daftar di bawah zoom.
   List<OrderModel> get _waitingPassengerOrders {
-    final todayYmd = _todayYmd();
     final list = <OrderModel>[];
     for (final order in _driverOrders) {
       if (order.status != OrderService.statusAgreed ||
@@ -5185,7 +5416,7 @@ class _DriverScreenState extends State<DriverScreen>
       final lat = order.passengerLat ?? order.originLat;
       final lng = order.passengerLng ?? order.originLng;
       if (lat == null || lng == null) continue;
-      if (!_isOrderForCurrentRoute(order, todayYmd)) continue;
+      if (!_isOrderForCurrentRoute(order)) continue;
       list.add(order);
     }
     // Urutan jemput untuk pesanan terjadwal: sort by posisi sepanjang rute
@@ -5227,9 +5458,9 @@ class _DriverScreenState extends State<DriverScreen>
 
   /// Jumlah pesanan terjadwal untuk hari ini yang sudah kesepakatan dan belum dijemput (untuk banner pengingat).
   int get _scheduledAgreedCountForToday {
-    final todayYmd = _todayYmd();
+    final todayWib = DriverScheduleService.todayYmdWibString;
     return _driverOrders.where((o) {
-      if (!o.isScheduledOrder || (o.scheduledDate ?? '') != todayYmd) {
+      if (!o.isScheduledOrder || (o.scheduledDate ?? '') != todayWib) {
         return false;
       }
       if (o.status != OrderService.statusAgreed &&
@@ -5242,14 +5473,13 @@ class _DriverScreenState extends State<DriverScreen>
 
   Future<void> _loadPassengerMarkerIconsIfNeeded() async {
     // Load icon untuk semua penumpang pickup yang tampil di map (multi penumpang).
-    final todayYmd = _todayYmd();
     for (final order in _driverOrders) {
       if (order.status != OrderService.statusAgreed ||
           order.hasDriverScannedPassenger ||
           (order.passengerLat == null && order.originLat == null)) {
         continue;
       }
-      if (!_isOrderForCurrentRoute(order, todayYmd)) continue;
+      if (!_isOrderForCurrentRoute(order)) continue;
       if (_passengerMarkerIcons.containsKey(order.id)) continue;
       try {
         final icon = await MarkerIconService.createProfilePhotoMarker(
@@ -5310,10 +5540,16 @@ class _DriverScreenState extends State<DriverScreen>
     if (!_isDriverWorking || !mounted) return;
     final pickups = _waitingPassengerOrders;
     if (pickups.isEmpty) {
+      AppAnalyticsService.logDriverStopShortcutEducationalTap(
+        shortcut: 'pickup',
+        reason: 'no_agreed_pickups',
+      );
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tidak ada penjemputan dalam rute ini'),
+        SnackBar(
+          content: Text(TrakaL10n.of(context).driverStopShortcutPickupEmpty),
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
         ),
       );
       return;
@@ -5352,10 +5588,23 @@ class _DriverScreenState extends State<DriverScreen>
     if (!_isDriverWorking || !mounted) return;
     final dropoffs = _pickedUpOrdersForDestination;
     if (dropoffs.isEmpty) {
+      final pickups = _waitingPassengerOrders;
+      final needPickupFirst = pickups.isNotEmpty;
+      AppAnalyticsService.logDriverStopShortcutEducationalTap(
+        shortcut: 'dropoff',
+        reason:
+            needPickupFirst ? 'need_pickup_first' : 'no_flow_yet',
+      );
+      if (!mounted) return;
+      final l10n = TrakaL10n.of(context);
+      final msg = needPickupFirst
+          ? l10n.driverStopShortcutDropoffNeedPickupFirst
+          : l10n.driverStopShortcutDropoffEmptyFlow;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tidak ada pengantaran dalam rute ini'),
+        SnackBar(
+          content: Text(msg),
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
         ),
       );
       return;
@@ -6377,6 +6626,30 @@ class _DriverScreenState extends State<DriverScreen>
   static const Color _polylinePenjemputanColor = Color(0xFF00B14F); // Grab green
   static const Color _polylinePengantaranColor = Color(0xFFE65100); // Oranye
 
+  Polyline _styledDriverRoutePolyline({
+    required PolylineId polylineId,
+    required List<LatLng> points,
+    required Color color,
+    required int width,
+    List<PatternItem> patterns = const [],
+    bool consumeTapEvents = false,
+    VoidCallback? onTap,
+  }) {
+    return Polyline(
+      polylineId: polylineId,
+      points: points,
+      color: color,
+      width: width,
+      patterns: patterns,
+      consumeTapEvents: consumeTapEvents,
+      onTap: onTap,
+      geodesic: true,
+      jointType: JointType.round,
+      startCap: Cap.roundCap,
+      endCap: Cap.roundCap,
+    );
+  }
+
   Set<Polyline> _buildPolylines() {
     final Set<Polyline> polylines = {};
 
@@ -6400,7 +6673,7 @@ class _DriverScreenState extends State<DriverScreen>
         final (passed, remaining) = _splitPolylineAtDriver(mainRoute);
         if (passed.length >= 2) {
           polylines.add(
-            Polyline(
+            _styledDriverRoutePolyline(
               polylineId: const PolylineId('route_main_passed'),
               points: passed,
               color: Colors.amber.shade300,
@@ -6410,7 +6683,7 @@ class _DriverScreenState extends State<DriverScreen>
         }
         if (remaining.length >= 2) {
           polylines.add(
-            Polyline(
+            _styledDriverRoutePolyline(
               polylineId: const PolylineId('route_main_faded'),
               points: remaining,
               color: Colors.grey.shade400,
@@ -6423,7 +6696,7 @@ class _DriverScreenState extends State<DriverScreen>
       final (passed, remaining) = _splitPolylineAtDriver(navPolyline);
       if (passed.length >= 2) {
         polylines.add(
-          Polyline(
+          _styledDriverRoutePolyline(
             polylineId: const PolylineId('route_to_passenger_passed'),
             points: passed,
             color: Colors.amber.shade300,
@@ -6433,7 +6706,7 @@ class _DriverScreenState extends State<DriverScreen>
       }
       if (remaining.length >= 2) {
         polylines.add(
-          Polyline(
+          _styledDriverRoutePolyline(
             polylineId: const PolylineId('route_to_passenger'),
             points: remaining,
             color: routeColor,
@@ -6458,23 +6731,23 @@ class _DriverScreenState extends State<DriverScreen>
           final (passed, remaining) = _splitPolylineAtDriver(route.points);
           if (passed.length >= 2) {
             polylines.add(
-              Polyline(
+              _styledDriverRoutePolyline(
                 polylineId: PolylineId('route_${i}_passed'),
                 points: passed,
                 color: routeColor.withValues(alpha: 0.5),
                 width: 5,
-                patterns: [],
+                patterns: const [],
               ),
             );
           }
           if (remaining.length >= 2) {
             polylines.add(
-              Polyline(
+              _styledDriverRoutePolyline(
                 polylineId: PolylineId('route_$i'),
                 points: remaining,
                 color: routeColor,
                 width: 9,
-                patterns: [],
+                patterns: const [],
               ),
             );
           }
@@ -6484,12 +6757,12 @@ class _DriverScreenState extends State<DriverScreen>
               : route.points;
           if (points.length >= 2) {
             polylines.add(
-              Polyline(
+              _styledDriverRoutePolyline(
                 polylineId: PolylineId('route_$i'),
                 points: points,
                 color: routeColor,
                 width: isSelected ? 9 : 4,
-                patterns: [],
+                patterns: const [],
               ),
             );
           }
@@ -6499,7 +6772,7 @@ class _DriverScreenState extends State<DriverScreen>
       final (passed, remaining) = _splitPolylineAtDriver(_routePolyline!);
       if (passed.length >= 2) {
         polylines.add(
-          Polyline(
+          _styledDriverRoutePolyline(
             polylineId: const PolylineId('route_passed'),
             points: passed,
             color: Colors.amber.shade300,
@@ -6509,7 +6782,7 @@ class _DriverScreenState extends State<DriverScreen>
       }
       if (remaining.length >= 2) {
         polylines.add(
-          Polyline(
+          _styledDriverRoutePolyline(
             polylineId: const PolylineId('route'),
             points: remaining,
             color: Theme.of(context).colorScheme.primary,
@@ -6945,9 +7218,16 @@ class _DriverScreenState extends State<DriverScreen>
             final zoomTop = mq.orientation == Orientation.landscape
                 ? mq.padding.top + 4
                 : mq.padding.top + 44;
-            final showStopsShortcuts = _isDriverWorking &&
-                (_waitingPassengerCount > 0 ||
-                    _pickedUpOrdersForDestination.isNotEmpty);
+            final showStopsShortcuts = _isDriverWorking;
+            final pickupShortcutTooltip = _waitingPassengerCount > 0
+                ? 'Penjemputan'
+                : 'Penjemputan — aktif setelah ada pemesan yang setuju';
+            final dropoffShortcutTooltip =
+                _pickedUpOrdersForDestination.isNotEmpty
+                ? 'Pengantaran'
+                : _waitingPassengerCount > 0
+                ? 'Pengantaran — selesaikan penjemputan dulu'
+                : 'Pengantaran — setelah penjemputan selesai';
             return MapTypeZoomControls(
               mapType: effectiveMapType,
               topOffset: zoomTop,
@@ -6975,6 +7255,8 @@ class _DriverScreenState extends State<DriverScreen>
               pickupShortcutEnabled: _waitingPassengerCount > 0,
               dropoffShortcutEnabled:
                   _pickedUpOrdersForDestination.isNotEmpty,
+              pickupShortcutTooltip: pickupShortcutTooltip,
+              dropoffShortcutTooltip: dropoffShortcutTooltip,
               showRouteInfoShortcut: _isDriverWorking &&
                   _routePolyline != null &&
                   _routePolyline!.isNotEmpty &&
@@ -7351,6 +7633,23 @@ class _DriverScreenState extends State<DriverScreen>
                         _showDriverVerificationGateDialog();
                         return;
                       }
+                      final sid = scheduleId ?? '';
+                      if (sid.isNotEmpty &&
+                          !ScheduleIdUtil.scheduleIdDateMatchesTodayWib(
+                            sid,
+                            DriverScheduleService.todayYmdWibString,
+                          )) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              TrakaL10n.of(context).driverJadwalRouteWrongDateWib,
+                            ),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                        return;
+                      }
                       setState(() {
                         _currentIndex = 0;
                         _pendingJadwalRouteLoad = true;
@@ -7475,13 +7774,12 @@ class _DriverScreenState extends State<DriverScreen>
       _sessionInvalidConfirmed = false;
 
       return StreamBuilder<UserShellRebuild>(
-        stream: driverUserShellStream(user.uid),
+        stream: _driverUserShellStreamFor(user.uid),
+        initialData: const UserShellRebuild(
+          isVerified: true,
+          adminVerificationBlocksFeatures: false,
+        ),
         builder: (context, profileSnap) {
-          if (!profileSnap.hasData) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
           final p = profileSnap.data!;
           _driverProfileComplete = p.isVerified;
           _canStartDriverWork =
@@ -7659,6 +7957,10 @@ class _AlternativeRoutesPickerSheetState
           color: _routeColors[i % _routeColors.length].withValues(alpha: 0.88),
           width: 5,
           zIndex: widget.alternatives.length - i,
+          geodesic: true,
+          jointType: JointType.round,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
         ),
       );
     }

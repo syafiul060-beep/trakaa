@@ -16,6 +16,7 @@ const OrderDetail = lazy(() => import('./pages/OrderDetail'))
 const Users = lazy(() => import('./pages/Users'))
 const AdminNotifications = lazy(() => import('./pages/AdminNotifications'))
 const Drivers = lazy(() => import('./pages/Drivers'))
+const DriverSchedules = lazy(() => import('./pages/DriverSchedules'))
 const PaymentReview = lazy(() => import('./pages/PaymentReview'))
 const Chat = lazy(() => import('./pages/Chat'))
 const Reports = lazy(() => import('./pages/Reports'))
@@ -95,6 +96,7 @@ export default function App() {
             <Route path="users" element={<Users />} />
             <Route path="notifications" element={<AdminNotifications />} />
             <Route path="drivers" element={<Drivers />} />
+            <Route path="driver-schedules" element={<DriverSchedules />} />
             <Route path="payment-review" element={<PaymentReview />} />
             <Route path="chat" element={<Chat />} />
             <Route path="reports" element={<Reports />} />

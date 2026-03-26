@@ -144,6 +144,8 @@ async function sanitizeDriverSchedulesIfNeeded(driverUid, schedules) {
 
 module.exports = {
   sanitizeDriverSchedulesIfNeeded,
+  shouldKeepSlot,
+  fetchActiveScheduleIdsForDriver,
   wibTodayYmd,
   wibLastInclusiveYmd,
   isYmdInBookingWindow,

@@ -607,6 +607,32 @@ class AppLocalizations {
   String get selectRouteOnMapHint => locale == AppLocale.id
       ? 'Pilih rute di map (tap garis kuning), lalu tap Mulai rute ini.'
       : 'Select route on map (tap yellow line), then tap Start this route.';
+
+  /// Beranda driver: shortcut penjemputan saat belum ada order agreed pada rute ini.
+  String get driverStopShortcutPickupEmpty => locale == AppLocale.id
+      ? 'Belum ada penjemputan. Penjemputan bisa dipakai setelah ada pemesan yang setuju (agreed) pada rute ini — data order tampil di Data Order.'
+      : 'No pickups yet. Pickup navigation is available after a passenger agrees on this route — see Orders.';
+
+  /// Shortcut pengantaran: masih ada yang harus dijemput.
+  String get driverStopShortcutDropoffNeedPickupFirst => locale == AppLocale.id
+      ? 'Selesaikan penjemputan terlebih dahulu. Navigasi pengantaran aktif setelah penumpang atau barang dikonfirmasi dijemput (status dijemput).'
+      : 'Finish pickups first. Drop-off navigation is available after pickup is confirmed (picked up).';
+
+  /// Shortcut pengantaran: belum ada alur jemput sama sekali.
+  String get driverStopShortcutDropoffEmptyFlow => locale == AppLocale.id
+      ? 'Belum ada pengantaran. Alur: tunggu pemesan setuju → jemput → setelah itu Anda bisa navigasi ke titik pengantaran.'
+      : 'No drop-offs yet. Flow: wait for agreement → pick up → then navigate to drop-off.';
+
+  /// Gate buka rute dari jadwal: tanggal scheduleId ≠ hari ini WIB.
+  String get driverJadwalRouteWrongDateWib => locale == AppLocale.id
+      ? 'Rute jadwal hanya bisa dibuka pada tanggal keberangkatan (hari ini menurut WIB).'
+      : 'Scheduled route can only be opened on the departure date (today in WIB).';
+
+  /// Layar Jadwal: hindari banyak simpan bersamaan saat jaringan lemah.
+  String get driverScheduleNetworkSerializeHint => locale == AppLocale.id
+      ? 'Jika jaringan lambat: tunggu penyimpanan selesai (garis di atas) sebelum menambah atau mengubah jadwal lagi.'
+      : 'On a slow network: wait until the save finishes (line at top) before adding or editing another schedule.';
+
   String get showBarcodeToSecondDriver => locale == AppLocale.id
       ? 'Tunjukkan barcode ke driver kedua'
       : 'Show barcode to second driver';

@@ -9,31 +9,37 @@ const { sanitizeNumber, isValidLatLng } = require('../lib/validation.js');
 const KEY_PREFIX = 'driver_status:';
 const TTL_SECONDS = 600; // 10 menit
 
-/** Rate limit POST /location per Firebase UID — kurangi spam Redis/GEO (default >> pola app live). */
-let _driverLocationLimiter = null;
-function driverLocationPerUidLimiter() {
-  if (!_driverLocationLimiter) {
-    const redis = getRedis();
-    const perMin = Math.min(
-      Math.max(parseInt(process.env.DRIVER_LOCATION_RATE_LIMIT_PER_MIN, 10) || 120, 30),
-      600,
-    );
-    _driverLocationLimiter = rateLimit({
-      windowMs: 60 * 1000,
-      limit: perMin,
-      keyGenerator: (req) => `driver_loc:${req.uid || req.ip}`,
-      message: { error: 'Update lokasi terlalu sering. Coba lagi sebentar.' },
-      standardHeaders: true,
-      legacyHeaders: false,
-      store: redis
-        ? new RedisStore({
-            sendCommand: (...args) => redis.sendCommand(args),
-            prefix: 'rl:drvloc:',
-          })
-        : undefined,
-    });
-  }
-  return _driverLocationLimiter;
+/**
+ * Rate limit POST /location per Firebase UID.
+ * express-rate-limit v8: instance harus dibuat saat startup (bukan di tengah request), dan
+ * keyGenerator tidak boleh memakai req.ip mentah (IPv6) tanpa ipKeyGenerator — kita hanya pakai req.uid setelah verifyToken.
+ */
+let driverLocationLimiterInner = (req, res, _next) => {
+  res.status(503).json({ error: 'Rate limiter not initialized' });
+};
+function driverLocationLimit(req, res, next) {
+  return driverLocationLimiterInner(req, res, next);
+}
+
+function mountDriverLocationLimiter(redis) {
+  const perMin = Math.min(
+    Math.max(parseInt(process.env.DRIVER_LOCATION_RATE_LIMIT_PER_MIN, 10) || 120, 30),
+    600,
+  );
+  driverLocationLimiterInner = rateLimit({
+    windowMs: 60 * 1000,
+    limit: perMin,
+    keyGenerator: (req) => `driver_loc:${req.uid || 'unauthenticated'}`,
+    message: { error: 'Update lokasi terlalu sering. Coba lagi sebentar.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: redis
+      ? new RedisStore({
+          sendCommand: (...args) => redis.sendCommand(args),
+          prefix: 'rl:drvloc:',
+        })
+      : undefined,
+  });
 }
 
 // Harus sebelum /:uid/status agar tidak tertangkap sebagai uid
@@ -69,7 +75,7 @@ router.get('/status', async (req, res) => {
   }
 });
 
-router.post('/location', verifyToken, (req, res, next) => driverLocationPerUidLimiter()(req, res, next), async (req, res) => {
+router.post('/location', verifyToken, driverLocationLimit, async (req, res) => {
   try {
     const redis = getRedis();
     if (!redis) return res.status(503).json({ error: 'Redis not available' });
@@ -211,4 +217,5 @@ router.delete('/status', verifyToken, async (req, res) => {
   }
 });
 
+router.mountDriverLocationLimiter = mountDriverLocationLimiter;
 module.exports = router;

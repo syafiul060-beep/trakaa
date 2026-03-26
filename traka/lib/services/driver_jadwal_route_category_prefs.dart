@@ -12,7 +12,7 @@ class DriverJadwalRouteCategoryPrefs {
 
   static String _key(String uid) => 'driver_jadwal_route_cat_v1_$uid';
 
-  /// Field di dokumen `driver_schedules/{uid}` (merge; tidak mengganti array `schedules`).
+  /// Field di dokumen induk `driver_schedules/{uid}` (merge; tidak menyentuh subkoleksi `schedule_items`).
   static const String firestoreField = 'jadwalRouteCategoryPrefs';
 
   static bool _isValidCategory(String? c) {
@@ -157,7 +157,7 @@ class DriverJadwalRouteCategoryPrefs {
     );
   }
 
-  /// Merge ke `driver_schedules/{uid}` (tidak menghapus `schedules`).
+  /// Merge ke `driver_schedules/{uid}`: hanya [firestoreField] dan `updatedAt`.
   static Future<void> saveToFirestore(
     String uid,
     Map<DateTime, String> byDate,

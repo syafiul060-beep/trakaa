@@ -640,11 +640,8 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
             .where((o) => o.isScheduledOrder)
             .where((o) => !o.isCompleted && !o.isCancelled)
             .where((o) {
-              if (_scheduleId != null && _scheduleId!.isNotEmpty) {
-                final legacy = ScheduleIdUtil.toLegacy(_scheduleId!);
-                if (o.scheduleId == _scheduleId || o.scheduleId == legacy) {
-                  return false;
-                }
+              if (_activeRouteScheduleIdMatchesOrder(o.scheduleId)) {
+                return false;
               }
               return true;
             })
@@ -755,17 +752,11 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
 
   static String _formatScheduledDateChip(String ymd) {
     if (ymd.length != 10 || ymd[4] != '-' || ymd[7] != '-') return ymd;
-    final now = DateTime.now();
-    final todayYmd =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final todayYmd = DriverScheduleService.todayYmdWibString;
     if (ymd == todayYmd) return 'Hari ini';
-    final tomorrow = now.add(const Duration(days: 1));
-    final tomorrowYmd =
-        '${tomorrow.year}-${tomorrow.month.toString().padLeft(2, '0')}-${tomorrow.day.toString().padLeft(2, '0')}';
+    final tomorrowYmd = DriverScheduleService.ymdWibStringAfterDays(1);
     if (ymd == tomorrowYmd) return 'Besok';
-    final dayAfter = now.add(const Duration(days: 2));
-    final dayAfterYmd =
-        '${dayAfter.year}-${dayAfter.month.toString().padLeft(2, '0')}-${dayAfter.day.toString().padLeft(2, '0')}';
+    final dayAfterYmd = DriverScheduleService.ymdWibStringAfterDays(2);
     if (ymd == dayAfterYmd) return '2 hari lagi';
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
@@ -779,13 +770,9 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
 
   static Color _scheduledDateBadgeColor(String ymd) {
     if (ymd.length != 10 || ymd[4] != '-' || ymd[7] != '-') return Colors.blue;
-    final now = DateTime.now();
-    final todayYmd =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final todayYmd = DriverScheduleService.todayYmdWibString;
     if (ymd == todayYmd) return Colors.green;
-    final tomorrow = now.add(const Duration(days: 1));
-    final tomorrowYmd =
-        '${tomorrow.year}-${tomorrow.month.toString().padLeft(2, '0')}-${tomorrow.day.toString().padLeft(2, '0')}';
+    final tomorrowYmd = DriverScheduleService.ymdWibStringAfterDays(1);
     if (ymd == tomorrowYmd) return Colors.orange;
     return Colors.blue;
   }
@@ -1684,14 +1671,24 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
     return null;
   }
 
-  /// Pesanan terjadwal: Lokasi disabled jika driver belum mulai rute dari jadwal itu atau tanggal bukan hari ini.
+  /// Sinkron dengan beranda: jadwal aktif vs `scheduleId` di order (format `_h…` / legacy).
+  bool _activeRouteScheduleIdMatchesOrder(String? orderScheduleId) {
+    final cur = _scheduleId;
+    if (cur == null || cur.isEmpty) return false;
+    final oid = orderScheduleId ?? '';
+    if (oid.isEmpty) return false;
+    if (cur == oid) return true;
+    return ScheduleIdUtil.toLegacy(cur) == ScheduleIdUtil.toLegacy(oid);
+  }
+
+  /// Pesanan terjadwal: Lokasi disabled jika driver belum mulai rute dari jadwal itu atau tanggal bukan hari ini (WIB).
   bool _isLokasiDisabledForScheduledOrder(OrderModel order) {
     if (!order.isScheduledOrder) return false;
-    final now = DateTime.now();
-    final todayYmd =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    if ((order.scheduledDate ?? '') != todayYmd) return true;
-    if (_scheduleId == null || _scheduleId != order.scheduleId) return true;
+    if ((order.scheduledDate ?? '') !=
+        DriverScheduleService.todayYmdWibString) {
+      return true;
+    }
+    if (!_activeRouteScheduleIdMatchesOrder(order.scheduleId)) return true;
     return false;
   }
 

@@ -24,4 +24,28 @@ class ScheduleIdUtil {
     if (idx > 0) return scheduleId.substring(0, idx);
     return scheduleId;
   }
+
+  /// `yyyy-MM-dd` dari [scheduleId] bila mengikuti [build] / [toLegacy]; null jika tidak terbaca.
+  static String? tryParseDateKey(String scheduleId) {
+    if (scheduleId.isEmpty) return null;
+    final legacy = toLegacy(scheduleId);
+    final parts = legacy.split('_');
+    if (parts.length < 3) return null;
+    final dateKey = parts[1];
+    if (dateKey.length != 10 || dateKey[4] != '-' || dateKey[7] != '-') {
+      return null;
+    }
+    return dateKey;
+  }
+
+  /// True jika tanggal di [scheduleId] sama [todayYmdWib], atau tanggal tidak bisa diparse (backward compat).
+  static bool scheduleIdDateMatchesTodayWib(
+    String scheduleId,
+    String todayYmdWib,
+  ) {
+    if (scheduleId.isEmpty) return true;
+    final key = tryParseDateKey(scheduleId);
+    if (key == null) return true;
+    return key == todayYmdWib;
+  }
 }

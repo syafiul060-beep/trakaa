@@ -16,7 +16,7 @@
 |----------|---------|
 | `REDIS_URL` | Wajib untuk driver status + rate limit terdistribusi. |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` atau `FIREBASE_SERVICE_ACCOUNT_PATH` | Wajib untuk `verifyToken`. |
-| `ALLOWED_ORIGINS` | Produksi: daftar origin admin/app, **bukan** `*`. |
+| `ALLOWED_ORIGINS` | Produksi: daftar origin yang boleh memanggil API dari browser, **bukan** `*`. Wajib sertakan **URL admin** yang dipakai di produksi, mis. `https://traka-admin.web.app` (pisah koma, tanpa spasi setelah koma boleh). Tanpa ini, browser memblokir (CORS) dan panel admin gagal memuat Review bayar / hybrid driver. |
 | `DRIVER_LOCATION_RATE_LIMIT_PER_MIN` | **Opsional.** Default **120** request/menit per **UID** pada `POST /api/driver/location`. Naikkan (mis. `300`) hanya saat **load test** massal; turunkan lagi setelah uji. |
 | `DATABASE_URL` | Jika fitur order PG dipakai. |
 

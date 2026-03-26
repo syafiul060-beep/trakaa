@@ -8,6 +8,8 @@ import 'package:http_certificate_pinning/http_certificate_pinning.dart';
 
 import '../config/traka_api_config.dart';
 import '../utils/retry_utils.dart';
+import 'app_analytics_service.dart';
+import 'driver_hybrid_diagnostics.dart';
 
 /// Hasil [createPassengerOrderViaApi]: id order atau fallback ke Firestore lokal.
 typedef CreateOrderApiResult = ({String? orderId, bool fallBackToFirestore});
@@ -95,6 +97,11 @@ class TrakaApiService {
       });
     } catch (e) {
       if (kDebugMode) debugPrint('TrakaApiService.postDriverLocation: $e');
+      final msg = e.toString();
+      if (msg.contains('429')) {
+        DriverHybridDiagnostics.breadcrumb('hybrid.driver_location http_429');
+        AppAnalyticsService.logHybridDriverLocationRateLimited();
+      }
       return false;
     }
   }

@@ -74,7 +74,7 @@ Stream<UserShellRebuild> _distinctVerificationShellStream(
         .collection('users')
         .doc(uid)
         .get(const GetOptions(source: Source.serverAndCache))
-        .timeout(const Duration(seconds: 10));
+        .timeout(const Duration(seconds: 6));
     final data = initial.data() ?? <String, dynamic>{};
     final fp = fingerprint(data);
     lastFp = fp;
@@ -90,7 +90,7 @@ Stream<UserShellRebuild> _distinctVerificationShellStream(
           .collection('users')
           .doc(uid)
           .get(const GetOptions(source: Source.cache))
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(seconds: 3));
       final data = cacheDoc.data() ?? <String, dynamic>{};
       final fp = fingerprint(data);
       lastFp = fp;

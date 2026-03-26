@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import 'driver_hybrid_diagnostics.dart';
+import 'driver_schedule_items_store.dart';
 import 'order_service.dart';
 import 'schedule_id_util.dart';
 
@@ -13,7 +14,7 @@ export 'schedule_id_util.dart' show ScheduleIdUtil;
 /// - Menyembunyikan jadwal hari ini ketika driver klik "Mulai Rute ini" (agar tidak tampil ke penumpang).
 /// - Menghapus jadwal yang tanggal+jam keberangkatannya sudah lewat, hanya jika tidak ada pesanan aktif.
 /// - Batas pemesanan tanggal: **7 hari kalender ke depan (inklusif hari ini)** menurut **WIB (UTC+7)**.
-/// - Cloud Function `onDriverScheduleWritten` (sanitize) menyelaraskan dokumen bila klien di-bypass.
+/// - Cloud Functions: `onDriverScheduleItemWritten` (subkoleksi); induk legacy `schedules` tidak lagi ditulis app.
 class DriverScheduleService {
   static final _firestore = FirebaseFirestore.instance;
 
@@ -25,6 +26,18 @@ class DriverScheduleService {
     final utc = DateTime.now().toUtc();
     final wibWall = utc.add(const Duration(hours: _wibOffsetHours));
     return DateTime(wibWall.year, wibWall.month, wibWall.day);
+  }
+
+  /// `yyyy-MM-dd` untuk [todayDateOnlyWib] (satu acuan dengan [ScheduleIdUtil.build]).
+  static String get todayYmdWibString {
+    final t = todayDateOnlyWib;
+    return '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
+  }
+
+  /// `yyyy-MM-dd` untuk kalender WIB: [todayDateOnlyWib] ditambah [offsetDays] hari.
+  static String ymdWibStringAfterDays(int offsetDays) {
+    final t = todayDateOnlyWib.add(Duration(days: offsetDays));
+    return '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
   }
 
   /// Inklusif hari ini: total 7 tanggal kalender (hari ini + 6 hari berikutnya).
@@ -70,23 +83,19 @@ class DriverScheduleService {
   /// Jadwal yang hidden tidak ditampilkan ke penumpang saat mencari travel.
   static Future<void> markTodaySchedulesHidden(String driverUid) async {
     try {
-      final doc = await _firestore
-          .collection('driver_schedules')
-          .doc(driverUid)
-          .get();
-
-      if (!doc.exists || doc.data() == null) return;
-
-      final data = doc.data()!;
-      final list = data['schedules'] as List<dynamic>?;
-      if (list == null || list.isEmpty) return;
+      final merged = await DriverScheduleItemsStore.loadScheduleMaps(
+        _firestore,
+        driverUid,
+        options: const GetOptions(source: Source.serverAndCache),
+      );
+      if (merged.isEmpty) return;
 
       final now = FieldValue.serverTimestamp();
-      bool changed = false;
+      var changed = false;
       final updated = <Map<String, dynamic>>[];
 
-      for (final e in list) {
-        final map = Map<String, dynamic>.from(e as Map<dynamic, dynamic>);
+      for (final raw in merged) {
+        final map = Map<String, dynamic>.from(raw);
         final dateStamp = map['date'] as Timestamp?;
         final hiddenAt = map['hiddenAt'];
         if (hiddenAt != null) {
@@ -107,10 +116,11 @@ class DriverScheduleService {
       }
 
       if (changed) {
-        await _firestore.collection('driver_schedules').doc(driverUid).update({
-          'schedules': updated,
-          'updatedAt': now,
-        });
+        await DriverScheduleItemsStore.persistReplaceAll(
+          _firestore,
+          driverUid,
+          updated,
+        );
       }
     } catch (_) {}
   }
@@ -141,27 +151,40 @@ class DriverScheduleService {
     return endOfDay.isBefore(DateTime.now());
   }
 
-  /// Baca `schedules` — tanpa query order / penghapusan otomatis.
+  /// Baca jadwal dari **cache lokal** saja (setelah [set]/tulis sukses, cache sudah berisi merge).
+  /// `null` = tidak ada dokumen / field hilang / timeout → panggil [readSchedulesRawFromServer].
+  static Future<List<Map<String, dynamic>>?> tryReadSchedulesRawFromCache(
+    String driverUid,
+  ) async {
+    try {
+      final merged = await DriverScheduleItemsStore.loadScheduleMaps(
+        _firestore,
+        driverUid,
+        options: const GetOptions(source: Source.cache),
+      ).timeout(const Duration(seconds: 4));
+      if (merged.isEmpty) return null;
+      return merged;
+    } on TimeoutException {
+      return null;
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('DriverScheduleService.tryReadSchedulesRawFromCache: $e\n$st');
+      }
+      return null;
+    }
+  }
+
+  /// Baca semua slot `schedule_items` — tanpa query order / penghapusan otomatis di sini.
   /// [Source.serverAndCache] + timeout pendek: setelah simpan jadwal, baca murni `server` sering mengantre lama.
   static Future<List<Map<String, dynamic>>> readSchedulesRawFromServer(
     String driverUid,
   ) async {
     try {
-      final doc = await _firestore
-          .collection('driver_schedules')
-          .doc(driverUid)
-          .get(const GetOptions(source: Source.serverAndCache))
-          .timeout(_readSchedulesRawTimeout);
-
-      if (!doc.exists || doc.data() == null) return [];
-
-      final list = doc.data()!['schedules'] as List<dynamic>?;
-      if (list == null || list.isEmpty) return [];
-
-      return [
-        for (final e in list)
-          Map<String, dynamic>.from(e as Map<dynamic, dynamic>),
-      ];
+      return await DriverScheduleItemsStore.loadScheduleMaps(
+        _firestore,
+        driverUid,
+        options: const GetOptions(source: Source.serverAndCache),
+      ).timeout(_readSchedulesRawTimeout);
     } on TimeoutException {
       rethrow;
     } catch (e, st) {
@@ -262,29 +285,17 @@ class DriverScheduleService {
         trace('start (schedulesSnapshot count=${schedulesSnapshot.length})');
         mapsList = schedulesSnapshot;
       } else {
-        trace('start (driver_schedules server read)');
-        // Selalu server: cache sering bikin daftar jadwal “nyangkut” (hybrid / multi-perangkat).
-        final doc = await _firestore
-            .collection('driver_schedules')
-            .doc(driverUid)
-            .get(const GetOptions(source: Source.server))
-            .timeout(_getSchedulesTimeout);
+        trace('start (schedule_items serverAndCache read)');
+        mapsList = await DriverScheduleItemsStore.loadScheduleMaps(
+          _firestore,
+          driverUid,
+          options: const GetOptions(source: Source.serverAndCache),
+        ).timeout(_getSchedulesTimeout);
 
-        if (!doc.exists || doc.data() == null) {
-          trace('get: no doc → []');
+        if (mapsList.isEmpty) {
+          trace('get: empty merged → []');
           return [];
         }
-
-        final data = doc.data()!;
-        final list = data['schedules'] as List<dynamic>?;
-        if (list == null || list.isEmpty) {
-          trace('get: empty schedules → []');
-          return [];
-        }
-        mapsList = [
-          for (final e in list)
-            Map<String, dynamic>.from(e as Map<dynamic, dynamic>),
-        ];
       }
       if (mapsList.isEmpty) {
         trace('empty schedules → []');
@@ -310,10 +321,11 @@ class DriverScheduleService {
       if (kept.length < mapsList.length) {
         if (persistPruned) {
           trace('firestore update: removing ${mapsList.length - kept.length} stale/out-of-window slot(s)');
-          await _firestore.collection('driver_schedules').doc(driverUid).update({
-            'schedules': kept,
-            'updatedAt': FieldValue.serverTimestamp(),
-          }).timeout(_updateSchedulesTimeout);
+          await DriverScheduleItemsStore.persistReplaceAll(
+            _firestore,
+            driverUid,
+            kept,
+          ).timeout(_updateSchedulesTimeout);
           trace('firestore update: ok');
         } else if (kDebugMode) {
           trace(
@@ -350,19 +362,16 @@ class DriverScheduleService {
     String driverUid,
   ) async {
     try {
-      final doc = await _firestore
-          .collection('driver_schedules')
-          .doc(driverUid)
-          .get();
-
-      if (!doc.exists || doc.data() == null) return [];
-
-      final list = doc.data()!['schedules'] as List<dynamic>?;
-      if (list == null) return [];
+      final list = await DriverScheduleItemsStore.loadScheduleMaps(
+        _firestore,
+        driverUid,
+        options: const GetOptions(source: Source.serverAndCache),
+      );
+      if (list.isEmpty) return [];
 
       final result = <Map<String, dynamic>>[];
       for (final e in list) {
-        final map = Map<String, dynamic>.from(e as Map<dynamic, dynamic>);
+        final map = Map<String, dynamic>.from(e);
         final dateStamp = map['date'] as Timestamp?;
         if (_isPast(dateStamp?.toDate())) continue;
         if (dateStamp != null &&
@@ -379,6 +388,47 @@ class DriverScheduleService {
     }
   }
 
+  /// Entri jadwal per driver untuk satu hari kalender (collection group `schedule_items`).
+  static Future<List<({String driverUid, Map<String, dynamic> map})>>
+      loadAllScheduleEntriesForCalendarDay(DateTime date) async {
+    final dateStart = DateTime(date.year, date.month, date.day);
+    final startTs = Timestamp.fromDate(dateStart);
+    final endTs = Timestamp.fromDate(dateStart.add(const Duration(days: 1)));
+    final out = <({String driverUid, Map<String, dynamic> map})>[];
+
+    try {
+      final cg = await _firestore
+          .collectionGroup(DriverScheduleItemsStore.subcollectionName)
+          .where('date', isGreaterThanOrEqualTo: startTs)
+          .where('date', isLessThan: endTs)
+          .get();
+      for (final d in cg.docs) {
+        final parent = d.reference.parent.parent;
+        if (parent == null) continue;
+        final driverUid = parent.id;
+        out.add((
+          driverUid: driverUid,
+          map: Map<String, dynamic>.from(d.data()),
+        ));
+      }
+    } on FirebaseException catch (e, st) {
+      if (kDebugMode) {
+        debugPrint(
+          'DriverScheduleService.loadAllScheduleEntriesForCalendarDay CG '
+          '${e.code}: $e\n$st',
+        );
+      }
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint(
+          'DriverScheduleService.loadAllScheduleEntriesForCalendarDay: $e\n$st',
+        );
+      }
+    }
+
+    return out;
+  }
+
   /// Semua jadwal dari semua driver untuk tanggal tertentu (tanpa filter rute).
   /// Dipakai sebagai fallback di penumpang agar jadwal driver tetap muncul saat filter rute kosong.
   static Future<List<Map<String, dynamic>>> getAllSchedulesForDate(
@@ -386,29 +436,25 @@ class DriverScheduleService {
   ) async {
     try {
       final dateStart = DateTime(date.year, date.month, date.day);
-      final snap = await _firestore.collection('driver_schedules').get();
+      final rows = await loadAllScheduleEntriesForCalendarDay(date);
       final result = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final driverUid = doc.id;
-        final list = doc.data()['schedules'] as List<dynamic>?;
-        if (list == null) continue;
-        for (final e in list) {
-          final map = Map<String, dynamic>.from(e as Map<dynamic, dynamic>);
-          final dateStamp = map['date'] as Timestamp?;
-          if (dateStamp == null) continue;
-          final scheduleDate = dateStamp.toDate();
-          final scheduleDateOnly = DateTime(
-            scheduleDate.year,
-            scheduleDate.month,
-            scheduleDate.day,
-          );
-          if (scheduleDateOnly != dateStart) continue;
-          if (map['hiddenAt'] != null) continue;
-          if (scheduleDateOnly == _todayStartWib && _isDepartureTimePassed(map)) {
-            continue;
-          }
-          result.add({...map, 'driverUid': driverUid});
+      for (final row in rows) {
+        final map = row.map;
+        final driverUid = row.driverUid;
+        final dateStamp = map['date'] as Timestamp?;
+        if (dateStamp == null) continue;
+        final scheduleDate = dateStamp.toDate();
+        final scheduleDateOnly = DateTime(
+          scheduleDate.year,
+          scheduleDate.month,
+          scheduleDate.day,
+        );
+        if (scheduleDateOnly != dateStart) continue;
+        if (map['hiddenAt'] != null) continue;
+        if (scheduleDateOnly == _todayStartWib && _isDepartureTimePassed(map)) {
+          continue;
         }
+        result.add({...map, 'driverUid': driverUid});
       }
       return result;
     } catch (_) {
@@ -491,39 +537,35 @@ class DriverScheduleService {
   ) async {
     try {
       final dateStart = DateTime(date.year, date.month, date.day);
-      final snap = await _firestore.collection('driver_schedules').get();
+      final rows = await loadAllScheduleEntriesForCalendarDay(date);
       final result = <Map<String, dynamic>>[];
       final o = originKeyword.trim().toLowerCase();
       final d = destinationKeyword.trim().toLowerCase();
       if (o.isEmpty && d.isEmpty) return result;
 
-      for (final doc in snap.docs) {
-        final driverUid = doc.id;
-        final list = doc.data()['schedules'] as List<dynamic>?;
-        if (list == null) continue;
-        for (final e in list) {
-          final map = Map<String, dynamic>.from(e as Map<dynamic, dynamic>);
-          final dateStamp = map['date'] as Timestamp?;
-          if (dateStamp == null) continue;
-          final scheduleDate = dateStamp.toDate();
-          final scheduleDateOnly = DateTime(
-            scheduleDate.year,
-            scheduleDate.month,
-            scheduleDate.day,
-          );
-          if (scheduleDateOnly != dateStart) continue;
-          if (map['hiddenAt'] != null) continue;
-          if (scheduleDateOnly == _todayStartWib && _isDepartureTimePassed(map)) {
-            continue;
-          }
-          final origin = (map['origin'] as String?)?.trim().toLowerCase() ?? '';
-          final dest =
-              (map['destination'] as String?)?.trim().toLowerCase() ?? '';
-          final matchOrigin = o.isEmpty || origin.contains(o);
-          final matchDest = d.isEmpty || dest.contains(d);
-          if (!matchOrigin || !matchDest) continue;
-          result.add({...map, 'driverUid': driverUid});
+      for (final row in rows) {
+        final map = row.map;
+        final driverUid = row.driverUid;
+        final dateStamp = map['date'] as Timestamp?;
+        if (dateStamp == null) continue;
+        final scheduleDate = dateStamp.toDate();
+        final scheduleDateOnly = DateTime(
+          scheduleDate.year,
+          scheduleDate.month,
+          scheduleDate.day,
+        );
+        if (scheduleDateOnly != dateStart) continue;
+        if (map['hiddenAt'] != null) continue;
+        if (scheduleDateOnly == _todayStartWib && _isDepartureTimePassed(map)) {
+          continue;
         }
+        final origin = (map['origin'] as String?)?.trim().toLowerCase() ?? '';
+        final dest =
+            (map['destination'] as String?)?.trim().toLowerCase() ?? '';
+        final matchOrigin = o.isEmpty || origin.contains(o);
+        final matchDest = d.isEmpty || dest.contains(d);
+        if (!matchOrigin || !matchDest) continue;
+        result.add({...map, 'driverUid': driverUid});
       }
       return result;
     } catch (_) {

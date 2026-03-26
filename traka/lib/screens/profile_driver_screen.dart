@@ -74,7 +74,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
   DocumentSnapshot<Map<String, dynamic>>? _userDoc;
-  bool _loading = true;
+  /// Jangan gate seluruh body dengan shimmer — antre Firestore setelah simpan jadwal bisa membuat "layar putih" lama.
+  bool _loading = false;
   /// True jika profil masih "Memuat" terlalu lama — tampilkan aksi coba lagi (hindari layar putih shimmer).
   bool _profileLoadIncomplete = false;
   Timer? _profileLoadSafetyTimer;
@@ -104,13 +105,15 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
   @override
   void initState() {
     super.initState();
-    _profileLoadSafetyTimer = Timer(const Duration(seconds: 20), () {
+    final u = _auth.currentUser;
+    if (u != null) {
+      final n = (u.displayName ?? '').trim();
+      if (n.isNotEmpty) _nameController.text = n;
+    }
+    _profileLoadSafetyTimer = Timer(const Duration(seconds: 28), () {
       if (!mounted) return;
-      if (_loading) {
-        setState(() {
-          _loading = false;
-          _profileLoadIncomplete = true;
-        });
+      if (_userDoc == null || !_userDoc!.exists) {
+        setState(() => _profileLoadIncomplete = true);
       }
     });
     _loadUser();
@@ -158,6 +161,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       return;
     }
     // Tampilkan cache dulu agar profil tidak "gagal" saat Firestore sibuk setelah simpan jadwal.
+    // Penting: jangan lanjut langsung ke serverAndCache di bawah — itu mengantre kedua bacaan dan
+    // sering membuat layar "putih" saat antrean tulisan jadwal penuh. Segarkan dari server di latar.
     if (!forceFromServer) {
       try {
         final quick = await _firestore.collection('users').doc(user.uid).get(
@@ -175,6 +180,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
             }
           });
           _profileLoadSafetyTimer?.cancel();
+          unawaited(_refreshUserDocWhenNetworkIdle(user.uid));
+          return;
         }
       } catch (_) {}
     }
@@ -234,7 +241,47 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     }
   }
 
-  Map<String, dynamic> get _userData => _userDoc?.data() ?? <String, dynamic>{};
+  /// Setelah profil tampil dari cache, segarkan dokumen users tanpa memblokir buka layar.
+  Future<void> _refreshUserDocWhenNetworkIdle(String uid) async {
+    await Future<void>.delayed(const Duration(seconds: 5));
+    if (!mounted) return;
+    if (_auth.currentUser?.uid != uid) return;
+    try {
+      final doc = await _firestore.collection('users').doc(uid).get(
+            const GetOptions(source: Source.serverAndCache),
+          ).timeout(const Duration(seconds: 22));
+      if (!mounted || _auth.currentUser?.uid != uid) return;
+      if (!doc.exists) return;
+      setState(() {
+        _userDoc = doc;
+        _profileLoadIncomplete = false;
+        final d = doc.data();
+        if (d != null) {
+          _nameController.text = (d['displayName'] as String?) ?? '';
+        }
+      });
+    } catch (_) {}
+  }
+
+  /// Data tampilan: Firestore jika ada; jika belum / antre — isi minimal dari [FirebaseAuth] agar tidak layar kosong.
+  Map<String, dynamic> get _userData {
+    final doc = _userDoc;
+    if (doc != null && doc.exists) {
+      final d = doc.data();
+      if (d != null) return d;
+    }
+    final u = _auth.currentUser;
+    final nameFromField = _nameController.text.trim();
+    return {
+      'displayName': nameFromField.isNotEmpty
+          ? nameFromField
+          : ((u?.displayName ?? '').trim()),
+      'email': u?.email ?? '',
+      if (u?.phoneNumber != null && u!.phoneNumber!.trim().isNotEmpty)
+        'phoneNumber': u.phoneNumber,
+      'role': 'driver',
+    };
+  }
 
   /// Centang verifikasi: kuning jika admin masih punya permintaan terbuka (sinkron field Firestore / panel admin).
   Color get _verificationCheckColor => VerificationService.hasOpenAdminVerificationRequest(

@@ -25,11 +25,18 @@ export default function PaymentReview() {
       setMethods(r.methods)
     } else {
       setMethods([])
-      setMsg(
-        r.status === 'disabled'
-          ? 'Set VITE_TRAKA_API_BASE_URL dan VITE_TRAKA_USE_HYBRID=true untuk memakai API.'
-          : 'Gagal memuat daftar. Cek jaringan / CORS / login.',
-      )
+      if (r.status === 'disabled') {
+        setMsg('Set VITE_TRAKA_API_BASE_URL dan VITE_TRAKA_USE_HYBRID=true untuk memakai API.')
+      } else {
+        const corsHint =
+          ' Di Railway, variabel ALLOWED_ORIGINS harus mencakup origin admin (mis. https://traka-admin.web.app), pisahkan dengan koma.'
+        const http = r.httpStatus ? ` HTTP ${r.httpStatus}.` : ''
+        setMsg(
+          r.status === 'error'
+            ? `Gagal memuat daftar (respons server).${http} Pastikan login admin masih valid.${corsHint}`
+            : `Gagal memuat daftar (tidak terhubung ke API). Cek jaringan, login ulang, atau CORS.${corsHint}`,
+        )
+      }
     }
     setLoading(false)
   }, [])

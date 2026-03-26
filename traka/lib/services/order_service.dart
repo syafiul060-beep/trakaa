@@ -844,25 +844,71 @@ class OrderService {
   /// Daftar OrderModel terjadwal untuk satu jadwal (agreed/picked_up).
   /// [travelOnly] true = hanya travel; [kirimBarangOnly] true = hanya kirim barang.
   /// [pickedUpOnly] true = hanya status picked_up (untuk Oper Driver).
+  /// [legacyScheduleId]: sama seperti penghitungan badge — order lama bisa pakai id format lain.
   static Future<List<OrderModel>> getScheduledOrdersForSchedule(
     String scheduleId, {
+    String? legacyScheduleId,
     bool? travelOnly,
     bool? kirimBarangOnly,
     bool pickedUpOnly = false,
   }) async {
     try {
-      var query = FirebaseFirestore.instance
-          .collection(_collectionOrders)
-          .where('scheduleId', isEqualTo: scheduleId)
-          .where(_fieldStatus, whereIn: pickedUpOnly
-              ? [statusPickedUp]
-              : [statusAgreed, statusPickedUp]);
+      final ids = <String>[
+        scheduleId,
+        if (legacyScheduleId != null &&
+            legacyScheduleId.isNotEmpty &&
+            legacyScheduleId != scheduleId)
+          legacyScheduleId,
+      ];
 
-      // Tanpa timeout, get() bisa menggantung lama (jaringan lemah) → FutureBuilder spinner tak berujung.
-      final snap = await query.get().timeout(
-        const Duration(seconds: 25),
-        onTimeout: () => throw TimeoutException('orders scheduleId query'),
+      Query<Map<String, dynamic>> q =
+          FirebaseFirestore.instance.collection(_collectionOrders);
+      if (ids.length == 1) {
+        q = q.where('scheduleId', isEqualTo: scheduleId);
+      } else {
+        q = q.where('scheduleId', whereIn: ids);
+      }
+      q = q.where(
+        _fieldStatus,
+        whereIn: pickedUpOnly
+            ? [statusPickedUp]
+            : [statusAgreed, statusPickedUp],
       );
+
+      // Cache dulu: setelah tulis jadwal besar, get default mengantre lama → sheet Pemesan/Barang spinner terus.
+      // Jika cache ada isi → tampilkan segera; jika kosong / miss → serverAndCache + plafon ketat.
+      QuerySnapshot<Map<String, dynamic>> snap;
+      try {
+        snap = await q
+            .get(const GetOptions(source: Source.cache))
+            .timeout(const Duration(seconds: 4));
+        if (snap.docs.isEmpty) {
+          snap = await q
+              .get(const GetOptions(source: Source.serverAndCache))
+              .timeout(
+                const Duration(seconds: 12),
+                onTimeout: () =>
+                    throw TimeoutException('getScheduledOrdersForSchedule'),
+              );
+        }
+      } on TimeoutException {
+        snap = await q
+            .get(const GetOptions(source: Source.serverAndCache))
+            .timeout(
+              const Duration(seconds: 12),
+              onTimeout: () =>
+                  throw TimeoutException('getScheduledOrdersForSchedule'),
+            );
+      } catch (_) {
+        snap = await q
+            .get(const GetOptions(source: Source.serverAndCache))
+            .timeout(
+              const Duration(seconds: 12),
+              onTimeout: () =>
+                  throw TimeoutException('getScheduledOrdersForSchedule'),
+            );
+      }
+
       final list = <OrderModel>[];
       for (final doc in snap.docs) {
         final o = OrderModel.fromFirestore(doc);
@@ -874,6 +920,8 @@ class OrderService {
         list.add(o);
       }
       return list;
+    } on TimeoutException {
+      return [];
     } catch (e, st) {
       logError('OrderService.getScheduledOrdersForSchedule', e, st);
       return [];
@@ -918,6 +966,26 @@ class OrderService {
     }
   }
 
+  /// Saring dari snapshot order driver (stream beranda) — logika sama dengan [getDriverScheduledOrdersWithAgreed]
+  /// tanpa query Firestore baru (hindari antrean setelah simpan jadwal).
+  static List<OrderModel> scheduledOrdersWithAgreedFromList(
+    List<OrderModel> orders,
+  ) {
+    final list = orders
+        .where(
+          (o) =>
+              (o.status == statusAgreed || o.status == statusPickedUp) &&
+              (o.scheduleId != null && o.scheduleId!.isNotEmpty),
+        )
+        .toList();
+    list.sort((a, b) {
+      final ad = a.scheduledDate ?? '';
+      final bd = b.scheduledDate ?? '';
+      return ad.compareTo(bd);
+    });
+    return list;
+  }
+
   /// Daftar pesanan terjadwal driver yang sudah ada kesepakatan (agreed/picked_up). Untuk pengingat "punya pesanan terjadwal".
   static Future<List<OrderModel>> getDriverScheduledOrdersWithAgreed() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -942,26 +1010,25 @@ class OrderService {
     }
 
     try {
-      // 1) Cache dulu: jika sudah ada pesanan terjadwal di cache, langsung pakai — tidak nunggu server
-      // (setelah simpan jadwal, antrean Firestore bisa panjang; hindari snackbar "Memeriksa…" menggantung).
+      // 1) Cache dulu — **sadar hasil apa pun** (termasuk []): tap Siap Kerja tidak perlu antre
+      // serverAndCache hanya karena "kosong". Kasus tanpa pesanan agreed adalah yang paling sering;
+      // setelah simpan jadwal, baca server sering mengantre lama dan snack "Memeriksa…" menggantung.
+      // Window salah (order baru agreed, belum masuk cache): tap Siap Kerja lagi setelah sinkron.
       try {
         final cacheSnap = await query
             .get(const GetOptions(source: Source.cache))
-            .timeout(const Duration(seconds: 4));
-        final fromCache = parseScheduled(cacheSnap);
-        if (fromCache.isNotEmpty) {
-          return fromCache;
-        }
+            .timeout(const Duration(seconds: 2));
+        return parseScheduled(cacheSnap);
       } on TimeoutException {
-        // cache SDK bisa menggantung — lanjut ke serverAndCache
+        // lanjut ke serverAndCache
       } catch (_) {
-        // belum pernah di-query / cache miss — lanjut ke jaringan
+        // query belum pernah di-cache / miss — lanjut ke jaringan
       }
 
-      // 2) Cache kosong untuk query ini: serverAndCache + plafon singkat → fail-open ke [] (buka sheet rute).
+      // 2) Cache tidak tersedia: serverAndCache + plafon singkat → fail-open ke [] (buka sheet rute).
       final snap = await query
           .get(const GetOptions(source: Source.serverAndCache))
-          .timeout(const Duration(seconds: 7));
+          .timeout(const Duration(seconds: 5));
       return parseScheduled(snap);
     } on TimeoutException {
       return [];

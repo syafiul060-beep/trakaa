@@ -22,5 +22,17 @@
     {"collectionGroup":"app_feedback","queryScope":"COLLECTION","fields":[{"fieldPath":"userId","order":"ASCENDING"},{"fieldPath":"createdAt","order":"ASCENDING"}]},
     {"collectionGroup":"orders","queryScope":"COLLECTION","fields":[{"fieldPath":"scheduledDate","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"}]}
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "schedule_items",
+      "fieldPath": "date",
+      "ttl": false,
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    }
+  ]
 }

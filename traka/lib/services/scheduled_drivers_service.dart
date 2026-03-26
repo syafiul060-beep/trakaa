@@ -4,6 +4,8 @@ import 'package:geolocator/geolocator.dart';
 import 'geocoding_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import 'driver_hybrid_diagnostics.dart';
+import 'driver_schedule_service.dart';
 import 'route_utils.dart';
 import 'directions_service.dart';
 
@@ -46,7 +48,6 @@ class ScheduledDriverRoute {
 
 /// Service untuk mencari driver berdasarkan jadwal dengan logika rute yang melewati.
 class ScheduledDriversService {
-  static const String _collectionDriverSchedules = 'driver_schedules';
   static const String _collectionUsers = 'users';
   static const String _collectionVehicleData = 'vehicle_data';
 
@@ -65,20 +66,29 @@ class ScheduledDriversService {
     String? passengerOriginProvince,
     String? passengerDestProvince,
   }) async {
+    final sw = Stopwatch()..start();
+    var driverDocs = 0;
     try {
-      // Ambil semua jadwal untuk tanggal tertentu
       final dateStart = DateTime(date.year, date.month, date.day);
-      final snap = await FirebaseFirestore.instance
-          .collection(_collectionDriverSchedules)
-          .get();
+      final flat = await DriverScheduleService.loadAllScheduleEntriesForCalendarDay(
+        date,
+      );
+      final byDriver = <String, List<Map<String, dynamic>>>{};
+      for (final row in flat) {
+        final ds = row.map['date'] as Timestamp?;
+        if (ds == null) continue;
+        final sd = ds.toDate();
+        final day = DateTime(sd.year, sd.month, sd.day);
+        if (day != dateStart) continue;
+        byDriver.putIfAbsent(row.driverUid, () => []).add(row.map);
+      }
+      driverDocs = byDriver.length;
 
       final allSchedules = <ScheduledDriverRoute>[];
 
-      // Proses setiap driver dan jadwalnya
-      for (final doc in snap.docs) {
-        final driverUid = doc.id;
-        final list = doc.data()['schedules'] as List<dynamic>?;
-        if (list == null) continue;
+      for (final entry in byDriver.entries) {
+        final driverUid = entry.key;
+        final list = entry.value;
 
         // Ambil info driver (nama, foto, dll) — user dan vehicle paralel
         String? driverName;
@@ -121,9 +131,7 @@ class ScheduledDriversService {
           }
         } catch (_) {}
 
-        // Proses setiap jadwal driver
-        for (final e in list) {
-          final map = Map<String, dynamic>.from(e as Map<dynamic, dynamic>);
+        for (final map in list) {
           final dateStamp = map['date'] as Timestamp?;
           if (dateStamp == null) continue;
 
@@ -136,13 +144,8 @@ class ScheduledDriversService {
           if (scheduleDateOnly != dateStart) continue;
           if (map['hiddenAt'] != null) continue;
 
-          // Cek apakah jam keberangkatan sudah lewat (untuk jadwal hari ini)
-          final todayStart = DateTime(
-            DateTime.now().year,
-            DateTime.now().month,
-            DateTime.now().day,
-          );
-          if (scheduleDateOnly == todayStart) {
+          // Cek apakah jam keberangkatan sudah lewat (untuk jadwal hari ini WIB)
+          if (scheduleDateOnly == DriverScheduleService.todayDateOnlyWib) {
             final depStamp = map['departureTime'] as Timestamp?;
             if (depStamp != null &&
                 depStamp.toDate().isBefore(DateTime.now())) {
@@ -298,8 +301,16 @@ class ScheduledDriversService {
       });
 
       // Tampilkan semua jadwal yang melewati (tanpa filter jarak atau limit)
+      sw.stop();
+      DriverHybridDiagnostics.recordSchedulesCollectionScan(
+        operation: 'map_for_date',
+        elapsedMs: sw.elapsedMilliseconds,
+        driverDocCount: driverDocs,
+        resultCount: allSchedules.length,
+      );
       return allSchedules;
     } catch (e) {
+      sw.stop();
       if (kDebugMode) debugPrint('ScheduledDriversService.getScheduledDriversForMap error: $e');
       return [];
     }
@@ -317,20 +328,31 @@ class ScheduledDriversService {
     int maxRadiusMeters = 50000,
     int maxCount = 5,
   }) async {
+    final sw = Stopwatch()..start();
+    var driverDocs = 0;
     try {
       final now = DateTime.now();
-      final target = forDate ?? now;
+      final target = forDate ?? DriverScheduleService.todayDateOnlyWib;
       final dateStart = DateTime(target.year, target.month, target.day);
-      final snap = await FirebaseFirestore.instance
-          .collection(_collectionDriverSchedules)
-          .get();
+      final flat = await DriverScheduleService.loadAllScheduleEntriesForCalendarDay(
+        target,
+      );
+      final byDriver = <String, List<Map<String, dynamic>>>{};
+      for (final row in flat) {
+        final ds = row.map['date'] as Timestamp?;
+        if (ds == null) continue;
+        final sd = ds.toDate();
+        final day = DateTime(sd.year, sd.month, sd.day);
+        if (day != dateStart) continue;
+        byDriver.putIfAbsent(row.driverUid, () => []).add(row.map);
+      }
+      driverDocs = byDriver.length;
 
       final candidates = <({ScheduledDriverRoute route, double distanceM})>[];
 
-      for (final doc in snap.docs) {
-        final driverUid = doc.id;
-        final list = doc.data()['schedules'] as List<dynamic>?;
-        if (list == null) continue;
+      for (final entry in byDriver.entries) {
+        final driverUid = entry.key;
+        final list = entry.value;
 
         String? driverName;
         String? driverPhotoUrl;
@@ -366,8 +388,7 @@ class ScheduledDriversService {
           }
         } catch (_) {}
 
-        for (final e in list) {
-          final map = Map<String, dynamic>.from(e as Map<dynamic, dynamic>);
+        for (final map in list) {
           final dateStamp = map['date'] as Timestamp?;
           if (dateStamp == null) continue;
 
@@ -383,7 +404,7 @@ class ScheduledDriversService {
           final depStamp = map['departureTime'] as Timestamp?;
           if (depStamp != null) {
             final dep = depStamp.toDate();
-            if (scheduleDateOnly == DateTime(now.year, now.month, now.day) &&
+            if (scheduleDateOnly == DriverScheduleService.todayDateOnlyWib &&
                 dep.isBefore(now)) {
               continue;
             }
@@ -455,8 +476,16 @@ class ScheduledDriversService {
           if (result.length >= maxCount) break;
         }
       }
+      sw.stop();
+      DriverHybridDiagnostics.recordSchedulesCollectionScan(
+        operation: 'recommend_for_date',
+        elapsedMs: sw.elapsedMilliseconds,
+        driverDocCount: driverDocs,
+        resultCount: result.length,
+      );
       return result;
     } catch (e) {
+      sw.stop();
       if (kDebugMode) debugPrint('ScheduledDriversService.getRecommendedSchedulesForToday error: $e');
       return [];
     }
