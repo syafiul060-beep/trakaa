@@ -18,6 +18,11 @@ on:
       - ".github/workflows/traka_ci.yml"
   workflow_dispatch:
 
+# Satu run aktif per ref (PR/main): push baru membatalkan run lama — hindari 3× paralel saat banyak commit cepat.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     runs-on: ubuntu-latest
