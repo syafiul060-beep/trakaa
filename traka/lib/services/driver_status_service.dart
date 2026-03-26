@@ -188,11 +188,10 @@ class DriverStatusService {
         if (estimatedDurationSeconds != null) apiBody['estimatedDurationSeconds'] = estimatedDurationSeconds;
         if (routeCategory != null && routeCategory.isNotEmpty) apiBody['routeCategory'] = routeCategory;
       }
-      final posted = await TrakaApiService.postDriverLocation(apiBody);
-      if (posted != null) {
-        data['latitude'] = posted.latitude;
-        data['longitude'] = posted.longitude;
-      }
+      await TrakaApiService.postDriverLocation(apiBody);
+      // Firestore tetap memakai koordinat [position] di [data]. Redis (hybrid) di server
+      // memakai titik ter-snap Roads; jangan timpa Firestore dengan snap agar konsisten
+      // dengan GPS perangkat untuk tampilan driver & pembaca Firestore langsung.
       // Dual-write ke Firestore: penumpang non-hybrid bisa tetap menemukan driver
       await FirebaseFirestore.instance
           .collection(_collectionDriverStatus)
