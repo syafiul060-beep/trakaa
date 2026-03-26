@@ -943,11 +943,11 @@ class OrderService {
 
     try {
       // 1) Cache dulu: jika sudah ada pesanan terjadwal di cache, langsung pakai — tidak nunggu server
-      // (Source.server saja sering 10–60+ d setelah simpan jadwal / antrean Firestore penuh).
+      // (setelah simpan jadwal, antrean Firestore bisa panjang; hindari snackbar "Memeriksa…" menggantung).
       try {
         final cacheSnap = await query
             .get(const GetOptions(source: Source.cache))
-            .timeout(const Duration(seconds: 8));
+            .timeout(const Duration(seconds: 4));
         final fromCache = parseScheduled(cacheSnap);
         if (fromCache.isNotEmpty) {
           return fromCache;
@@ -958,11 +958,10 @@ class OrderService {
         // belum pernah di-query / cache miss — lanjut ke jaringan
       }
 
-      // 2) Cache kosong untuk query ini: serverAndCache + plafon waktu pendek.
-      // Kalau lewat batas, anggap tidak ada → buka sheet pilih rute (trade-off vs tunggu abadi).
+      // 2) Cache kosong untuk query ini: serverAndCache + plafon singkat → fail-open ke [] (buka sheet rute).
       final snap = await query
           .get(const GetOptions(source: Source.serverAndCache))
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 7));
       return parseScheduled(snap);
     } on TimeoutException {
       return [];

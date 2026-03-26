@@ -157,6 +157,27 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       if (mounted) setState(() => _loading = false);
       return;
     }
+    // Tampilkan cache dulu agar profil tidak "gagal" saat Firestore sibuk setelah simpan jadwal.
+    if (!forceFromServer) {
+      try {
+        final quick = await _firestore.collection('users').doc(user.uid).get(
+          const GetOptions(source: Source.cache),
+        ).timeout(const Duration(seconds: 3));
+        if (!mounted) return;
+        if (quick.exists) {
+          final d = quick.data();
+          setState(() {
+            _userDoc = quick;
+            _loading = false;
+            _profileLoadIncomplete = false;
+            if (d != null) {
+              _nameController.text = (d['displayName'] as String?) ?? '';
+            }
+          });
+          _profileLoadSafetyTimer?.cancel();
+        }
+      } catch (_) {}
+    }
     // Setelah simpan jadwal/order, antrean ke server bisa panjang — beri sedikit lebih lama saat paksa server.
     final primaryTimeout = forceFromServer
         ? const Duration(seconds: 22)
@@ -182,7 +203,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
           if (mounted) {
             setState(() {
               _loading = false;
-              _profileLoadIncomplete = true;
+              if (_userDoc == null || !_userDoc!.exists) {
+                _profileLoadIncomplete = true;
+              }
             });
           }
           return;
@@ -203,7 +226,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _profileLoadIncomplete = true;
+          if (_userDoc == null || !_userDoc!.exists) {
+            _profileLoadIncomplete = true;
+          }
         });
       }
     }

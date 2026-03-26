@@ -84,7 +84,22 @@ Stream<UserShellRebuild> _distinctVerificationShellStream(
           VerificationService.isAdminVerificationBlockingFeatures(data),
     );
   } on TimeoutException {
-    // Lanjut ke snapshots — tetap ada data nanti.
+    // Saat antrean tulis panjang, baca awal bisa timeout — pakai cache agar shell tidak macet di loading.
+    try {
+      final cacheDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get(const GetOptions(source: Source.cache))
+          .timeout(const Duration(seconds: 4));
+      final data = cacheDoc.data() ?? <String, dynamic>{};
+      final fp = fingerprint(data);
+      lastFp = fp;
+      yield UserShellRebuild(
+        isVerified: isVerified(data),
+        adminVerificationBlocksFeatures:
+            VerificationService.isAdminVerificationBlockingFeatures(data),
+      );
+    } catch (_) {}
   } catch (_) {}
 
   await for (final snap

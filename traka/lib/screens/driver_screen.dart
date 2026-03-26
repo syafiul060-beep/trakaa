@@ -2907,11 +2907,12 @@ class _DriverScreenState extends State<DriverScreen>
           const SnackBar(
             content: Text('Memeriksa pesanan terjadwal…'),
             behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 25),
+            duration: Duration(seconds: 12),
           ),
         );
       });
     }
+    var postedFollowUpSnack = false;
     try {
       final orders = await OrderService.getDriverScheduledOrdersWithAgreed();
       if (!mounted) return;
@@ -2974,6 +2975,7 @@ class _DriverScreenState extends State<DriverScreen>
           }
         });
         if (mounted) {
+          postedFollowUpSnack = true;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -2997,6 +2999,10 @@ class _DriverScreenState extends State<DriverScreen>
     } finally {
       _startWorkLoadingSnackTimer?.cancel();
       _startWorkLoadingSnackTimer = null;
+      // Tutup snack "Memeriksa…" jika masih terpasang; jangan hapus snack susulan (instruksi rute).
+      if (mounted && !postedFollowUpSnack) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+      }
     }
   }
 
