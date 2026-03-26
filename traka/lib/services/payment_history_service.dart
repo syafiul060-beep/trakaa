@@ -204,14 +204,20 @@ class PaymentHistoryService {
           : null;
       final amountStr = amount.toStringAsFixed(0).replaceAllMapped(
           RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
-      final fmt = (int n) => n.toString().replaceAllMapped(
-          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
+      String fmtRupiahChunk(int n) => n.toString().replaceAllMapped(
+            RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
       final descParts = <String>['Kontribusi: Rp $amountStr'];
       if (breakdown != null && breakdown.hasAny) {
         final parts = <String>[];
-        if (travelRupiah > 0) parts.add('travel Rp ${fmt(travelRupiah)}');
-        if (barangRupiah > 0) parts.add('barang Rp ${fmt(barangRupiah)}');
-        if (violationRupiah > 0) parts.add('denda Rp ${fmt(violationRupiah)}');
+        if (travelRupiah > 0) {
+          parts.add('travel Rp ${fmtRupiahChunk(travelRupiah)}');
+        }
+        if (barangRupiah > 0) {
+          parts.add('barang Rp ${fmtRupiahChunk(barangRupiah)}');
+        }
+        if (violationRupiah > 0) {
+          parts.add('denda Rp ${fmtRupiahChunk(violationRupiah)}');
+        }
         if (parts.isNotEmpty) descParts.add('(${parts.join(', ')})');
       }
       descParts.add('Ref: ${orderId ?? doc.id}');

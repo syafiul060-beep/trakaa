@@ -35,11 +35,21 @@ class PassengerReceiptPdfService {
       data: data,
       version: QrVersions.auto,
       gapless: true,
-      color: const Color(0xFF000000),
-      emptyColor: const Color(0xFFFFFFFF),
+      eyeStyle: const QrEyeStyle(
+        eyeShape: QrEyeShape.square,
+        color: Color(0xFF000000),
+      ),
+      dataModuleStyle: const QrDataModuleStyle(
+        dataModuleShape: QrDataModuleShape.square,
+        color: Color(0xFF000000),
+      ),
     );
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.toDouble(), size.toDouble()),
+      Paint()..color = Colors.white,
+    );
     painter.paint(canvas, Size.square(size.toDouble()));
     final picture = recorder.endRecording();
     final image = await picture.toImage(size, size);

@@ -3364,8 +3364,9 @@ class OrderService {
     final doc = await ref.get();
     if (!doc.exists) return false;
     final data = doc.data();
-    if (data == null || (data[_fieldDriverUid] as String?) != user.uid)
+    if (data == null || (data[_fieldDriverUid] as String?) != user.uid) {
       return false;
+    }
     await ref.update({'driverLastReadAt': FieldValue.serverTimestamp()});
     return true;
   }
@@ -3380,8 +3381,9 @@ class OrderService {
     final doc = await ref.get();
     if (!doc.exists) return false;
     final data = doc.data();
-    if (data == null || (data[_fieldPassengerUid] as String?) != user.uid)
+    if (data == null || (data[_fieldPassengerUid] as String?) != user.uid) {
       return false;
+    }
     await ref.update({'passengerLastReadAt': FieldValue.serverTimestamp()});
     return true;
   }
@@ -3396,8 +3398,9 @@ class OrderService {
     final doc = await ref.get();
     if (!doc.exists) return false;
     final data = doc.data();
-    if (data == null || (data['receiverUid'] as String?) != user.uid)
+    if (data == null || (data['receiverUid'] as String?) != user.uid) {
       return false;
+    }
     await ref.update({'receiverLastReadAt': FieldValue.serverTimestamp()});
     return true;
   }
