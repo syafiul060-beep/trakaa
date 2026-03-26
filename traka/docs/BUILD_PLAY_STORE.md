@@ -66,7 +66,11 @@ flutter build appbundle --release --dart-define=TRAKA_API_BASE_URL=https://traka
 
 Tanpa `TRAKA_USE_HYBRID` + URL, release hanya memakai **Firestore** untuk status driver / matching (aman, tapi bukan jalur hybrid penuh). Pinning opsional: `.\scripts\build_hybrid.ps1 -Target appbundle -CertSha256 "AA:BB:..."`.
 
-**CI (engineering Tahap 3):** GitHub Actions `Traka CI` menjalankan job `build-hybrid-smoke` — `flutter build apk --debug` dengan `TRAKA_USE_HYBRID` + URL produksi + `TRAKA_CREATE_ORDER_VIA_API` agar regresi compile di jalur hybrid/API ketahuan sebelum rilis. **Sebelum build manual / upload Play:** dari folder `traka`, `.\scripts\verify_api_health.ps1` (membaca URL dari `PRODUCTION_API_BASE_URL.txt` di root monorepo) — wajib `ok` + `checks.redis: true`.
+**CI (engineering Tahap 3):** GitHub Actions `Traka CI` menjalankan job `build-hybrid-smoke` — `flutter build apk --debug` dengan `TRAKA_USE_HYBRID` + URL produksi + `TRAKA_CREATE_ORDER_VIA_API` agar regresi compile di jalur hybrid/API ketahuan sebelum rilis.
+
+- **Secret wajib di GitHub:** di repositori → **Settings → Secrets and variables → Actions** → **New repository secret** → nama **`GOOGLE_SERVICES_JSON`**, nilai = **seluruh isi** file `android/app/google-services.json` dari mesin Anda (satu JSON utuh, multiline). Tanpa ini job `build-hybrid-smoke` gagal di task `:app:processDebugGoogleServices` karena file tidak di-commit (`.gitignore`).
+
+**Sebelum build manual / upload Play:** dari folder `traka`, `.\scripts\verify_api_health.ps1` (membaca URL dari `PRODUCTION_API_BASE_URL.txt` di root monorepo) — wajib `ok` + `checks.redis: true`.
 
 **Hanya Firestore (tanpa hybrid API):**
 
