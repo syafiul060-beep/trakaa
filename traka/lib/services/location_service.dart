@@ -1,12 +1,13 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'geocoding_service.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../utils/app_logger.dart';
 import 'exemption_service.dart';
+import 'geocoding_service.dart';
 
 /// Kode error khusus (mis. fake GPS terdeteksi).
 const String kErrorCodeFakeGps = 'fake_gps';
@@ -301,6 +302,53 @@ class LocationService {
         return null;
       }
     }
+  }
+
+  /// Stream lokasi rapat untuk navigasi driver (gaya Google Maps): Fused Android + iOS automotive.
+  static Stream<Position> driverHighFrequencyPositionStream() {
+    if (kIsWeb) {
+      return Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 5,
+        ),
+      );
+    }
+    if (Platform.isAndroid) {
+      return Geolocator.getPositionStream(
+        locationSettings: AndroidSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
+          distanceFilter: 3,
+          intervalDuration: const Duration(milliseconds: 750),
+          foregroundNotificationConfig: const ForegroundNotificationConfig(
+            notificationTitle: 'Traka — navigasi aktif',
+            notificationText:
+                'Lokasi dipakai untuk petunjuk arah di peta. Ketuk untuk kembali ke app.',
+            notificationChannelName: 'Navigasi driver',
+            notificationIcon: AndroidResource(
+              name: 'ic_notification',
+              defType: 'drawable',
+            ),
+            setOngoing: true,
+          ),
+        ),
+      );
+    }
+    if (Platform.isIOS) {
+      return Geolocator.getPositionStream(
+        locationSettings: AppleSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
+          activityType: ActivityType.automotiveNavigation,
+          distanceFilter: 3,
+        ),
+      );
+    }
+    return Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      ),
+    );
   }
 
   static const MethodChannel _channel = MethodChannel('traka/location');

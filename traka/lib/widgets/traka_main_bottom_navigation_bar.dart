@@ -14,12 +14,15 @@ class TrakaMainBottomNavigationBar extends StatelessWidget {
     required this.currentIndex,
     required this.onTap,
     required this.chatUnreadCount,
+    this.ordersAttentionCount = 0,
     this.scheduleTabIcon = TrakaScheduleTabIcon.calendar,
   });
 
   final int currentIndex;
   final ValueChanged<int> onTap;
   final int chatUnreadCount;
+  /// Driver: jumlah order menunggu tindakan (pending agreement / pending receiver).
+  final int ordersAttentionCount;
   final TrakaScheduleTabIcon scheduleTabIcon;
 
   String _selectedHint(AppLocalizations l10n) =>
@@ -83,13 +86,24 @@ class TrakaMainBottomNavigationBar extends StatelessWidget {
 
     Widget ordersIcon() {
       final on = currentIndex == 3;
+      final base = Icon(
+        on ? Icons.receipt_long : Icons.receipt_long_outlined,
+        color: on ? cs.primary : cs.onSurfaceVariant,
+      );
+      final label = ordersAttentionCount > 0
+          ? (l10n.locale == AppLocale.id
+              ? '${l10n.navOrders}, $ordersAttentionCount perlu ditinjau${on ? ', $selected' : ''}'
+              : '${l10n.navOrders}, $ordersAttentionCount need review${on ? ', $selected' : ''}')
+          : '${l10n.navOrders}${on ? ', $selected' : ''}';
       return Semantics(
-        label: '${l10n.navOrders}${on ? ', $selected' : ''}',
+        label: label,
         button: true,
-        child: Icon(
-          on ? Icons.receipt_long : Icons.receipt_long_outlined,
-          color: on ? cs.primary : cs.onSurfaceVariant,
-        ),
+        child: ordersAttentionCount > 0
+            ? Badge(
+                label: Text('$ordersAttentionCount'),
+                child: base,
+              )
+            : base,
       );
     }
 

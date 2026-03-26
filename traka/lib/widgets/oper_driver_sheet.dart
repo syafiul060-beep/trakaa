@@ -8,15 +8,16 @@ import '../theme/app_theme.dart';
 import '../theme/responsive.dart';
 import '../widgets/traka_l10n_scope.dart';
 import 'driver_contact_picker.dart';
+import 'traka_loading_indicator.dart';
 
 /// Sheet untuk Oper Driver: pilih order (multi), input driver kedua, validasi kapasitas.
 /// Kirim barang tidak bisa dioper. Bisa dipakai dari Beranda atau Jadwal.
-void showOperDriverSheet(
+Future<void> showOperDriverSheet(
   BuildContext context, {
   required List<OrderModel> orders,
   required void Function(List<(String, String)> transfers) onTransfersCreated,
 }) {
-  showModalBottomSheet<void>(
+  return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
@@ -280,14 +281,7 @@ class _OperDriverSheetState extends State<_OperDriverSheet> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: _loading
-                    ? const SizedBox(
-                        height: 24,
-                        width: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
+                    ? trakaLoadingOnDarkSurface(size: 24)
                     : Text(
                         _selectedOrders.length > 1
                             ? 'Buat ${_selectedOrders.length} Oper & Tampilkan Barcode'

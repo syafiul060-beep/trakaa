@@ -41,6 +41,31 @@ class InstructionFormatter {
     return '$dist lalu $instr';
   }
 
+  /// Jarak tersisa ke manuver (gaya Google Maps — angka besar di banner).
+  static String formatRemainingDistanceMeters(double meters) {
+    final m = meters.clamp(0, 999999);
+    if (m >= 1000) {
+      final km = m / 1000;
+      final s = km >= 10
+          ? km.round().toString()
+          : km.toStringAsFixed(1).replaceAll('.', ',');
+      return '$s km';
+    }
+    return '${m.round()} m';
+  }
+
+  /// Hanya aksi belok/lurus (tanpa prefiks jarak) — dipasangkan dengan [formatRemainingDistanceMeters].
+  static String maneuverPhraseOnly(RouteStep step) {
+    final instr = _translateInstruction(step.instruction);
+    if (instr == 'lurus' || instr == 'Lanjutkan') {
+      return 'Tetap pada jalur ini';
+    }
+    if (instr == 'sampai tujuan') {
+      return 'Tujuan di depan';
+    }
+    return instr;
+  }
+
   /// Terjemahkan instruksi umum dari API ke Indonesia.
   static String _translateInstruction(String raw) {
     final lower = raw.toLowerCase();

@@ -37,6 +37,7 @@ import '../services/location_service.dart';
 import '../services/low_ram_warning_service.dart';
 import '../services/map_style_service.dart';
 import '../services/marker_icon_service.dart';
+import '../services/navigation_settings_service.dart';
 import '../services/notification_navigation_service.dart';
 import '../services/order_service.dart';
 import '../services/pending_purchase_recovery_service.dart';
@@ -133,6 +134,9 @@ class _DriverScreenState extends State<DriverScreen>
   MapType _mapType = MapType.normal; // Default: peta jalan
   /// Layer kemacetan lalu lintas (seperti Grab). Default on saat navigasi.
   bool _trafficEnabled = true;
+  /// ETA lalu lintas di Directions + cek rute alternatif; off saat hemat data navigasi.
+  bool get _directionsTrafficAware =>
+      _trafficEnabled && !NavigationSettingsService.dataSaverEnabled;
   /// Rekomendasi rute alternatif saat macet: menit lebih cepat (null = tidak ada).
   int? _fasterAlternativeMinutesSaved;
   Timer? _trafficAlternativesCheckTimer;
@@ -402,6 +406,14 @@ class _DriverScreenState extends State<DriverScreen>
   DateTime? _lastDirectionsStaleSnackAt;
   /// Cooldown reroute karena deteksi belokan terlewat.
   DateTime? _lastMissedTurnRerouteAt;
+  /// Jarak tersisa ke akhir langkah TBT (untuk banner gaya Maps).
+  double? _tbtRemainingMeters;
+  /// Jarak sepanjang polyline ke awal langkah berikutnya (baris «Lalu»).
+  double? _tbtNextStepRemainingMeters;
+  DateTime? _lastTbtProjectionFailLog;
+  /// Pesan singkat setelah re-route otomatis (chip hijau di banner).
+  String? _rerouteStatusBanner;
+  Timer? _rerouteStatusClearTimer;
   /// Satu kali ambil steps untuk rute utama (turn-by-turn + missed-turn).
   bool _routeStepsHydrateRequested = false;
 
@@ -417,6 +429,123 @@ class _DriverScreenState extends State<DriverScreen>
     if (_routeRecalculateDepth <= 0) return;
     _routeRecalculateDepth--;
     if (mounted) setState(() {});
+  }
+
+  /// Setelah polyline/steps baru: kamera mengikuti garis lagi (tanpa paksa fokus jika user sedang geser peta).
+  void _syncCameraAfterRouteRecalculated() {
+    if (!mounted) return;
+    _lastCameraTarget = null;
+    _lastCameraBearing = null;
+    _cameraFollowEngine.resetThrottle();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_cameraTrackingEnabled) return;
+      if (_mapController == null || _displayedPosition == null) return;
+      if (!_isDriverWorking && _navigatingToOrderId == null) return;
+      _suppressNextCameraMoveStarted = true;
+      _updateDisplayedZoomTilt();
+      _animateCameraToDisplayed(_smoothedBearing, force: true);
+    });
+  }
+
+  void _scheduleQuietRerouteBanner() {
+    _rerouteStatusClearTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _rerouteStatusBanner = 'Rute disesuaikan dari posisi Anda';
+    });
+    _rerouteStatusClearTimer = Timer(const Duration(seconds: 5), () {
+      if (!mounted) return;
+      setState(() => _rerouteStatusBanner = null);
+    });
+  }
+
+  double _snapMaxMetersForSpeed() {
+    final kmh = _currentSpeedMps * 3.6;
+    if (kmh >= 75) return 142;
+    if (kmh >= 45) return 132;
+    return _snapToRoutePolylineMaxMeters;
+  }
+
+  void _refreshTbtRemainingFromPosition(Position position) {
+    if (!_isDriverWorking && _navigatingToOrderId == null) {
+      if (_tbtRemainingMeters != null || _tbtNextStepRemainingMeters != null) {
+        _tbtRemainingMeters = null;
+        _tbtNextStepRemainingMeters = null;
+        if (mounted) setState(() {});
+      }
+      return;
+    }
+    if (_routeSteps.isEmpty ||
+        _currentStepIndex < 0 ||
+        _currentStepIndex >= _routeSteps.length) {
+      if (_tbtRemainingMeters != null || _tbtNextStepRemainingMeters != null) {
+        _tbtRemainingMeters = null;
+        _tbtNextStepRemainingMeters = null;
+        if (mounted) setState(() {});
+      }
+      return;
+    }
+    final poly = _activeNavigationPolyline ??
+        ((_routePolyline != null && _routePolyline!.length >= 2)
+            ? _routePolyline
+            : null);
+    if (poly == null || poly.length < 2) return;
+
+    final pos = LatLng(position.latitude, position.longitude);
+    var proj = RouteUtils.projectPointOntoPolyline(
+      pos,
+      poly,
+      maxDistanceMeters: 280,
+    );
+    if (proj.$2 < 0) {
+      proj = RouteUtils.projectPointOntoPolyline(
+        pos,
+        poly,
+        maxDistanceMeters: 520,
+      );
+    }
+    if (proj.$2 < 0) {
+      if (_tbtRemainingMeters != null || _tbtNextStepRemainingMeters != null) {
+        _tbtRemainingMeters = null;
+        _tbtNextStepRemainingMeters = null;
+        if (mounted) setState(() {});
+      }
+      return;
+    }
+    final distM = RouteUtils.distanceAlongPolyline(poly, proj.$2, proj.$3);
+    final step = _routeSteps[_currentStepIndex];
+    final rem = step.endDistanceMeters - distM;
+    if (rem < -55 || rem > 12000) return;
+    final clamped = rem.clamp(0.0, 99999.0);
+    final prev = _tbtRemainingMeters;
+    final delta = prev == null ? 999.0 : (prev - clamped).abs();
+    var changed = false;
+    if (prev == null || delta >= 12 || (prev > 120 && delta >= prev * 0.06)) {
+      _tbtRemainingMeters = clamped;
+      changed = true;
+      if (clamped <= 22 && (prev == null || prev > 28)) {
+        HapticFeedback.mediumImpact();
+      }
+    }
+    double? nextRem;
+    if (_currentStepIndex + 1 < _routeSteps.length) {
+      final nextStart = _routeSteps[_currentStepIndex + 1].startDistanceMeters;
+      nextRem = (nextStart - distM).clamp(0.0, 999999.0);
+    }
+    final prevNext = _tbtNextStepRemainingMeters;
+    if (nextRem != null) {
+      final nd = prevNext == null ? 999.0 : (prevNext - nextRem).abs();
+      if (prevNext == null ||
+          nd >= 25 ||
+          (prevNext > 100 && nd >= prevNext * 0.07)) {
+        _tbtNextStepRemainingMeters = nextRem;
+        changed = true;
+      }
+    } else if (prevNext != null) {
+      _tbtNextStepRemainingMeters = null;
+      changed = true;
+    }
+    if (changed && mounted) setState(() {});
   }
 
   void _notifyDirectionsStaleFromOutcome(
@@ -444,8 +573,14 @@ class _DriverScreenState extends State<DriverScreen>
 
   /// Auto reroute: jangan terlalu sering panggil Directions API.
   static const int _rerouteDebounceSeconds = 12;
+  /// Saat sudah jauh dari garis rute: izinkan panggilan ulang lebih cepat (mirip Google Maps).
+  static const int _rerouteDebounceSecondsFarOff = 6;
+  static const double _farOffDeviationForFastRerouteMeters = 92.0;
   /// Jarak minimum sejak reroute terakhir / posisi referensi agar boleh reroute lagi.
   static const double _rerouteDebounceDistanceMeters = 40.0;
+  /// Saat simpang besar dari rute navigasi (menuju penumpang/tujuan): refetch lebih agresif.
+  static const double _refetchNavRouteNearDeviationMeters = 95.0;
+  static const double _refetchNavRouteDistanceWhenFarMeters = 22.0;
   /// GPS mentah menyimpang ≥ ini dari polyline → coba reroute otomatis (beda jalur tanpa klik).
   static const double _autoRerouteMinDeviationMeters = 50.0;
 
@@ -745,7 +880,17 @@ class _DriverScreenState extends State<DriverScreen>
     });
     _tryRestoreActiveRoute();
     _formDestPreviewNotifier.addListener(_onFormDestPreviewChanged);
+    NavigationSettingsService.dataSaverNotifier
+        .addListener(_onNavigationDataSaverChanged);
     _restartLocationTimer();
+  }
+
+  void _onNavigationDataSaverChanged() {
+    if (!mounted) return;
+    if (_navigatingToOrderId != null && _trafficEnabled) {
+      _stopTrafficAlternativesCheck();
+      _startTrafficAlternativesCheck();
+    }
   }
 
   void _onDriverBadgeOptimisticChanged() {
@@ -1056,23 +1201,24 @@ class _DriverScreenState extends State<DriverScreen>
     return d.abs();
   }
 
-  /// Ikut kamera: [CameraFollowEngine] throttle ~380 ms + durasi dibatasi agar tidak
-  /// bertumpuk dengan animasi panjang (marker tetap halus tiap [_animTickMs]).
+  /// Ikut kamera: [CameraFollowEngine] throttle + durasi dibatasi agar tidak bertumpuk
+  /// (marker tetap halus tiap [_animTickMs]).
 
-  /// Chase cam: icon di bawah tengah, peta bergerak menurun (lurus) atau berputar (belok).
-  /// Tilt & zoom adaptif: idle lebih flat, cepat lebih dekat (ala Grab).
-  static const double _trackingTiltMoving = 44.0;
-  static const double _trackingTiltIdle = 30.0;
-  double _displayedZoom = 17.0;
-  double _displayedTilt = 40.0;
+  /// Heading-up ala Google Maps: target kamera di depan mobil, ikon stabil di bawah tengah,
+  /// peta yang bergeser/berputar. Tilt landai; zoom sedikit lebih jauh dari mode ride-hailing 3D.
+  static const double _trackingTiltMoving = 24.0;
+  static const double _trackingTiltIdle = 11.0;
+  double _displayedZoom = 16.65;
+  double _displayedTilt = 22.0;
 
   /// Zoom mengikuti kecepatan tanpa lompatan tier (kurangi «tiba-tiba dekat/jauh»).
   double _getTrackingZoom(double speedKmh) {
     final s = speedKmh.clamp(0.0, 120.0);
-    if (s < 5) return 16.45 + (s / 5) * 0.45;
-    if (s < 20) return 16.9 + ((s - 5) / 15) * 0.38;
-    if (s < 55) return 17.28 + ((s - 20) / 35) * 0.42;
-    return 17.7 + ((s - 55) / 65).clamp(0.0, 1.0) * 0.35;
+    // Sedikit lebih «zoom out» dari mode Grab agar ruas jalan depan lebih luas (mirip Maps).
+    if (s < 5) return 16.07 + (s / 5) * 0.45;
+    if (s < 20) return 16.52 + ((s - 5) / 15) * 0.38;
+    if (s < 55) return 16.9 + ((s - 20) / 35) * 0.42;
+    return 17.32 + ((s - 55) / 65).clamp(0.0, 1.0) * 0.35;
   }
 
   /// Tilt naik turun halus antara idle dan mengemudi (bukan flip di 2 km/j).
@@ -1095,15 +1241,15 @@ class _DriverScreenState extends State<DriverScreen>
     _displayedTilt += (targetTilt - _displayedTilt) * alphaTilt;
   }
 
-  /// Offset kamera (m) ala Grab: target dekat mobil agar ikon selalu terlihat di layar.
-  /// Batas maks 320m mencegah mobil keluar layar saat zoom 20 + tilt 58°.
+  /// Titik pandang kamera di depan GPS (meter) — makin jauh, makin «ikon di bawah, jalan di atas»
+  /// seperti Google Maps. Tetap dibatasi oleh [RouteUtils.pointAheadOnPolyline] maxDistance.
   double _getCameraOffsetAheadMeters() {
     final speedKmh = _currentSpeedMps * 3.6;
-    if (speedKmh < 8) return 68.0 + speedKmh * 0.55;
-    if (speedKmh < 25) return 72.0 + (speedKmh - 8) * 2.35;
-    if (speedKmh < 50) return 112.0 + (speedKmh - 25) * 2.0;
-    if (speedKmh < 85) return 162.0 + (speedKmh - 50) * 1.45;
-    return 213.0 + (speedKmh - 85).clamp(0, 40) * 0.35;
+    if (speedKmh < 8) return 102.0 + speedKmh * 1.15;
+    if (speedKmh < 25) return 111.2 + (speedKmh - 8) * 3.45;
+    if (speedKmh < 50) return 169.85 + (speedKmh - 25) * 2.55;
+    if (speedKmh < 85) return 233.6 + (speedKmh - 50) * 1.75;
+    return 294.85 + (speedKmh - 85).clamp(0, 40) * 0.42;
   }
 
   /// Tracking kamera: true = ikuti posisi, false = driver geser manual.
@@ -1273,10 +1419,10 @@ class _DriverScreenState extends State<DriverScreen>
   }
 
   /// Smooth bearing: EMA + hysteresis (abaikan perubahan kecil). Minim goyangan.
-  static const double _bearingHysteresisDeg = 16.0;
-  static const double _bearingSmoothAlpha = 0.028;
+  static const double _bearingHysteresisDeg = 11.0;
+  static const double _bearingSmoothAlpha = 0.042;
   /// Saat belok: tidak terlalu cepat agar map bergerak halus (bukan HP berputar).
-  static const double _bearingSmoothAlphaTurn = 0.085;
+  static const double _bearingSmoothAlphaTurn = 0.12;
   /// Hanya pakai alphaTurn saat belok besar (>30°).
   static const double _bearingTurnThresholdDeg = 30.0;
   /// Kecepatan minimum (m/s) untuk update bearing dari GPS (kurangi noise saat lambat).
@@ -1370,7 +1516,7 @@ class _DriverScreenState extends State<DriverScreen>
     final (_, seg, ratio) = RouteUtils.projectPointOntoPolyline(
       raw,
       poly,
-      maxDistanceMeters: 260,
+      maxDistanceMeters: 320,
     );
     if (seg < 0) return;
     final distM = RouteUtils.distanceAlongPolyline(poly, seg, ratio);
@@ -1383,9 +1529,9 @@ class _DriverScreenState extends State<DriverScreen>
     }
 
     final remaining = step.endDistanceMeters - distM;
-    if (remaining < -35 || remaining > 620) return;
+    if (remaining < -35 || remaining > 1650) return;
 
-    const ordered = [80, 200, 500];
+    const ordered = [80, 200, 500, 1000];
     int? chosen;
     for (final b in ordered) {
       if (_voiceProximityBuckets.contains(b)) continue;
@@ -1397,8 +1543,9 @@ class _DriverScreenState extends State<DriverScreen>
     if (chosen == null) return;
 
     final now = DateTime.now();
+    final minGapMs = chosen <= 200 ? 3400 : 4200;
     if (_lastVoiceCueAt != null &&
-        now.difference(_lastVoiceCueAt!).inMilliseconds < 4200) {
+        now.difference(_lastVoiceCueAt!).inMilliseconds < minGapMs) {
       return;
     }
 
@@ -1406,10 +1553,17 @@ class _DriverScreenState extends State<DriverScreen>
       if (b >= chosen) _voiceProximityBuckets.add(b);
     }
     _lastVoiceCueAt = now;
-    final distPhrase =
-        chosen >= 1000 ? '${(chosen / 1000).toStringAsFixed(1)} kilometer' : '$chosen meter';
-    final cue =
-        '$distPhrase, ${InstructionFormatter.formatStep(step)}';
+    final maneuver = InstructionFormatter.maneuverPhraseOnly(step);
+    final String distPhrase;
+    if (chosen >= 1000) {
+      distPhrase = 'Sekitar satu kilometer lagi';
+    } else if (chosen >= 200) {
+      distPhrase = '$chosen meter lagi';
+    } else {
+      distPhrase = '$chosen meter lagi';
+    }
+    final cue = '$distPhrase, $maneuver';
+    HapticFeedback.lightImpact();
     unawaited(VoiceNavigationService.instance.speakCue(cue));
   }
 
@@ -1443,8 +1597,8 @@ class _DriverScreenState extends State<DriverScreen>
         );
         target = cameraTarget ?? pos;
       } else {
-        // Tanpa garis rute: ikut heading GPS (mode mengemudi) + titik pandang sedikit ke depan — mirip Maps.
-        final aheadM = _getCameraOffsetAheadMeters().clamp(70.0, 180.0);
+        // Tanpa garis rute: heading GPS + titik pandang jauh ke depan (konsisten dengan ada polyline).
+        final aheadM = _getCameraOffsetAheadMeters().clamp(100.0, 280.0);
         target = !isStationary && bearing.isFinite
             ? RouteUtils.offsetPoint(pos, bearing, aheadM)
             : pos;
@@ -1515,7 +1669,7 @@ class _DriverScreenState extends State<DriverScreen>
     } catch (_) {}
   }
 
-  /// Intro cinematic: center + zoom ke driver saat pertama kali mulai kerja (ala Grab).
+  /// Saat mulai kerja: langsung pakai jalur kamera yang sama dengan navigasi (target di depan, heading-up).
   void _animateCameraIntroOnStart() {
     if (_mapController == null || !mounted || !_mapTabVisible) return;
     final pos = _displayedPosition ??
@@ -1528,26 +1682,16 @@ class _DriverScreenState extends State<DriverScreen>
         _cameraTrackingEnabled = true;
         _gpsWhenCameraManualDisabled = null;
       });
-      _lastCameraTarget = pos;
-      _lastCameraBearing = _smoothedBearing;
+      _lastCameraTarget = null;
+      _lastCameraBearing = null;
+      _cameraFollowEngine.resetThrottle();
       _suppressNextCameraMoveStarted = true;
       _updateDisplayedZoomTilt();
-      _cameraFollowEngine.tryAnimateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: pos,
-            bearing: _smoothedBearing,
-            tilt: _displayedTilt,
-            zoom: _displayedZoom,
-          ),
-        ),
-        duration: const Duration(milliseconds: 450),
-        force: true,
-      );
+      _animateCameraToDisplayed(_smoothedBearing, force: true, snapFocus: true);
     } catch (_) {}
   }
 
-  /// Tombol Fokus: recenter ke mobil, kembali ke mode ikuti (Grab/Google Maps style).
+  /// Tombol Fokus: recenter ke mobil, kembali ke mode ikuti (Google Maps–style).
   void _focusOnCar() {
     // Reset supaya jarak ke target tidak dianggap "0 m" vs titik lama sebelum user geser peta.
     _gpsWhenCameraManualDisabled = null;
@@ -1704,6 +1848,8 @@ class _DriverScreenState extends State<DriverScreen>
 
   @override
   void dispose() {
+    NavigationSettingsService.dataSaverNotifier
+        .removeListener(_onNavigationDataSaverChanged);
     _locationPulseController
       ..removeListener(_onLocationPulseTick)
       ..dispose();
@@ -1719,6 +1865,7 @@ class _DriverScreenState extends State<DriverScreen>
     _cancelDriverNavigationPositionStream();
     _interpolationTimer?.cancel();
     _movementDebounceTimer?.cancel();
+    _rerouteStatusClearTimer?.cancel();
     _trafficAlternativesCheckTimer?.cancel();
     _driverOrdersUiDebounce?.cancel();
     _pendingJadwalSafetyTimer?.cancel();
@@ -1887,7 +2034,7 @@ class _DriverScreenState extends State<DriverScreen>
       originLng: oLng,
       destLat: dLat,
       destLng: dLng,
-      trafficAware: _trafficEnabled,
+      trafficAware: _directionsTrafficAware,
     );
     if (!mounted) return;
     if (alternatives.isEmpty) {
@@ -2079,7 +2226,7 @@ class _DriverScreenState extends State<DriverScreen>
       final projected = RouteUtils.projectPointOntoPolyline(
         rawLatLng,
         polyline,
-        maxDistanceMeters: _snapToRoutePolylineMaxMeters,
+        maxDistanceMeters: _snapMaxMetersForSpeed(),
       );
       targetSeg = projected.$2;
       targetRatio = projected.$3;
@@ -2236,6 +2383,11 @@ class _DriverScreenState extends State<DriverScreen>
         final lastFetch = _navigatingToDestination
             ? _lastFetchRouteToDestinationPosition
             : _lastFetchRouteToPassengerPosition;
+        final farFromLine =
+            routeDeviationMeters >= _refetchNavRouteNearDeviationMeters;
+        final debounceDist = farFromLine
+            ? _refetchNavRouteDistanceWhenFarMeters
+            : _rerouteDebounceDistanceMeters;
         final shouldRefetch = lastFetch == null ||
             Geolocator.distanceBetween(
                   lastFetch.latitude,
@@ -2243,7 +2395,7 @@ class _DriverScreenState extends State<DriverScreen>
                   rawLatLng.latitude,
                   rawLatLng.longitude,
                 ) >
-                _rerouteDebounceDistanceMeters;
+                debounceDist;
         if (shouldRefetch) {
           OrderModel? navOrder;
           for (final o in _driverOrders) {
@@ -2265,6 +2417,7 @@ class _DriverScreenState extends State<DriverScreen>
           _maybeRerouteFromCurrentPosition(
             rawLatLng,
             quiet: true,
+            routeDeviationMeters: routeDeviationMeters,
           ),
         );
       }
@@ -2450,6 +2603,7 @@ class _DriverScreenState extends State<DriverScreen>
 
     if ((_isDriverWorking || _navigatingToOrderId != null) &&
         _routeSteps.isNotEmpty) {
+      _refreshTbtRemainingFromPosition(position);
       _maybeAnnounceNavigationProximity(position);
     }
 
@@ -3129,6 +3283,7 @@ class _DriverScreenState extends State<DriverScreen>
     RouteBackgroundHandler.unregister();
     RoutePersistenceService.clear();
     _resetJourneyNumberPrefetch();
+    _rerouteStatusClearTimer?.cancel();
     setState(() {
       if (_routeOriginLatLng != null && _routeDestLatLng != null) {
         _lastRouteOriginLatLng = _routeOriginLatLng;
@@ -3140,6 +3295,9 @@ class _DriverScreenState extends State<DriverScreen>
       _routePolyline = null;
       _routeSteps = [];
       _currentStepIndex = -1;
+      _tbtRemainingMeters = null;
+      _tbtNextStepRemainingMeters = null;
+      _rerouteStatusBanner = null;
       _routeStepsHydrateRequested = false;
       _lastMissedTurnRerouteAt = null;
       _routeRecalculateDepth = 0;
@@ -3186,8 +3344,8 @@ class _DriverScreenState extends State<DriverScreen>
       _lastCameraBearing = null;
       _gpsWhenCameraManualDisabled = null;
       _suppressCameraFollowAfterResume = false;
-      _displayedZoom = 17.0;
-      _displayedTilt = 40.0;
+      _displayedZoom = 16.65;
+      _displayedTilt = 22.0;
       _currentSpeedMps = 0.0;
       _lastEtaThrottleDest = null;
       _lastDirectionsEtaFetchAt = null;
@@ -4307,7 +4465,7 @@ class _DriverScreenState extends State<DriverScreen>
         originLng: originLng,
         destLat: destLat,
         destLng: destLng,
-        trafficAware: _trafficEnabled,
+        trafficAware: _directionsTrafficAware,
       );
       if (list.isEmpty) {
         await Future<void>.delayed(const Duration(milliseconds: 400));
@@ -4440,7 +4598,7 @@ class _DriverScreenState extends State<DriverScreen>
           originLng: originLng,
           destLat: destLat,
           destLng: destLng,
-          trafficAware: _trafficEnabled,
+          trafficAware: _directionsTrafficAware,
         );
         if (!mounted) return;
         if (apiAlternatives.isEmpty) {
@@ -4618,7 +4776,7 @@ class _DriverScreenState extends State<DriverScreen>
       originLng: dirOriginLng,
       destLat: newDest.latitude,
       destLng: newDest.longitude,
-      trafficAware: _trafficEnabled,
+      trafficAware: _directionsTrafficAware,
     );
     if (!mounted) return;
     if (alternatives.isEmpty) {
@@ -4770,7 +4928,7 @@ class _DriverScreenState extends State<DriverScreen>
                 originLng: dirOriginLng,
                 destLat: destLat,
                 destLng: destLng,
-                trafficAware: _trafficEnabled,
+                trafficAware: _directionsTrafficAware,
               );
               if (!mounted) return;
               if (alternatives.isEmpty) {
@@ -5138,7 +5296,7 @@ class _DriverScreenState extends State<DriverScreen>
           LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
 
       if (chaseCamActive) {
-        // Marker ala Grab: dot (idle) + arrow (moving). Debounce + adaptive speed.
+        // Marker mobil: dot (idle) + panah (bergerak); bearing di-smooth mengikuti rute.
         final isMoving = _isMovingStable;
         final speedKmh = _currentSpeedMps * 3.6;
         final tier = MarkerAssets.speedTier(speedKmh);
@@ -6252,14 +6410,23 @@ class _DriverScreenState extends State<DriverScreen>
     _routeStepsHydrateRequested = true;
     _pushRouteRecalculate();
     try {
+      final sw = Stopwatch()..start();
       final outcome = await DirectionsService.getRouteWithSteps(
         originLat: _currentPosition!.latitude,
         originLng: _currentPosition!.longitude,
         destLat: _routeDestLatLng!.latitude,
         destLng: _routeDestLatLng!.longitude,
-        trafficAware: _trafficEnabled,
+        trafficAware: _directionsTrafficAware,
       );
+      sw.stop();
       if (!mounted) return;
+      AppAnalyticsService.logDriverNavRouteFetch(
+        scope: 'hydrate_steps',
+        success: outcome.data != null,
+        latencyMs: sw.elapsedMilliseconds,
+        errorKey: outcome.errorStatus,
+        staleCache: outcome.usedStaleCache,
+      );
       final withSteps = outcome.data;
       if (withSteps == null) return;
       _notifyDirectionsStaleFromOutcome(outcome, showSnackBar: false);
@@ -6357,13 +6524,18 @@ class _DriverScreenState extends State<DriverScreen>
     LatLng currentPos, {
     bool force = false,
     bool quiet = false,
+    double? routeDeviationMeters,
   }) async {
     if (_routeDestLatLng == null) return false;
     final now = DateTime.now();
     if (!force) {
+      final farOff = routeDeviationMeters != null &&
+          routeDeviationMeters >= _farOffDeviationForFastRerouteMeters;
+      final debounceSec =
+          farOff ? _rerouteDebounceSecondsFarOff : _rerouteDebounceSeconds;
       if (_lastRerouteAt != null) {
         final secSince = now.difference(_lastRerouteAt!).inSeconds;
-        if (secSince < _rerouteDebounceSeconds) return false;
+        if (secSince < debounceSec) return false;
       }
       if (_lastReroutePosition != null) {
         final dist = Geolocator.distanceBetween(
@@ -6372,20 +6544,30 @@ class _DriverScreenState extends State<DriverScreen>
           currentPos.latitude,
           currentPos.longitude,
         );
-        if (dist < _rerouteDebounceDistanceMeters) return false;
+        final debounceDist = farOff ? _refetchNavRouteDistanceWhenFarMeters : _rerouteDebounceDistanceMeters;
+        if (dist < debounceDist) return false;
       }
     }
 
     _pushRouteRecalculate();
     try {
+      final sw = Stopwatch()..start();
       final outcome = await DirectionsService.getRouteWithSteps(
         originLat: currentPos.latitude,
         originLng: currentPos.longitude,
         destLat: _routeDestLatLng!.latitude,
         destLng: _routeDestLatLng!.longitude,
-        trafficAware: _trafficEnabled,
+        trafficAware: _directionsTrafficAware,
       );
+      sw.stop();
       if (!mounted) return false;
+      AppAnalyticsService.logDriverNavRouteFetch(
+        scope: 'main',
+        success: outcome.data != null,
+        latencyMs: sw.elapsedMilliseconds,
+        errorKey: outcome.errorStatus,
+        staleCache: outcome.usedStaleCache,
+      );
       final withSteps = outcome.data;
       if (withSteps != null) {
         _notifyDirectionsStaleFromOutcome(outcome, showSnackBar: !quiet);
@@ -6410,7 +6592,9 @@ class _DriverScreenState extends State<DriverScreen>
         if (_currentPosition != null) {
           _updateCurrentStepFromPosition(_currentPosition!);
         }
-        if (mounted && !quiet) {
+        if (quiet) {
+          _scheduleQuietRerouteBanner();
+        } else if (mounted) {
           final l10n = TrakaL10n.of(context);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -6420,6 +6604,7 @@ class _DriverScreenState extends State<DriverScreen>
             ),
           );
         }
+        _syncCameraAfterRouteRecalculated();
         return true;
       }
       return false;
@@ -6470,14 +6655,23 @@ class _DriverScreenState extends State<DriverScreen>
     if (_currentPosition == null) return;
     _pushRouteRecalculate();
     try {
+      final sw = Stopwatch()..start();
       final outcome = await DirectionsService.getRouteWithSteps(
         originLat: _currentPosition!.latitude,
         originLng: _currentPosition!.longitude,
         destLat: destLat,
         destLng: destLng,
-        trafficAware: _trafficEnabled,
+        trafficAware: _directionsTrafficAware,
       );
+      sw.stop();
       if (!mounted) return;
+      AppAnalyticsService.logDriverNavRouteFetch(
+        scope: 'to_passenger',
+        success: outcome.data != null,
+        latencyMs: sw.elapsedMilliseconds,
+        errorKey: outcome.errorStatus,
+        staleCache: outcome.usedStaleCache,
+      );
       final withSteps = outcome.data;
       if (withSteps != null) {
         _notifyDirectionsStaleFromOutcome(outcome, showSnackBar: !quiet);
@@ -6498,13 +6692,19 @@ class _DriverScreenState extends State<DriverScreen>
             _currentPosition!.longitude,
           );
         });
-        _fitRouteToPassengerBounds();
+        if (!quiet) {
+          _fitRouteToPassengerBounds();
+        }
         if (_currentPosition != null) {
           if (!_updateCurrentStepFromPosition(_currentPosition!)) {
             if (!quiet) _speakCurrentStep();
           }
         } else {
           if (!quiet) _speakCurrentStep();
+        }
+        if (quiet) {
+          _scheduleQuietRerouteBanner();
+          _syncCameraAfterRouteRecalculated();
         }
         _startTrafficAlternativesCheck();
         // Fetch toll info (async, tidak blokir)
@@ -6569,14 +6769,23 @@ class _DriverScreenState extends State<DriverScreen>
     if (_currentPosition == null) return;
     _pushRouteRecalculate();
     try {
+      final sw = Stopwatch()..start();
       final outcome = await DirectionsService.getRouteWithSteps(
         originLat: _currentPosition!.latitude,
         originLng: _currentPosition!.longitude,
         destLat: destLat,
         destLng: destLng,
-        trafficAware: _trafficEnabled,
+        trafficAware: _directionsTrafficAware,
       );
+      sw.stop();
       if (!mounted) return;
+      AppAnalyticsService.logDriverNavRouteFetch(
+        scope: 'to_destination',
+        success: outcome.data != null,
+        latencyMs: sw.elapsedMilliseconds,
+        errorKey: outcome.errorStatus,
+        staleCache: outcome.usedStaleCache,
+      );
       final withSteps = outcome.data;
       if (withSteps != null) {
         _notifyDirectionsStaleFromOutcome(outcome, showSnackBar: !quiet);
@@ -6599,13 +6808,19 @@ class _DriverScreenState extends State<DriverScreen>
             _currentPosition!.longitude,
           );
         });
-        _fitRouteToDestinationBounds();
+        if (!quiet) {
+          _fitRouteToDestinationBounds();
+        }
         if (_currentPosition != null) {
           if (!_updateCurrentStepFromPosition(_currentPosition!)) {
             if (!quiet) _speakCurrentStep();
           }
         } else {
           if (!quiet) _speakCurrentStep();
+        }
+        if (quiet) {
+          _scheduleQuietRerouteBanner();
+          _syncCameraAfterRouteRecalculated();
         }
         _startTrafficAlternativesCheck();
         RoutesTollService.getTollEstimate(
@@ -6870,13 +7085,16 @@ class _DriverScreenState extends State<DriverScreen>
   void _startTrafficAlternativesCheck() {
     _trafficAlternativesCheckTimer?.cancel();
     if (!_trafficEnabled || _navigatingToOrderId == null) return;
+    if (NavigationSettingsService.dataSaverEnabled) return;
     _trafficAlternativesCheckTimer = Timer.periodic(
       const Duration(minutes: 5),
       (_) => _checkFasterAlternativeRoute(),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(minutes: 2), () {
-        if (mounted && _navigatingToOrderId != null) _checkFasterAlternativeRoute();
+        if (mounted && _navigatingToOrderId != null) {
+          _checkFasterAlternativeRoute();
+        }
       });
     });
   }
@@ -6887,7 +7105,12 @@ class _DriverScreenState extends State<DriverScreen>
   }
 
   Future<void> _checkFasterAlternativeRoute() async {
-    if (!mounted || _navigatingToOrderId == null || !_trafficEnabled) return;
+    if (!mounted ||
+        _navigatingToOrderId == null ||
+        !_trafficEnabled ||
+        NavigationSettingsService.dataSaverEnabled) {
+      return;
+    }
     if (_currentPosition == null) return;
     final currentDuration = _routeToPassengerDurationSeconds ?? 0;
     if (currentDuration <= 0) return;
@@ -6915,7 +7138,7 @@ class _DriverScreenState extends State<DriverScreen>
       originLng: _currentPosition!.longitude,
       destLat: destLat,
       destLng: destLng,
-      trafficAware: true,
+      trafficAware: _directionsTrafficAware,
     );
     if (!mounted || alternatives.length < 2) return;
     int? fastestDuration;
@@ -6965,7 +7188,7 @@ class _DriverScreenState extends State<DriverScreen>
       originLng: _currentPosition!.longitude,
       destLat: destLat,
       destLng: destLng,
-      trafficAware: _trafficEnabled,
+      trafficAware: _directionsTrafficAware,
     );
 
     if (!mounted) return;
@@ -7053,12 +7276,29 @@ class _DriverScreenState extends State<DriverScreen>
     final steps = _routeSteps;
     if (poly == null || poly.isEmpty || steps.isEmpty) return false;
     final pos = LatLng(position.latitude, position.longitude);
-    final (_, segmentIndex, ratio) = RouteUtils.projectPointOntoPolyline(
+    var (_, segmentIndex, ratio) = RouteUtils.projectPointOntoPolyline(
       pos,
       poly,
       maxDistanceMeters: 250,
     );
-    if (segmentIndex < 0) return false;
+    if (segmentIndex < 0) {
+      final retry = RouteUtils.projectPointOntoPolyline(
+        pos,
+        poly,
+        maxDistanceMeters: 420,
+      );
+      segmentIndex = retry.$2;
+      ratio = retry.$3;
+    }
+    if (segmentIndex < 0) {
+      final n = DateTime.now();
+      if (_lastTbtProjectionFailLog == null ||
+          n.difference(_lastTbtProjectionFailLog!).inSeconds >= 45) {
+        _lastTbtProjectionFailLog = n;
+        AppAnalyticsService.logDriverNavTbtProjectionFail();
+      }
+      return false;
+    }
     final distM = RouteUtils.distanceAlongPolyline(poly, segmentIndex, ratio);
     int stepIdx = -1;
     for (int i = 0; i < steps.length; i++) {
@@ -7830,6 +8070,11 @@ class _DriverScreenState extends State<DriverScreen>
           TurnByTurnBanner(
             steps: _routeSteps,
             currentStepIndex: _currentStepIndex >= 0 ? _currentStepIndex : 0,
+            remainingMetersToManeuver: _tbtRemainingMeters,
+            rerouteStatusText: _rerouteStatusBanner,
+            distanceToNextStepMeters: _tbtNextStepRemainingMeters,
+            onResumeCameraTracking:
+                _rerouteStatusBanner != null ? _focusOnCar : null,
             etaArrival: _routeToPassengerDurationSeconds != null
                 ? DateTime.now()
                     .add(Duration(seconds: _routeToPassengerDurationSeconds!))

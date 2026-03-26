@@ -139,10 +139,13 @@ class DirectionsWithStepsOutcome {
   const DirectionsWithStepsOutcome({
     this.data,
     this.usedStaleCache = false,
+    this.errorStatus,
   });
 
   final DirectionsResultWithSteps? data;
   final bool usedStaleCache;
+  /// Status Directions / HTTP / `backoff` saat kuota — untuk analytics; null jika sukses normal.
+  final String? errorStatus;
 
   bool get hasRoute => data != null;
 }
@@ -151,6 +154,9 @@ class DirectionsWithStepsOutcome {
 class DirectionsService {
   static const String _baseUrl =
       'https://maps.googleapis.com/maps/api/directions/json';
+
+  /// Kurangi spam request setelah `OVER_QUERY_LIMIT` / `OVER_DAILY_LIMIT`.
+  static DateTime? _stepsQuotaBackoffUntil;
 
   /// Ambil rute lengkap (polyline + jarak + waktu) dari origin ke destination.
   /// Hasil di-cache 1 jam per origin-destination (hemat API).
@@ -302,6 +308,18 @@ class DirectionsService {
       return DirectionsWithStepsOutcome(data: cached.data, usedStaleCache: false);
     }
 
+    final now = DateTime.now();
+    if (_stepsQuotaBackoffUntil != null && now.isBefore(_stepsQuotaBackoffUntil!)) {
+      final stale = _lastSuccessRouteWithStepsSnapshot[key];
+      if (stale != null) {
+        return DirectionsWithStepsOutcome(
+          data: stale,
+          usedStaleCache: true,
+          errorStatus: 'backoff',
+        );
+      }
+    }
+
     final params = <String, String>{
       'origin': '$originLat,$originLng',
       'destination': '$destLat,$destLng',
@@ -324,29 +342,44 @@ class DirectionsService {
       if (response.statusCode != 200) {
         final stale = _lastSuccessRouteWithStepsSnapshot[key];
         if (stale != null) {
-          return DirectionsWithStepsOutcome(data: stale, usedStaleCache: true);
+          return DirectionsWithStepsOutcome(
+            data: stale,
+            usedStaleCache: true,
+            errorStatus: 'http_${response.statusCode}',
+          );
         }
-        return const DirectionsWithStepsOutcome(data: null);
+        return DirectionsWithStepsOutcome(
+          data: null,
+          errorStatus: 'http_${response.statusCode}',
+        );
       }
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final status = data['status'] as String?;
       if (status != 'OK') {
+        if (status == 'OVER_QUERY_LIMIT' || status == 'OVER_DAILY_LIMIT') {
+          _stepsQuotaBackoffUntil = DateTime.now().add(const Duration(seconds: 120));
+        }
         if (_statusWorthStaleFallback(status)) {
           final stale = _lastSuccessRouteWithStepsSnapshot[key];
           if (stale != null) {
-            return DirectionsWithStepsOutcome(data: stale, usedStaleCache: true);
+            return DirectionsWithStepsOutcome(
+              data: stale,
+              usedStaleCache: true,
+              errorStatus: status,
+            );
           }
         }
-        return const DirectionsWithStepsOutcome(data: null);
+        return DirectionsWithStepsOutcome(data: null, errorStatus: status ?? 'not_ok');
       }
+      _stepsQuotaBackoffUntil = null;
       final routes = data['routes'] as List<dynamic>?;
       if (routes == null || routes.isEmpty) {
-        return const DirectionsWithStepsOutcome(data: null);
+        return const DirectionsWithStepsOutcome(data: null, errorStatus: 'zero_routes');
       }
       final route = routes.first as Map<String, dynamic>;
       final points = _extractPolylineFromSteps(route) ?? _extractOverviewPolyline(route);
       if (points == null || points.isEmpty) {
-        return const DirectionsWithStepsOutcome(data: null);
+        return const DirectionsWithStepsOutcome(data: null, errorStatus: 'no_polyline');
       }
 
       double distanceKm = 0;
@@ -418,9 +451,13 @@ class DirectionsService {
     } catch (_) {
       final stale = _lastSuccessRouteWithStepsSnapshot[key];
       if (stale != null) {
-        return DirectionsWithStepsOutcome(data: stale, usedStaleCache: true);
+        return DirectionsWithStepsOutcome(
+          data: stale,
+          usedStaleCache: true,
+          errorStatus: 'network',
+        );
       }
-      return const DirectionsWithStepsOutcome(data: null);
+      return const DirectionsWithStepsOutcome(data: null, errorStatus: 'network');
     }
   }
 

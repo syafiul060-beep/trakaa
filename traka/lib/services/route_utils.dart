@@ -328,6 +328,38 @@ class RouteUtils {
     return bearingBetween(polyline[seg], polyline[seg + 1]);
   }
 
+  /// Bearing maju di titik (seg/ratio) dengan sedikit lookahead — mengurangi goyangan
+  /// dari zigzag polyline kecil di jalan lurus (navigasi gaya Google Maps).
+  static double bearingOnPolylineAtPosition(
+    LatLng point,
+    List<LatLng> polyline, {
+    int segmentIndex = -1,
+    double ratio = 0,
+    double lookaheadMeters = 26,
+  }) {
+    if (polyline.isEmpty || polyline.length < 2) return 0;
+    var seg = segmentIndex;
+    var rat = ratio;
+    if (seg < 0) {
+      final proj = projectPointOntoPolyline(point, polyline, maxDistanceMeters: 150);
+      seg = proj.$2;
+      rat = proj.$3;
+      if (seg < 0) return 0;
+    }
+    final dist = distanceAlongPolyline(polyline, seg, rat);
+    final totalLen = distanceAlongPolyline(polyline, polyline.length - 2, 1.0);
+    final bNow = bearingAtDistance(polyline, dist);
+    final aheadDist = (dist + lookaheadMeters).clamp(0.0, totalLen);
+    final bAhead = bearingAtDistance(polyline, aheadDist);
+    var diff = (bAhead - bNow) % 360;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    if (diff.abs() < 38) {
+      return (bNow + diff * 0.52) % 360;
+    }
+    return bNow;
+  }
+
   /// Interpolasi + bearing. Returns (point, bearing) untuk kamera/icon rotasi.
   static (LatLng point, double bearing) interpolateWithBearing(
     List<LatLng> polyline,

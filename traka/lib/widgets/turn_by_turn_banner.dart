@@ -10,16 +10,25 @@ class TurnByTurnBanner extends StatelessWidget {
     super.key,
     required this.steps,
     required this.currentStepIndex,
+    this.remainingMetersToManeuver,
+    this.rerouteStatusText,
     this.etaArrival,
     this.tollInfoText,
     this.routeWarnings = const [],
     this.accentColor = const Color(0xFF1A73E8),
     this.voiceMuted = false,
     this.onVoiceMuteToggle,
+    this.distanceToNextStepMeters,
+    this.onResumeCameraTracking,
+    this.resumeCameraTrackingLabel = 'Ikuti rute',
   });
 
   final List<RouteStep> steps;
   final int currentStepIndex;
+  /// Jarak sepanjang polyline ke akhir langkah aktif (mirip angka besar di Google Maps).
+  final double? remainingMetersToManeuver;
+  /// Pesan singkat setelah re-route otomatis (bukan peringatan API).
+  final String? rerouteStatusText;
   final DateTime? etaArrival;
   final String? tollInfoText;
   final List<String> routeWarnings;
@@ -27,6 +36,11 @@ class TurnByTurnBanner extends StatelessWidget {
   final Color accentColor;
   final bool voiceMuted;
   final VoidCallback? onVoiceMuteToggle;
+  /// Jarak perkiraan sepanjang polyline ke awal langkah berikutnya.
+  final double? distanceToNextStepMeters;
+  /// Setelah re-route: kembalikan kamera ke mode ikuti (opsional).
+  final VoidCallback? onResumeCameraTracking;
+  final String resumeCameraTrackingLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -41,13 +55,20 @@ class TurnByTurnBanner extends StatelessWidget {
         : null;
     final mq = MediaQuery.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    /// Sama dengan `_speakCurrentStep` di driver_screen — suara & teks satu sumber.
+    final rem = remainingMetersToManeuver;
+    final useLiveRemaining = rem != null && rem > 2;
+    /// Banner: jarak live + aksi (Maps); suara tetap pakai [InstructionFormatter.formatStep] / proximity.
     final primaryCue = InstructionFormatter.formatStep(current);
+    final maneuverOnly = InstructionFormatter.maneuverPhraseOnly(current);
 
+    // Di bawah pill Siap/Selesai kerja; [right] membebaskan kolom tema/satellite/zoom (MapTypeZoomControls).
+    final safeTop = mq.padding.top;
+    const double topBelowWorkPill = 62;
+    const double rightReserveForMapControls = 88;
     return Positioned(
-      top: mq.padding.top + 6,
+      top: safeTop + topBelowWorkPill,
       left: 10,
-      right: 10,
+      right: rightReserveForMapControls,
       child: Material(
         elevation: 10,
         borderRadius: BorderRadius.circular(12),
@@ -57,6 +78,55 @@ class TurnByTurnBanner extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (rerouteStatusText != null && rerouteStatusText!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.alt_route_rounded,
+                              size: 18, color: accentColor),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              rerouteStatusText!,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green.shade900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (onResumeCameraTracking != null)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: onResumeCameraTracking,
+                          icon: const Icon(Icons.navigation_rounded, size: 18),
+                          label: Text(resumeCameraTrackingLabel),
+                          style: TextButton.styleFrom(
+                            foregroundColor: accentColor,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 4, 8),
               child: Row(
@@ -79,17 +149,45 @@ class TurnByTurnBanner extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          primaryCue,
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
-                            height: 1.25,
-                            color: colorScheme.onSurface,
+                        if (useLiveRemaining) ...[
+                          Text(
+                            rem <= 22
+                                ? 'Segera'
+                                : InstructionFormatter.formatRemainingDistanceMeters(
+                                    rem,
+                                  ),
+                            style: TextStyle(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w700,
+                              height: 1.05,
+                              letterSpacing: -0.5,
+                              color: colorScheme.onSurface,
+                            ),
                           ),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                          const SizedBox(height: 4),
+                          Text(
+                            maneuverOnly,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              height: 1.25,
+                              color: colorScheme.onSurface,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ] else
+                          Text(
+                            primaryCue,
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              height: 1.25,
+                              color: colorScheme.onSurface,
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         if (etaArrival != null) ...[
                           const SizedBox(height: 4),
                           Text(
@@ -221,7 +319,17 @@ class TurnByTurnBanner extends StatelessWidget {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Lalu: ${InstructionFormatter.formatStep(next)}',
+                          (() {
+                            final d = distanceToNextStepMeters;
+                            final maneuver =
+                                InstructionFormatter.maneuverPhraseOnly(next);
+                            if (d != null && d > 35) {
+                              final approx = InstructionFormatter
+                                  .formatRemainingDistanceMeters(d);
+                              return 'Lalu: ~$approx · $maneuver';
+                            }
+                            return 'Lalu: ${InstructionFormatter.formatStep(next)}';
+                          })(),
                           style: TextStyle(
                             fontSize: 13,
                             color: colorScheme.onSurfaceVariant,

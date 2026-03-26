@@ -18,8 +18,17 @@ class AppConstants {
   /// Driver update 1-2 detik saat jalan; 8 detik memberi buffer untuk latency.
   static const int penumpangIsMovingThresholdSeconds = 8;
 
+  /// Banner beranda driver: saran arahkan jemput jika jarak ke titik jemput ≤ ini (meter).
+  static const double driverPickupNearbyHintMaxMeters = 700;
+  /// Setelah «Abaikan», saran bisa muncul lagi bila driver menjauh ≥ ini dari titik jemput lalu mendekat.
+  static const double driverPickupNearbyHintReshowMeters = 1400;
+
   /// Maksimal driver di map pencarian penumpang (setelah filter rute).
   static const int maxDriversOnPassengerSearchMap = 50;
+
+  /// Maks fetch Directions (Google) untuk polyline di peta beranda penumpang per sesi cari.
+  /// Driver di atas batas ini tetap punya marker + posisi; tanpa polyline (hemat quota + CPU).
+  static const int maxDriverDirectionsFetchesPassengerMap = 8;
 
   /// Durasi maksimal sesi menampilkan driver aktif di peta (menit) **sebelum** travel
   /// berstatus «agreed» (kesepakatan harga). Setelah itu tracking dihentikan (hemat baterai/API);
@@ -45,8 +54,7 @@ class AppConstants {
   static const double passengerOdMetersRelaxDriverBeforePickupFilter = 80000;
 
   /// Interval interpolasi posisi multi-driver di map penumpang (ms).
-  /// Sedikit lebih jarang mengurangi tekanan ke native map + hit-testing marker.
-  /// Tahap 2 (optimasi murah): 96 → 100 — uji geser/zoom di perangkat lemah sebelum naik lagi.
+  /// Timer interpolasi **dijeda** saat tab bukan beranda (Tahap 2). Naikkan bertahap (mis. 100→120) hanya setelah uji di perangkat lemah.
   static const int passengerMapInterpolationIntervalMs = 100;
 
   /// Eksponensial smoothing bearing icon mobil penumpang (0–1). Lebih kecil = lebih halus.

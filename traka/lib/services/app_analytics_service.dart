@@ -226,6 +226,66 @@ class AppAnalyticsService {
     _analytics.logEvent(name: 'driver_nav_directions_stale_cache');
   }
 
+  /// Re-route / fetch rute dengan steps (utama, penumpang, atau tujuan).
+  /// [scope]: `main` | `to_passenger` | `to_destination`
+  static void logDriverNavRouteFetch({
+    required String scope,
+    required bool success,
+    required int latencyMs,
+    String? errorKey,
+    bool staleCache = false,
+  }) {
+    _analytics.logEvent(
+      name: 'driver_nav_route_fetch',
+      parameters: {
+        'scope': scope,
+        'success': success.toString(),
+        'latency_ms': latencyMs.clamp(0, 120000),
+        if (errorKey != null && errorKey.isNotEmpty) 'error': errorKey,
+        'stale_cache': staleCache.toString(),
+      },
+    );
+  }
+
+  /// Proyeksi GPS ke polyline untuk indeks step gagal (250m & 420m).
+  static void logDriverNavTbtProjectionFail() {
+    _analytics.logEvent(name: 'driver_nav_tbt_projection_fail');
+  }
+
+  /// Hemat data navigasi diaktifkan/nonaktifkan dari profil driver.
+  static void logDriverNavDataSaverToggle({required bool enabled}) {
+    _analytics.logEvent(
+      name: 'driver_nav_data_saver',
+      parameters: {'enabled': enabled.toString()},
+    );
+  }
+
+  /// Banner «penumpang dekat titik jemput» di beranda driver.
+  /// [action]: `shown` | `navigate` | `dismiss`
+  static void logDriverPickupNearbyBanner({
+    required String action,
+    int? distanceMeters,
+  }) {
+    String? bucket;
+    final d = distanceMeters;
+    if (d != null) {
+      if (d <= 200) {
+        bucket = '0_200m';
+      } else if (d <= 500) {
+        bucket = '201_500m';
+      } else {
+        bucket = '501m_plus';
+      }
+    }
+    _analytics.logEvent(
+      name: 'driver_pickup_nearby_banner',
+      parameters: {
+        'action': action,
+        if (bucket != null) 'distance_bucket': bucket,
+      },
+    );
+  }
+
   /// Driver tidak bisa menyelesaikan kerja (order aktif / di dekat tujuan rute).
   /// [surface]: `snackbar` | `near_dest`
   /// [bucket]: `both` | `passengers` | `goods` | `pending_unknown`
@@ -351,5 +411,32 @@ class AppAnalyticsService {
   /// Hybrid: `POST /api/driver/location` ditolak rate limit server (biasanya 429).
   static void logHybridDriverLocationRateLimited() {
     _analytics.logEvent(name: 'hybrid_driver_location_rate_limited');
+  }
+
+  // --- Tahap 4: CS & pemblokiran kebijakan (insight support / produk) ---
+
+  /// User membuka dialog Hubungi Admin (ikon admin).
+  static void logCsContactDialogOpen() {
+    _analytics.logEvent(name: 'cs_contact_dialog_open');
+  }
+
+  /// Konten diblokir filter kebijakan (chat / saran).
+  /// [channel]: `order_text` | `order_image_ocr` | `order_audio_policy` | `support_text` | `feedback_text`
+  static void logChatPolicyBlocked({required String channel}) {
+    _analytics.logEvent(
+      name: 'chat_policy_blocked',
+      parameters: {'channel': channel},
+    );
+  }
+
+  /// Hapus order+chat dari daftar Pesan ditolak (aturan app atau Firestore).
+  /// [bucket]: ringkas, mis. `not_participant` | `status_locked` | `travel_other_agreed` |
+  /// `messages_failed` | `firestore_permission` | `network` | `not_found`
+  static void logOrderChatDeleteBlocked({required String bucket}) {
+    final b = bucket.length > 48 ? bucket.substring(0, 48) : bucket;
+    _analytics.logEvent(
+      name: 'order_chat_delete_blocked',
+      parameters: {'bucket': b},
+    );
   }
 }

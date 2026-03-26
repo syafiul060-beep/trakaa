@@ -91,6 +91,21 @@ class AppLocalizations {
   String get navSchedule => locale == AppLocale.id ? 'Jadwal' : 'Schedule';
   String get navChat => 'Chat';
   String get navOrders => locale == AppLocale.id ? 'Pesanan' : 'Orders';
+  /// Snackbar in-app: chat baru saat driver tidak di tab Chat.
+  String get driverInAppNewChatHint => locale == AppLocale.id
+      ? 'Pesan baru — buka tab Chat.'
+      : 'New message — open the Chat tab.';
+  String get driverInAppOpenChat => locale == AppLocale.id ? 'Buka Chat' : 'Open Chat';
+  /// Snackbar in-app: permintaan travel / menunggu tindakan di Data Order.
+  String get driverInAppNewOrderHint => locale == AppLocale.id
+      ? 'Ada permintaan travel baru — cek Data Order.'
+      : 'New trip request — check Orders.';
+  String get driverInAppOpenOrders =>
+      locale == AppLocale.id ? 'Buka Pesanan' : 'Open Orders';
+  /// Snackbar in-app penumpang/pengirim: tab Data Order (bukan «permintaan travel baru»).
+  String get passengerInAppOrderAttentionHint => locale == AppLocale.id
+      ? 'Ada pembaruan pesanan — cek Data Order.'
+      : 'Order update — check the Orders tab.';
   String get navProfile => locale == AppLocale.id ? 'Profil' : 'Profile';
 
   // ——— Profil & menu
@@ -369,6 +384,29 @@ class AppLocalizations {
   String get noOrdersHint => locale == AppLocale.id
       ? 'Pesanan yang sudah terjadi kesepakatan akan muncul di sini.'
       : 'Orders with agreed price will appear here.';
+
+  /// Tahap 4 — FAQ/CS satu paragraf (dialog Hubungi Admin).
+  String get csFaqOneParagraph => locale == AppLocale.id
+      ? 'Jika pesanan atau chat tidak sesuai di layar, pastikan akun yang dipakai benar, aplikasi terhubung ke project Firebase yang tepat, driver sudah «Siap Kerja» dengan rute aktif, dan tab Pesanan hanya menampilkan pesanan yang sudah ada kesepakatan harga. Pesan tidak terkirim atau penghapusan ditolak sering karena nomor/WA/rekening di luar aplikasi diblokir demi keamanan — gunakan fitur di dalam Traka. Butuh bantuan lanjut, gunakan Email, WhatsApp, atau Live Chat di bawah.'
+      : 'If orders or chat look wrong, use the correct account, ensure the app uses the right Firebase project, the driver is «Ready to work» with an active route, and the Orders tab only shows trips with an agreed price. Messages may fail or deletes may be denied when off-app contacts are blocked for safety—use in-app features. For more help, use Email, WhatsApp, or Live Chat below.';
+
+  /// Catatan dukungan di tab Pesanan (penumpang) saat daftar kosong.
+  String get dataOrderPesananTabSupportFootnote => locale == AppLocale.id
+      ? 'Negosiasi pra-kesepakatan ada di tab Pesan. Setelah setuju harga, pesanan muncul di sini. Ada error atau data tidak sinkron? Gunakan ikon admin atau menu Hubungi Admin.'
+      : 'Pre-agreement chats are under Messages. After you agree on price, the order appears here. Errors or mismatch? Use the admin icon or Contact admin.';
+
+  /// Driver — tab Pemesanan kosong (rute sudah aktif).
+  String get dataOrderDriverPemesananEmptySupportFootnote => locale == AppLocale.id
+      ? 'Penumpang masih bisa bernegosiasi di Chat sampai ada kesepakatan. Jika seharusnya sudah ada pesanan, ketuk Muat ulang atau pastikan Siap Kerja aktif; setelah ganti project Firebase, buka Beranda > Siap Kerja lalu kembali ke sini.'
+      : 'Passengers may still negotiate in Chat until there is an agreement. If you expect orders, tap Reload or ensure Ready to work is on; after a Firebase project change, open Home > Ready to work then return here.';
+
+  /// Driver — belum ada rute (semua tab Data Order yang bergantung pada rute).
+  String get dataOrderDriverNoActiveRouteTitle =>
+      locale == AppLocale.id ? 'Belum ada rute aktif' : 'No active route yet';
+  String get dataOrderDriverNoActiveRouteHint => locale == AppLocale.id
+      ? 'Aktifkan rute dari Beranda (Siap Kerja) agar pesanan penumpang muncul di sini. Setelah ganti project Firebase, buka Beranda > Siap Kerja lalu kembali ke sini.'
+      : 'Turn on a route from Home (Ready to work) so passenger orders appear here. After changing the Firebase project, open Home > Ready to work, then return here.';
+
   String get reportPriceMismatch => locale == AppLocale.id ? 'Laporkan harga tidak sesuai' : 'Report price mismatch';
   String get agreedPrice => locale == AppLocale.id ? 'Harga kesepakatan' : 'Agreed price';
   String get activeTravelOrderTitle =>
@@ -387,10 +425,24 @@ class AppLocalizations {
       ? 'Buka Pesanan'
       : 'Open orders';
 
-  /// Tab Pesan → jadwal driver: travel dari jadwal dinonaktifkan jika sudah ada travel agreed (kirim barang tetap boleh).
+  /// Tab Pesan → jadwal: travel aktif memblokir **semua** pemesanan baru dari jadwal.
   String get scheduleTravelBlockedWhileTravelAgreed => locale == AppLocale.id
-      ? 'Anda punya pesanan travel dengan kesepakatan harga. Pesan travel dari jadwal tidak tersedia. Kirim barang (terjadwal) tetap boleh.'
-      : 'You have a travel order with an agreed price. Scheduled travel booking is unavailable. Scheduled send-goods is still allowed.';
+      ? 'Anda punya pesanan travel dengan kesepakatan harga. Selesaikan atau batalkan dulu — tidak bisa memesan dari jadwal (travel atau kirim barang).'
+      : 'You have an active travel booking. Finish or cancel it first — you can’t book from this schedule (travel or send goods).';
+
+  String get passengerTravelBlockedWhileKirimBarangActive => locale == AppLocale.id
+      ? 'Selesaikan pengiriman barang yang sedang berlangsung dulu sebelum memesan travel.'
+      : 'Complete your ongoing delivery before booking a passenger trip.';
+
+  String get passengerKirimBarangBlockedWhileTravelActive => locale == AppLocale.id
+      ? 'Selesaikan perjalanan travel yang sedang berlangsung dulu sebelum mengirim barang baru.'
+      : 'Finish your active travel trip before sending a new parcel.';
+
+  /// Jadwal: kirim barang aktif — opsi travel dinonaktifkan.
+  String get passengerScheduleTravelBlockedWhileKirimBarangActive =>
+      locale == AppLocale.id
+          ? 'Anda punya pengiriman barang yang belum selesai. Pesan travel dari jadwal tidak tersedia; kirim barang (terjadwal) tetap boleh.'
+          : 'You have an ongoing delivery. Scheduled travel isn’t available; scheduled send-goods still is.';
 
   /// Penumpang: sesi tampilan driver di peta berakhir otomatis (belum ada kesepakatan harga travel).
   String get passengerDriverSearchSessionExpiredBody => locale == AppLocale.id
@@ -399,8 +451,8 @@ class AppLocalizations {
 
   /// List Pesan: travel pending dengan driver lain saat sudah ada kesepakatan dengan driver lain.
   String get chatTravelLockedOtherDriver => locale == AppLocale.id
-      ? 'Ada pesanan travel dengan kesepakatan harga. Chat travel dengan driver lain tidak bisa dihapus dari sini. Kirim barang tidak dibatasi. Selesaikan atau batalkan di tab Pesanan.'
-      : 'You have a travel order with an agreed price. You can’t delete other drivers’ travel chats here. Send-goods chats are not affected. Finish or cancel in Orders.';
+      ? 'Ada pesanan travel dengan kesepakatan harga. Chat travel dengan driver lain tidak bisa dihapus dari sini. Pesanan baru (travel/kirim barang) diblokir sampai travel selesai. Selesaikan atau batalkan di tab Pesanan.'
+      : 'You have an active travel booking. You can’t remove other drivers’ travel chats here. New orders are blocked until travel finishes. Finish or cancel in Orders.';
   String get reject => locale == AppLocale.id ? 'Tolak' : 'Reject';
   String get agree => locale == AppLocale.id ? 'Setuju' : 'Agree';
   String get sos => 'SOS';
@@ -622,6 +674,19 @@ class AppLocalizations {
   String get driverStopShortcutDropoffEmptyFlow => locale == AppLocale.id
       ? 'Belum ada pengantaran. Alur: tunggu pemesan setuju → jemput → setelah itu Anda bisa navigasi ke titik pengantaran.'
       : 'No drop-offs yet. Flow: wait for agreement → pick up → then navigate to drop-off.';
+  /// Banner jarak dekat ke titik jemput (bisa diabaikan driver).
+  String get driverPickupNearbyBannerTitle => locale == AppLocale.id
+      ? 'Penumpang sudah dekat'
+      : 'Passenger is nearby';
+  String driverPickupNearbyBannerBody(int meters) => locale == AppLocale.id
+      ? 'Sekitar $meters m ke titik jemput. Arahkan navigasi penjemputan?'
+      : 'About $meters m to pickup. Start pickup navigation?';
+  String get driverPickupNearbyBannerNavigate => locale == AppLocale.id
+      ? 'Arahkan'
+      : 'Navigate';
+  String get driverPickupNearbyBannerDismiss => locale == AppLocale.id
+      ? 'Abaikan'
+      : 'Dismiss';
 
   /// Gate buka rute dari jadwal: tanggal scheduleId ≠ hari ini WIB.
   String get driverJadwalRouteWrongDateWib => locale == AppLocale.id
@@ -632,6 +697,11 @@ class AppLocalizations {
   String get driverScheduleNetworkSerializeHint => locale == AppLocale.id
       ? 'Jika jaringan lambat: tunggu penyimpanan selesai (garis di atas) sebelum menambah atau mengubah jadwal lagi.'
       : 'On a slow network: wait until the save finishes (line at top) before adding or editing another schedule.';
+
+  /// Layar Jadwal: satu acuan nasional WIB untuk batas tanggal (selaras server).
+  String get driverScheduleWibCalendarNotice => locale == AppLocale.id
+      ? 'Batas tanggal dan jendela 7 hari mengikuti WIB (GMT+7). Jam berangkat mengikuti jam ponsel Anda. WITA/WIT memakai aturan tanggal yang sama agar pesanan selaras.'
+      : 'Date limits and the 7-day window follow WIB (GMT+7). Departure times follow your phone clock. WITA/WIT use the same date rules so bookings stay consistent.';
 
   String get showBarcodeToSecondDriver => locale == AppLocale.id
       ? 'Tunjukkan barcode ke driver kedua'
@@ -818,6 +888,20 @@ class AppLocalizations {
           '4. Ensure Traka notifications are enabled\n\n'
           'For Xiaomi/Oppo/Vivo: Battery → Traka → Allow in background / Unrestricted';
   String get panduanNotifikasiBukaPengaturan => locale == AppLocale.id ? 'Buka Pengaturan Aplikasi' : 'Open App Settings';
+
+  /// Saran sekali setelah driver mulai bekerja (GPS / latar belakang).
+  String get driverStartWorkBatteryTitle =>
+      locale == AppLocale.id ? 'Agar GPS navigasi lancar' : 'For smoother GPS navigation';
+  String get driverStartWorkBatteryBody => locale == AppLocale.id
+      ? 'Untuk performa lokasi terbaik saat bekerja, disarankan mematikan penghemat baterai atau batasi aplikasi latar untuk Traka (banyak HP memperlambat GPS).\n\n'
+          'Di pengaturan aplikasi Traka, pilih baterai / latar belakang: Tanpa batasan atau Tidak dioptimalkan.'
+      : 'For the best location performance while working, turn off battery saver or background restrictions for Traka (many phones throttle GPS).\n\n'
+          'In Traka app settings, set battery / background to Unrestricted or not optimized.';
+  String get driverStartWorkBatteryOk =>
+      locale == AppLocale.id ? 'Mengerti' : 'Got it';
+  String get driverStartWorkBatteryOpenSettings =>
+      locale == AppLocale.id ? 'Buka pengaturan' : 'Open settings';
+
   String get panduanPelanggaranTitle => locale == AppLocale.id ? 'Pelanggaran' : 'Violations';
   String get panduanPelanggaranContent => locale == AppLocale.id
       ? 'Apabila tidak melakukan scan barcode saat penjemputan atau sampai tujuan, '
@@ -906,6 +990,10 @@ class AppLocalizations {
   String get passengerRouteMatchExplanationShort => locale == AppLocale.id
       ? 'Memeriksa beberapa jalur alternatif; tujuan boleh sampai ~25 km dari garis jalan utama.'
       : 'We check multiple route alternatives; destination may be up to ~25 km from the main road line.';
+  /// Form tujuan: sarankan ketuk daftar agar titik geocode tepat.
+  String get passengerDestinationPickFromListHint => locale == AppLocale.id
+      ? 'Ketuk salah satu lokasi di daftar bawah agar titik jemput/tujuan lebih tepat; Anda tetap bisa lanjut Cari tanpa memilih.'
+      : 'Tap a suggestion below for a more accurate pickup/destination; you can still search without choosing one.';
   /// Kalimat kedua snackbar saat pencarian rute kosong (bukan bug data).
   String get noRouteMatchSnackHintLine => locale == AppLocale.id
       ? 'Tujuan sudah memakai koridor lebih lebar (~25 km). Driver lain mungkin masih aktif dalam radius 40 km — coba Driver sekitar.'
@@ -932,6 +1020,10 @@ class AppLocalizations {
   String get cariTravelGeocodeDestFailed => locale == AppLocale.id
       ? 'Alamat tujuan tidak dikenali. Periksa ejaan atau pilih dari saran.'
       : 'Could not find destination address. Check spelling or pick a suggestion.';
+  /// Beranda penumpang: buka layar peta + daftar driver (Cari Travel).
+  String get passengerOpenCariTravelMap => locale == AppLocale.id
+      ? 'Cari Travel (peta)'
+      : 'Find travel (map)';
   String get driverNearby => locale == AppLocale.id ? 'Driver sekitar' : 'Nearby drivers';
   String get driverNearbyRadius => locale == AppLocale.id ? 'Dalam 40 km' : 'Within 40 km';
   /// Subjudul tombol Driver sekitar — [km] dari lokasi penumpang (bisa 40–85 tergantung travel jauh).

@@ -37,6 +37,7 @@ import 'providers/app_config_provider.dart';
 import 'services/voice_call_incoming_service.dart';
 import 'services/auth_redirect_state.dart';
 import 'services/lite_mode_service.dart';
+import 'services/navigation_settings_service.dart';
 import 'services/connectivity_service.dart';
 import 'widgets/offline_banner.dart';
 import 'services/biometric_lock_service.dart';
@@ -85,6 +86,7 @@ void main() async {
   await LocaleService.init();
   // Harus sebelum Firestore.settings — cacheSize mengikuti deteksi RAM / preferensi lite.
   await LiteModeService.init();
+  await NavigationSettingsService.init();
 
   // Firestore cache: 100 MB standar, 50 MB saat mode lite (HP RAM < 3 GB)
   final firestore = FirebaseFirestore.instance;
