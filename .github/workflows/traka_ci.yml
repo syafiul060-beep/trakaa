@@ -86,11 +86,28 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          python3 -c "import json; json.load(open('android/app/google-services.json'))" \
+            || { echo "::error::google-services.json bukan JSON valid (periksa secret, jangan potong awal/akhir)."; exit 1; }
+      # Runner GitHub ~7GB RAM; gradle.properties repo pakai -Xmx2048m untuk laptop — sering OOM di CI.
+      - name: Gradle heap untuk CI
+        run: |
+          sed -i.bak 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4096m -Xms512m -XX:MaxMetaspaceSize=512m -XX:ReservedCodeCacheSize=128m -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8/' android/gradle.properties
       - name: flutter build apk --debug (hybrid + CREATE_ORDER_VIA_API)
         env:
           MAPS_API_KEY: ci_placeholder_maps_key
         run: |
+          set -uo pipefail
+          LOG=build_apk_ci.log
+          set +e
           flutter build apk --debug \
             --dart-define=TRAKA_API_BASE_URL=https://trakaa-production.up.railway.app \
             --dart-define=TRAKA_USE_HYBRID=true \
-            --dart-define=TRAKA_CREATE_ORDER_VIA_API=true
+            --dart-define=TRAKA_CREATE_ORDER_VIA_API=true \
+            2>&1 | tee "$LOG"
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" -ne 0 ]; then
+            echo "::error::flutter build apk gagal (exit $code). 120 baris terakhir:"
+            tail -n 120 "$LOG" || true
+            exit "$code"
+          fi
