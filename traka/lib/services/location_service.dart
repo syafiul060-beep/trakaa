@@ -276,7 +276,6 @@ class LocationService {
             distanceFilter: 0,
             timeLimit: Duration(seconds: timeLimit),
           ),
-          forceAndroidLocationManager: false,
         );
       }
 
@@ -286,7 +285,6 @@ class LocationService {
           distanceFilter: 0,
           timeLimit: Duration(seconds: timeLimit),
         ),
-        forceAndroidLocationManager: false,
       );
     } catch (e, st) {
       logError('LocationService.getCurrentPosition', e, st);

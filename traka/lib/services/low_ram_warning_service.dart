@@ -85,8 +85,8 @@ class LowRamWarningService {
 
   static Future<void> _showDialog(BuildContext context, int ramMb) async {
     final ramGb = ramMb >= 1024
-        ? '${(ramMb / 1024).toStringAsFixed(1)}'
-        : '${(ramMb / 1024).toStringAsFixed(2)}';
+        ? (ramMb / 1024).toStringAsFixed(1)
+        : (ramMb / 1024).toStringAsFixed(2);
 
     await showDialog<void>(
       context: context,

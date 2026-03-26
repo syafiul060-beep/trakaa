@@ -53,11 +53,11 @@ List<String> _preprocessOcrVariantsInIsolate(List<Object> args) {
       }
     }
 
-    final save = (img.Image im, String suffix) {
+    String save(img.Image im, String suffix) {
       final outPath = '$tempDirPath/ocr_${suffix}_${DateTime.now().millisecondsSinceEpoch}.jpg';
       File(outPath).writeAsBytesSync(img.encodeJpg(im, quality: lowRam ? 85 : 90));
       return outPath;
-    };
+    }
 
     // HP RAM rendah: 1 varian saja. Standar: 4 varian untuk KTP/SIM buram.
     final results = <String>[save(img.Image.from(decoded), 'orig')];
@@ -169,7 +169,7 @@ class OcrPreprocessService {
     if (lowRam != null) {
       useLowRam = lowRam;
     } else {
-      if (_cachedRamMb == null) _cachedRamMb = await LowRamWarningService.getDeviceRamMb();
+      _cachedRamMb ??= await LowRamWarningService.getDeviceRamMb();
       useLowRam = (_cachedRamMb ?? 9999) < 4096;
     }
     return compute(
