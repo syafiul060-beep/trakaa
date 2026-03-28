@@ -82,7 +82,14 @@ router.post('/location', verifyToken, driverLocationLimit, async (req, res) => {
     if (!redis) return res.status(503).json({ error: 'Redis not available' });
 
     const uid = req.uid;
-    const { latitude, longitude, status, city, maxPassengers, routeOriginLat, routeOriginLng, routeDestLat, routeDestLng, routeOriginText, routeDestText, routeJourneyNumber, routeStartedAt, estimatedDurationSeconds, currentPassengerCount, routeFromJadwal, routeSelectedIndex, scheduleId } = req.body;
+    const {
+      latitude, longitude, status, city, maxPassengers,
+      routeOriginLat, routeOriginLng, routeDestLat, routeDestLng,
+      routeOriginText, routeDestText, routeJourneyNumber, routeStartedAt,
+      estimatedDurationSeconds, currentPassengerCount, routeFromJadwal,
+      routeSelectedIndex, scheduleId,
+      activeNavigatingToPickupOrderId,
+    } = req.body;
 
     if (latitude == null || longitude == null) {
       return res.status(400).json({ error: 'latitude and longitude required' });
@@ -104,6 +111,10 @@ router.post('/location', verifyToken, driverLocationLimit, async (req, res) => {
     }
 
     const citySlug = (city && String(city).trim()) || 'default';
+    const activeNavTrimmed =
+      activeNavigatingToPickupOrderId != null && activeNavigatingToPickupOrderId !== '' ?
+        String(activeNavigatingToPickupOrderId).trim() :
+        '';
     const data = {
       uid,
       city: citySlug,
@@ -125,6 +136,7 @@ router.post('/location', verifyToken, driverLocationLimit, async (req, res) => {
       ...(routeFromJadwal != null && { routeFromJadwal }),
       ...(routeSelectedIndex != null && { routeSelectedIndex }),
       ...(scheduleId != null && { scheduleId }),
+      ...(activeNavTrimmed !== '' && { activeNavigatingToPickupOrderId: activeNavTrimmed }),
     };
 
     const key = KEY_PREFIX + uid;
