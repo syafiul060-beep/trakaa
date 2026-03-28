@@ -5,6 +5,7 @@
 builder = "NIXPACKS"
 
 [deploy]
-startCommand = "npm start"
+# Langsung `node` — hindari CLI npm saat start (noise: npm warn config production).
+startCommand = "node src/index.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 60

@@ -3,10 +3,11 @@
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm ci"]
+# Ganti flag legacy `--production` / `config production` (npm 9+).
+cmds = ["npm ci --omit=dev"]
 
 [phases.build]
 cmds = []
 
 [start]
-cmd = "npm start"
+cmd = "node src/index.js"
