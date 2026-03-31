@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart' as ph;
 
 import '../utils/app_logger.dart';
 import 'exemption_service.dart';
@@ -81,9 +83,100 @@ class PositionWithMockCheckResult {
   bool get isFakeGpsDetected => errorCode == kErrorCodeFakeGps;
 }
 
+/// Konteks teks saat meminta izin lokasi selalu / latar belakang.
+enum LiveLocationBackgroundPromptKind {
+  /// Penumpang/pengirim/penerima berbagi posisi ke driver.
+  passengerLiveShare,
+
+  /// Driver navigasi aktif (FGS + akurasi di belakang layar).
+  driverNavigation,
+}
+
 /// Service untuk izin lokasi, ambil koordinat, dan reverse geocoding.
 /// Digunakan saat pendaftaran driver untuk validasi lokasi di Indonesia.
 class LocationService {
+  static LiveLocationBackgroundPromptKind? _lastBackgroundPromptKind;
+  static DateTime? _lastBackgroundPromptShownAt;
+  static const Duration _backgroundPromptMinInterval = Duration(seconds: 45);
+
+  static final Set<Object> _passengerShareClients = {};
+  static StreamSubscription<Position>? _passengerShareGeolocatorSub;
+  static final StreamController<Position> _passengerShareController =
+      StreamController<Position>.broadcast();
+
+  /// Satu stream lokasi + satu foreground service Android untuk semua client
+  /// (penumpang live ke Firestore, chat, dll.). Panggil [releasePassengerSharePositionStream]
+  /// saat tidak perlu lagi.
+  static Stream<Position> acquirePassengerSharePositionStream(Object clientToken) {
+    _passengerShareClients.add(clientToken);
+    _passengerShareGeolocatorSub ??= _passengerShareRawStream().listen(
+      (p) {
+        if (!_passengerShareController.isClosed) {
+          _passengerShareController.add(p);
+        }
+      },
+      onError: (Object e, StackTrace st) {
+        logError('LocationService.acquirePassengerSharePositionStream', e, st);
+      },
+    );
+    return _passengerShareController.stream;
+  }
+
+  static void releasePassengerSharePositionStream(Object clientToken) {
+    _passengerShareClients.remove(clientToken);
+    if (_passengerShareClients.isEmpty) {
+      _passengerShareGeolocatorSub?.cancel();
+      _passengerShareGeolocatorSub = null;
+    }
+  }
+
+  /// Lokasi untuk berbagi ke driver (bukan navigasi turn-by-turn): interval sedang + FGS di Android.
+  static Stream<Position> _passengerShareRawStream() {
+    if (kIsWeb) {
+      return Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 15,
+        ),
+      );
+    }
+    if (Platform.isAndroid) {
+      return Geolocator.getPositionStream(
+        locationSettings: AndroidSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 10,
+          intervalDuration: const Duration(seconds: 5),
+          foregroundNotificationConfig: const ForegroundNotificationConfig(
+            notificationTitle: 'Traka — berbagi lokasi',
+            notificationText:
+                'Lokasi dikirim ke driver selama perjalanan. Ketuk untuk membuka app.',
+            notificationChannelName: 'Berbagi lokasi',
+            notificationIcon: AndroidResource(
+              name: 'ic_notification',
+              defType: 'drawable',
+            ),
+            setOngoing: true,
+          ),
+        ),
+      );
+    }
+    if (Platform.isIOS) {
+      return Geolocator.getPositionStream(
+        locationSettings: AppleSettings(
+          accuracy: LocationAccuracy.high,
+          activityType: ActivityType.otherNavigation,
+          distanceFilter: 15,
+        ),
+      );
+    }
+    return Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 15,
+      ),
+    );
+  }
+
   /// Minta izin lokasi dan buka pengaturan jika ditolak permanent.
   /// Mengembalikan true jika izin diberikan, false jika user tolak atau service GPS mati.
   /// Loop terus sampai user kasih izin atau keluar dari halaman.
@@ -233,6 +326,106 @@ class LocationService {
     }
     return permission == LocationPermission.whileInUse ||
         permission == LocationPermission.always;
+  }
+
+  /// Lokasi "selalu" / izin background (Android) untuk berbagi live & navigasi saat app tidak di depan.
+  static Future<bool> hasLiveShareBackgroundLocation() async {
+    if (kIsWeb) return true;
+    final g = await Geolocator.checkPermission();
+    if (g == LocationPermission.always) return true;
+    if (Platform.isAndroid) {
+      final s = await ph.Permission.locationAlways.status;
+      return s.isGranted;
+    }
+    return false;
+  }
+
+  /// Dialog alasan + permintaan izin lokasi selalu (iOS & background Android).
+  /// Hanya jalan jika izin saat ini setara "saat dipakai"; tidak menggantikan [requestPermission].
+  static Future<void> promptBackgroundLocationForLiveTrackingIfNeeded(
+    BuildContext context, {
+    required LiveLocationBackgroundPromptKind kind,
+  }) async {
+    if (kIsWeb || !context.mounted) return;
+    if (await hasLiveShareBackgroundLocation()) return;
+
+    final g = await Geolocator.checkPermission();
+    if (g != LocationPermission.whileInUse &&
+        g != LocationPermission.always) {
+      return;
+    }
+    if (!context.mounted) return;
+
+    final now = DateTime.now();
+    if (_lastBackgroundPromptKind == kind &&
+        _lastBackgroundPromptShownAt != null &&
+        now.difference(_lastBackgroundPromptShownAt!) <
+            _backgroundPromptMinInterval) {
+      return;
+    }
+
+    final message = switch (kind) {
+      LiveLocationBackgroundPromptKind.passengerLiveShare =>
+        'Agar driver tetap melihat posisi Anda saat aplikasi di belakang layar, '
+            'layar terkunci, atau sementara tidak dibuka, aktifkan izin lokasi '
+            'Selalu (Allow all the time).\n\n'
+            'Di Android akan muncul notifikasi kecil berbagi lokasi selama pembaruan lokasi berjalan.',
+      LiveLocationBackgroundPromptKind.driverNavigation =>
+        'Agar navigasi dan posisi Anda tetap akurat saat aplikasi di belakang layar '
+            'atau layar terkunci, aktifkan izin lokasi Selalu (Allow all the time).\n\n'
+            'Di Android notifikasi navigasi aktif menandakan layanan lokasi sedang berjalan.',
+    };
+
+    if (!context.mounted) return;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Izinkan lokasi di latar belakang'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Nanti'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Lanjut'),
+          ),
+        ],
+      ),
+    );
+    _lastBackgroundPromptKind = kind;
+    _lastBackgroundPromptShownAt = DateTime.now();
+
+    if (go != true || !context.mounted) return;
+
+    final r = await ph.Permission.locationAlways.request();
+    if (!context.mounted) return;
+    if (r.isGranted) return;
+
+    final open = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ubah di pengaturan'),
+        content: Text(
+          Platform.isAndroid
+              ? 'Buka Pengaturan aplikasi Traka, pilih Lokasi, lalu '
+                    'Izinkan sepanjang waktu (Allow all the time).'
+              : 'Buka Pengaturan, pilih Traka → Lokasi → Selalu.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Tutup'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Pengaturan'),
+          ),
+        ],
+      ),
+    );
+    if (open == true) await ph.openAppSettings();
   }
 
   /// Ambil posisi dari cache (lastKnown) jika ada – cepat untuk tampil dulu di map.

@@ -11,6 +11,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../app_navigator.dart';
 import '../firebase_options.dart';
 import '../utils/app_logger.dart';
+import 'driver_driving_ux_service.dart';
 import 'notification_navigation_service.dart';
 import 'route_notification_service.dart';
 
@@ -63,6 +64,19 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       );
       return;
     }
+    if (dataStr['type'] == 'admin_support') {
+      final title = message.notification?.title ??
+          dataStr['title'] ??
+          'Pesan dari Admin Traka';
+      final body = message.notification?.body ??
+          dataStr['body'] ??
+          'Ada pesan baru dari admin.';
+      await RouteNotificationService.showAdminSupportNotification(
+        title: title,
+        body: body,
+      );
+      return;
+    }
     // Jika pesan punya notification payload, sistem Android menampilkan otomatis.
     if (message.notification != null) return;
     final data = message.data;
@@ -86,7 +100,9 @@ Future<void> _showBackgroundNotification(String title, String body) async {
   const channelName = 'Chat';
   final plugin = FlutterLocalNotificationsPlugin();
   const android = AndroidInitializationSettings(_notificationIcon);
-  await plugin.initialize(const InitializationSettings(android: android));
+  await plugin.initialize(
+    settings: const InitializationSettings(android: android),
+  );
   await plugin
       .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>()
@@ -101,10 +117,10 @@ Future<void> _showBackgroundNotification(String title, String body) async {
         ),
       );
   await plugin.show(
-    2001,
-    title,
-    body,
-    const NotificationDetails(
+    id: 2001,
+    title: title,
+    body: body,
+    notificationDetails: const NotificationDetails(
       android: AndroidNotificationDetails(
         channelId,
         channelName,
@@ -183,7 +199,7 @@ class FcmService {
     const android = AndroidInitializationSettings(_notificationIcon);
     const settings = InitializationSettings(android: android);
     await _localNotifications.initialize(
-      settings,
+      settings: settings,
       onDidReceiveNotificationResponse: (res) {
         final payload = NotificationNavigationService.parsePayload(res.payload);
         if (payload != null) _handleNotificationData(payload);
@@ -226,7 +242,9 @@ class FcmService {
     final body = data['body'] ?? data['message'] ?? 'Pesan baru';
     final plugin = FlutterLocalNotificationsPlugin();
     const android = AndroidInitializationSettings(_notificationIcon);
-    await plugin.initialize(const InitializationSettings(android: android));
+    await plugin.initialize(
+      settings: const InitializationSettings(android: android),
+    );
     await plugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
@@ -243,10 +261,10 @@ class FcmService {
     final payloadStr = jsonEncode(data);
     final nid = _notificationIdForChatOrder(data['orderId'] ?? '');
     await plugin.show(
-      nid,
-      title,
-      body,
-      NotificationDetails(
+      id: nid,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           _channelId,
           'Chat',
@@ -274,7 +292,9 @@ class FcmService {
         '${data['callerName'] ?? 'Pemanggil'} memanggil Anda. Buka aplikasi untuk menerima.';
     final plugin = FlutterLocalNotificationsPlugin();
     const android = AndroidInitializationSettings(_notificationIcon);
-    await plugin.initialize(const InitializationSettings(android: android));
+    await plugin.initialize(
+      settings: const InitializationSettings(android: android),
+    );
     await plugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
@@ -293,10 +313,10 @@ class FcmService {
     final nid = _voiceNotificationIdBase +
         (orderId.isEmpty ? 0 : orderId.hashCode.abs() % 900000);
     await plugin.show(
-      nid,
-      title,
-      body,
-      NotificationDetails(
+      id: nid,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           _voiceChannelId,
           'Panggilan suara',
@@ -328,22 +348,23 @@ class FcmService {
     final body = dataStr['body'] ?? dataStr['message'] ?? 'Pesan baru';
     final payloadStr = jsonEncode(dataStr);
     final nid = _notificationIdForChatOrder(dataStr['orderId'] ?? '');
+    final quiet = DriverDrivingUxService.foregroundChatOrderShouldBeQuiet;
     await _localNotifications.show(
-      nid,
-      title,
-      body,
-      NotificationDetails(
+      id: nid,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           _channelId,
           'Chat',
           channelDescription: 'Notifikasi chat dari penumpang',
-          importance: Importance.max,
-          priority: Priority.max,
+          importance: quiet ? Importance.low : Importance.max,
+          priority: quiet ? Priority.low : Priority.max,
           visibility: NotificationVisibility.public,
           category: AndroidNotificationCategory.message,
           icon: _notificationIcon,
-          enableVibration: true,
-          playSound: true,
+          enableVibration: !quiet,
+          playSound: !quiet,
         ),
       ),
       payload: payloadStr,
@@ -365,10 +386,10 @@ class FcmService {
     final nid = _voiceNotificationIdBase +
         (orderId.isEmpty ? 0 : orderId.hashCode.abs() % 900000);
     await _localNotifications.show(
-      nid,
-      title,
-      body,
-      NotificationDetails(
+      id: nid,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           _voiceChannelId,
           'Panggilan suara',
@@ -411,6 +432,22 @@ class FcmService {
             'Buka Profil untuk melengkapi data.';
         unawaited(
           RouteNotificationService.showAdminVerificationNotification(
+            title: title,
+            body: body,
+          ),
+        );
+        return;
+      }
+      if (dataStr['type'] == 'admin_support') {
+        final notification = message.notification;
+        final title = notification?.title ??
+            dataStr['title'] ??
+            'Pesan dari Admin Traka';
+        final body = notification?.body ??
+            dataStr['body'] ??
+            'Ada pesan baru dari admin.';
+        unawaited(
+          RouteNotificationService.showAdminSupportNotification(
             title: title,
             body: body,
           ),
@@ -464,10 +501,10 @@ class FcmService {
           : null;
       final nid = notificationId ?? _chatNotificationId;
       await _localNotifications.show(
-        nid,
-        title,
-        body,
-        details,
+        id: nid,
+        title: title,
+        body: body,
+        notificationDetails: details,
         payload: payloadStr,
       );
     } catch (e) {

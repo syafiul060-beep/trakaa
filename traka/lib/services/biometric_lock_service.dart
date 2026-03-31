@@ -146,10 +146,8 @@ class BiometricLockService {
     try {
       final success = await _auth.authenticate(
         localizedReason: reason,
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          useErrorDialogs: true,
-        ),
+        persistAcrossBackgrounding: true,
+        sensitiveTransaction: true,
       );
       if (success) {
         _isLocked = false;

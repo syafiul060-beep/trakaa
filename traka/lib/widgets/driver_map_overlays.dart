@@ -340,8 +340,10 @@ class DriverWorkToggleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Tap selalu aktif: saat rute sudah dipilih, parent memanggil _onStartButtonTap (sama seperti "Mulai Rute ini").
+    // Selaras jarak vertikal dengan [TurnByTurnBanner] (_workPillTopInset).
+    final topInset = MediaQuery.paddingOf(context).top + 4;
     return Positioned(
-      top: 56,
+      top: topInset,
       left: 16,
       child: Tooltip(
         message: isDriverWorking && hasActiveOrder

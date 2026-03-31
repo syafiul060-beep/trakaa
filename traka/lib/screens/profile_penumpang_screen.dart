@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -45,6 +46,7 @@ import '../widgets/shimmer_loading.dart';
 import '../widgets/theme_toggle_widget.dart';
 import '../widgets/biometric_login_credential_tile.dart';
 import '../widgets/biometric_toggle_widget.dart';
+import '../widgets/lacak_tracking_info_sheet.dart';
 import '../services/driver_status_service.dart';
 import '../services/passenger_proximity_notification_service.dart';
 import '../services/receiver_proximity_notification_service.dart';
@@ -1177,6 +1179,20 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
         title: const ProfileAppBarTitle(),
         actions: [
           Semantics(
+            label: TrakaL10n.of(context).mapToolsLacakHelpTitle,
+            button: true,
+            child: IconButton(
+              icon: const Icon(Icons.info_outline),
+              tooltip: TrakaL10n.of(context).mapToolsLacakHelpTitle,
+              onPressed: () => unawaited(
+                showLacakTrackingInfoSheet(
+                  context,
+                  audience: LacakTrackingAudience.profilePenumpang,
+                ),
+              ),
+            ),
+          ),
+          Semantics(
             label: TrakaL10n.of(context).logout,
             button: true,
             child: IconButton(icon: const Icon(Icons.logout), onPressed: _onLogout),
@@ -1204,7 +1220,9 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                     left: context.responsive.spacing(AppTheme.spacingLg),
                     right: context.responsive.spacing(AppTheme.spacingLg),
                     top: context.responsive.spacing(AppTheme.spacingLg),
-                    bottom: context.responsive.spacing(AppTheme.spacingLg) + 80,
+                    bottom: context.responsive.spacing(AppTheme.spacingLg) +
+                        MediaQuery.paddingOf(context).bottom +
+                        96,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1433,7 +1451,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                         crossAxisCount: 2,
                         mainAxisSpacing: context.responsive.spacing(12),
                         crossAxisSpacing: context.responsive.spacing(12),
-                        childAspectRatio: 0.95,
+                        childAspectRatio:
+                            _profileGridAspectRatio(context, 0.92),
                         children: [
                           _buildMenuCard(
                             title: TrakaL10n.of(context).verifyFacePhoto,
@@ -1467,7 +1486,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                         crossAxisCount: 2,
                         mainAxisSpacing: context.responsive.spacing(12),
                         crossAxisSpacing: context.responsive.spacing(12),
-                        childAspectRatio: 0.95,
+                        childAspectRatio:
+                            _profileGridAspectRatio(context, 0.92),
                         children: [
                           _buildMenuCard(
                             title: TrakaL10n.of(context).changePassword,
@@ -1501,7 +1521,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                         crossAxisCount: 3,
                         mainAxisSpacing: context.responsive.spacing(12),
                         crossAxisSpacing: context.responsive.spacing(12),
-                        childAspectRatio: 0.95,
+                        childAspectRatio:
+                            _profileGridAspectRatio(context, 0.92),
                         children: [
                           _buildMenuCard(
                             title: TrakaL10n.of(context).infoAndPromo,
@@ -1585,20 +1606,23 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                 ),
             ),
           ),
-          // Toggle tema (kiri) + Gambar admin (kanan): fixed di bawah viewport
-          if (!_loading)
-            Positioned(
-              bottom: 16,
-              left: 16,
-              right: 16,
+          // Toggle tema (kiri) + kontak admin (kanan): di atas inset sistem & nav bar.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              top: false,
+              minimum: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const ThemeToggleWidget(),
-                  const AdminContactWidget(),
+                children: const [
+                  ThemeToggleWidget(),
+                  AdminContactWidget(),
                 ],
               ),
             ),
+          ),
           // Overlay loading OCR (tanpa Navigator.pop — hindari _dependents.isEmpty)
           if (_isOcrLoading)
             Positioned.fill(
@@ -1648,13 +1672,21 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
     );
   }
 
+  /// Grid profil: proporsional saat aksesibilitas memperbesar teks (Flutter M3).
+  double _profileGridAspectRatio(BuildContext context, double base) {
+    final t = MediaQuery.textScalerOf(context);
+    final ratio = t.scale(14) / 14;
+    if (ratio <= 1.01) return base;
+    return (base / ratio).clamp(0.68, base);
+  }
+
   Widget _buildSectionHeader(String label) {
     return Align(
       alignment: Alignment.centerLeft,
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 14,
+          fontSize: context.responsive.fontSize(14),
           fontWeight: FontWeight.w600,
           color: Theme.of(context).colorScheme.primary,
         ),
@@ -1669,7 +1701,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
@@ -1727,7 +1759,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
@@ -1752,8 +1784,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
           builder: (context, constraints) {
             final w = constraints.maxWidth;
             final isCompact = w < 130;
-            final iconSize = isCompact ? 36.0 : 44.0;
-            final fontSize = isCompact ? 13.0 : 14.0;
+            final iconSize = context.responsive.iconSize(isCompact ? 36 : 44);
+            final fontSize = context.responsive.fontSize(isCompact ? 13 : 14);
             return Column(
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,

@@ -45,6 +45,10 @@
 		<true/>
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>location</string>
+		</array>
 		<!-- Izin lokasi selalu -->
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 		<string>Traka membutuhkan akses lokasi selalu untuk layanan perjalanan dan rekomendasi destinasi di Kalimantan.</string>

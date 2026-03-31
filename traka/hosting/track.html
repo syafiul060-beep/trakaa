@@ -52,6 +52,9 @@
       <p id="status-pill" class="status-pill status-pill--wait" role="status"></p>
       <p id="route-line" class="route-line"></p>
       <p id="privacy-note" class="privacy-note"></p>
+      <p id="map-hint" class="track-map-hint">
+        Tampilan ringkas untuk keluarga: posisi di peta, bukan navigasi turn-by-turn seperti di aplikasi Traka.
+      </p>
       <p id="last-updated" class="last-updated" aria-live="polite"></p>
     </header>
     <div id="map-legend" class="track-legend" style="display:none;" aria-label="Keterangan titik di peta">
@@ -92,6 +95,29 @@
           html: '<div class="leaflet-letter-pin" style="background:' + bg + '">' + letter + '</div>',
           iconSize: [28, 28],
           iconAnchor: [14, 14]
+        });
+      }
+
+      var MOVING_THRESHOLD_SEC = 8;
+      function isDriverMovingFromFirestoreTs(ts) {
+        if (!ts || ts.seconds == null) return false;
+        var nowSec = Math.floor(Date.now() / 1000);
+        return (nowSec - ts.seconds) <= MOVING_THRESHOLD_SEC;
+      }
+      function pinAwalIcon() {
+        return L.icon({
+          iconUrl: 'assets/pin/pin%20awal.png',
+          iconSize: [40, 48],
+          iconAnchor: [20, 48],
+          popupAnchor: [0, -40],
+        });
+      }
+      function pinAhirIcon() {
+        return L.icon({
+          iconUrl: 'assets/pin/pin%20ahir.png',
+          iconSize: [40, 48],
+          iconAnchor: [20, 48],
+          popupAnchor: [0, -40],
         });
       }
 
@@ -185,6 +211,7 @@
       var driverMarker = null;
       var passengerMarker = null;
       var receiverMarker = null;
+      var destMarkerTravel = null;
       var unsubDriver = null;
       var unsubToken = null;
 
@@ -201,7 +228,7 @@
           map.remove();
           map = null;
         }
-        driverMarker = passengerMarker = receiverMarker = null;
+        driverMarker = passengerMarker = receiverMarker = destMarkerTravel = null;
       }
 
       function fitTrackBounds() {
@@ -209,6 +236,7 @@
         var pts = [];
         if (passengerMarker) pts.push(passengerMarker.getLatLng());
         if (receiverMarker) pts.push(receiverMarker.getLatLng());
+        if (destMarkerTravel) pts.push(destMarkerTravel.getLatLng());
         if (driverMarker) pts.push(driverMarker.getLatLng());
         if (pts.length === 0) return;
         if (pts.length === 1) {
@@ -277,9 +305,6 @@
           }).addTo(map);
         }
 
-        var ShipperIcon = makeLetterPin('P', '#2563eb');
-        var ReceiverIcon = makeLetterPin('R', '#16a34a');
-
         if (isKirimBarang) {
           var pLat = data.passengerLat;
           var pLng = data.passengerLng;
@@ -287,7 +312,7 @@
           var rLng = data.receiverLng;
           if (pLat != null && pLng != null) {
             if (!passengerMarker) {
-              passengerMarker = L.marker([pLat, pLng], { icon: ShipperIcon }).addTo(map);
+              passengerMarker = L.marker([pLat, pLng], { icon: pinAwalIcon() }).addTo(map);
               passengerMarker.bindPopup(
                 '<strong>Pengirim</strong><br>' +
                 (data.passengerName || 'Pengirim') + '<br>' + (data.originText || '')
@@ -298,7 +323,7 @@
           }
           if (rLat != null && rLng != null) {
             if (!receiverMarker) {
-              receiverMarker = L.marker([rLat, rLng], { icon: ReceiverIcon }).addTo(map);
+              receiverMarker = L.marker([rLat, rLng], { icon: pinAhirIcon() }).addTo(map);
               receiverMarker.bindPopup(
                 '<strong>Penerima</strong><br>' +
                 (data.receiverName || 'Penerima') + '<br>' + (data.destText || '')
@@ -308,18 +333,35 @@
             }
           }
           fitTrackBounds();
+        } else {
+          var tdlat = data.destLat;
+          var tdlng = data.destLng;
+          if (tdlat != null && tdlng != null && (tdlat !== 0 || tdlng !== 0)) {
+            if (!destMarkerTravel) {
+              destMarkerTravel = L.marker([tdlat, tdlng], { icon: pinAhirIcon() }).addTo(map);
+              destMarkerTravel.bindPopup(
+                '<strong>Tujuan akhir</strong><br>' + (data.destText || '')
+              );
+            } else {
+              destMarkerTravel.setLatLng([tdlat, tdlng]);
+            }
+            fitTrackBounds();
+          }
         }
 
-        function driverPinHtml() {
-          return '<div class="leaflet-driver-pin" aria-hidden="true"></div>';
+        function driverPinHtml(isMoving) {
+          var cls = isMoving ? 'leaflet-driver-pin leaflet-driver-pin--moving' : 'leaflet-driver-pin leaflet-driver-pin--idle';
+          return '<div class="' + cls + '" aria-hidden="true"></div>';
         }
 
-        var DriverIcon = L.divIcon({
-          className: 'leaflet-driver-icon-wrap',
-          html: driverPinHtml(),
-          iconSize: [28, 28],
-          iconAnchor: [14, 14]
-        });
+        function makeDriverDivIcon(isMoving) {
+          return L.divIcon({
+            className: 'leaflet-driver-icon-wrap',
+            html: driverPinHtml(isMoving),
+            iconSize: [30, 30],
+            iconAnchor: [15, 15],
+          });
+        }
 
         function bindDriverSnapshot() {
           if (unsubDriver) unsubDriver();
@@ -334,13 +376,14 @@
               var lat = d.latitude;
               var lng = d.longitude;
               var updatedStr = formatFirestoreTime(d.lastUpdated);
+              var moving = isDriverMovingFromFirestoreTs(d.lastUpdated);
               if (lat == null || lng == null) {
                 if (luEl) luEl.textContent = updatedStr ? 'Koordinat belum ada · pembaruan ' + updatedStr : 'Menunggu posisi…';
                 return;
               }
               var pos = [lat, lng];
               if (!driverMarker) {
-                driverMarker = L.marker(pos, { icon: DriverIcon }).addTo(map);
+                driverMarker = L.marker(pos, { icon: makeDriverDivIcon(moving) }).addTo(map);
                 driverMarker.bindPopup(
                   isKirimBarang
                     ? '<strong>Driver</strong><br>Mengantar kiriman'
@@ -349,11 +392,19 @@
                 fitTrackBounds();
               } else {
                 driverMarker.setLatLng(pos);
+                var el = driverMarker.getElement();
+                if (el) {
+                  var pin = el.querySelector('.leaflet-driver-pin');
+                  if (pin) {
+                    pin.className = moving
+                      ? 'leaflet-driver-pin leaflet-driver-pin--moving'
+                      : 'leaflet-driver-pin leaflet-driver-pin--idle';
+                  }
+                }
               }
               if (luEl) {
-                luEl.textContent = updatedStr
-                  ? 'Posisi diperbarui: ' + updatedStr
-                  : 'Posisi driver ditampilkan di peta.';
+                luEl.textContent = (updatedStr ? 'Posisi diperbarui: ' + updatedStr : 'Posisi driver ditampilkan di peta.') +
+                  (moving ? ' · bergerak' : ' · berhenti');
               }
             },
             function (err) {

@@ -120,7 +120,7 @@ firebase deploy --only firestore:indexes
 # Rules + indexes sekaligus
 firebase deploy --only firestore
 
-# Cloud Functions (folder: functions, runtime: nodejs20)
+# Cloud Functions (folder: functions, runtime: nodejs22)
 firebase deploy --only functions
 ```
 

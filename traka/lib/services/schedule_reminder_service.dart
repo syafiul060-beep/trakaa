@@ -87,11 +87,9 @@ class ScheduleReminderService {
         final id = _reminderNotificationIdBase + i;
 
         await _plugin.zonedSchedule(
-          id,
-          'Pengingat Jadwal',
-          '${dep.hour.toString().padLeft(2, '0')}:${dep.minute.toString().padLeft(2, '0')} — $routeText',
-          tzReminder,
-          NotificationDetails(
+          id: id,
+          scheduledDate: tzReminder,
+          notificationDetails: NotificationDetails(
             android: AndroidNotificationDetails(
               'traka_schedule_reminder',
               'Pengingat Jadwal',
@@ -102,8 +100,9 @@ class ScheduleReminderService {
             ),
           ),
           androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-          uiLocalNotificationDateInterpretation:
-              UILocalNotificationDateInterpretation.absoluteTime,
+          title: 'Pengingat Jadwal',
+          body:
+              '${dep.hour.toString().padLeft(2, '0')}:${dep.minute.toString().padLeft(2, '0')} — $routeText',
         );
       }
     } catch (_) {}
@@ -112,7 +111,7 @@ class ScheduleReminderService {
   /// Batalkan semua pengingat jadwal driver.
   static Future<void> cancelAllReminders() async {
     for (var i = 0; i < 50; i++) {
-      await _plugin.cancel(_reminderNotificationIdBase + i);
+      await _plugin.cancel(id: _reminderNotificationIdBase + i);
     }
   }
 }

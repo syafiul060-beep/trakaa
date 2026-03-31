@@ -193,6 +193,14 @@ class AppAnalyticsService {
     _analytics.logEvent(name: 'notification_settings_open');
   }
 
+  /// Tap saluran di dialog kontak admin (email, whatsapp, instagram, live_chat).
+  static void logAdminContactChannelTap({required String channel}) {
+    _analytics.logEvent(
+      name: 'admin_contact_channel_tap',
+      parameters: {'channel': channel},
+    );
+  }
+
   /// Pengguna mengetuk buka pengaturan notifikasi sistem.
   static void logNotificationSettingsSystemTap() {
     _analytics.logEvent(name: 'notification_settings_system_tap');
@@ -437,6 +445,14 @@ class AppAnalyticsService {
     _analytics.logEvent(
       name: 'order_chat_delete_blocked',
       parameters: {'bucket': b},
+    );
+  }
+
+  /// User membuka bantuan Lacak dari sheet info.
+  static void logLacakHelpOpen({String? audience}) {
+    _analytics.logEvent(
+      name: 'lacak_help_open',
+      parameters: {if (audience != null) 'audience': audience},
     );
   }
 }

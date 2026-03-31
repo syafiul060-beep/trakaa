@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../screens/admin_chat_screen.dart';
 import '../services/admin_contact_config_service.dart';
+import '../services/app_analytics_service.dart';
 import '../widgets/traka_l10n_scope.dart';
 
 /// Widget kontak admin: hanya gambar admin di pojok kanan bawah.
@@ -25,7 +26,7 @@ class _AdminContactWidgetState extends State<AdminContactWidget> {
   @override
   void initState() {
     super.initState();
-    AdminContactConfigService.load();
+    AdminContactConfigService.load(force: true);
     _streamSub = AdminContactConfigService.stream().listen((_) {
       if (mounted) setState(() {});
     });
@@ -38,6 +39,7 @@ class _AdminContactWidgetState extends State<AdminContactWidget> {
   }
 
   Future<void> _launchEmail() async {
+    AppAnalyticsService.logAdminContactChannelTap(channel: 'email');
     final email = AdminContactConfigService.adminEmail;
     if (email.isEmpty) {
       _showError('Email admin belum dikonfigurasi');
@@ -74,6 +76,7 @@ class _AdminContactWidgetState extends State<AdminContactWidget> {
   }
 
   Future<void> _launchInstagram() async {
+    AppAnalyticsService.logAdminContactChannelTap(channel: 'instagram');
     final ig = AdminContactConfigService.adminInstagram;
     if (ig == null || ig.isEmpty) {
       _showError('Instagram belum dikonfigurasi');
@@ -101,6 +104,7 @@ class _AdminContactWidgetState extends State<AdminContactWidget> {
   }
 
   void _openLiveChat() {
+    AppAnalyticsService.logAdminContactChannelTap(channel: 'live_chat');
     Navigator.push(
       context,
       MaterialPageRoute<void>(
@@ -165,11 +169,11 @@ class _AdminContactWidgetState extends State<AdminContactWidget> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(
-                Icons.chat_bubble_outline,
+                Icons.support_agent_rounded,
                 color: Theme.of(ctx).colorScheme.primary,
               ),
               title: const Text('Live Chat'),
-              subtitle: const Text('Chat langsung dengan admin'),
+              subtitle: const Text('Chat langsung dengan admin (dalam aplikasi)'),
               onTap: () {
                 Navigator.pop(ctx);
                 _openLiveChat();

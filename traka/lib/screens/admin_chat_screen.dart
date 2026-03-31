@@ -20,6 +20,8 @@ class AdminChatScreen extends StatefulWidget {
 class _AdminChatScreenState extends State<AdminChatScreen> {
   late final TextEditingController _textController;
   final ScrollController _scrollController = ScrollController();
+  /// Naikkan untuk memaksa ulang langganan stream setelah error jaringan.
+  int _streamRetryGen = 0;
 
   @override
   void initState() {
@@ -247,8 +249,30 @@ class _AdminChatScreenState extends State<AdminChatScreen> {
       appBar: AppBar(
         elevation: 0,
         title: StreamBuilder<SupportTicketModel?>(
+          key: ValueKey('ticket_$_streamRetryGen'),
           stream: SupportChatService.streamTicket(user.uid),
           builder: (context, snap) {
+            if (snap.hasError) {
+              return Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Coba lagi',
+                    onPressed: () =>
+                        setState(() => _streamRetryGen++),
+                    icon: const Icon(Icons.refresh),
+                  ),
+                  Expanded(
+                    child: Text(
+                      'Gagal memuat status obrolan',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
             final ticket = snap.data;
             final isConnected = ticket?.isConnected ?? false;
             final adminName = ticket?.assignedAdminName;
@@ -306,8 +330,43 @@ class _AdminChatScreenState extends State<AdminChatScreen> {
           children: [
             Expanded(
               child: StreamBuilder<List<SupportMessageModel>>(
+                key: ValueKey('messages_$_streamRetryGen'),
                 stream: SupportChatService.streamMessages(user.uid),
                 builder: (context, snap) {
+                  if (snap.hasError) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.cloud_off_outlined,
+                              size: 48,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Tidak dapat memuat pesan. Periksa koneksi lalu coba lagi.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            FilledButton.icon(
+                              onPressed: () =>
+                                  setState(() => _streamRetryGen++),
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Coba lagi'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
                   if (snap.connectionState == ConnectionState.waiting &&
                       !snap.hasData) {
                     return const Center(child: CircularProgressIndicator());

@@ -9,6 +9,9 @@ const {
   shouldKeepSlot,
   fetchActiveScheduleIdsForDriver,
 } = require("./lib/driverScheduleValidation.js");
+const { restoreIfScheduleHasActiveOrders } = require("./lib/scheduleItemDeleteGuard.js");
+const navPickupGuard = require("./lib/navigationPickupGuard.js");
+const { computeNavPremiumRupiah } = require("./lib/driverNavPremiumPricing.js");
 
 // Load .env untuk development lokal (emulator). Production pakai env var dari Cloud Console.
 try {
@@ -2129,6 +2132,92 @@ async function notifyPassengersNewScheduleSlots(driverId, newSchedules) {
   }
 }
 
+// --- Pulihkan slot jadwal jika dihapus saat masih ada order aktif (jaring pengguna curang / race) ---
+exports.onDriverScheduleItemDeleted = functions.firestore
+    .document("driver_schedules/{driverId}/schedule_items/{itemId}")
+    .onDelete(async (snap, context) => {
+      const driverId = context.params.driverId;
+      try {
+        await restoreIfScheduleHasActiveOrders(snap, driverId);
+      } catch (e) {
+        console.error("onDriverScheduleItemDeleted:", driverId, e);
+      }
+    });
+
+// --- FCM: admin membalas live chat (admin_chats) ---
+exports.onAdminSupportMessageCreated = functions.firestore
+    .document("admin_chats/{userId}/messages/{messageId}")
+    .onCreate(async (snap, context) => {
+      const userId = context.params.userId;
+      const d = snap.data();
+      if (!d) return;
+      if (d.senderType !== "admin") return;
+      const text = String(d.text || "").trim().slice(0, 180);
+      try {
+        const userSnap = await admin.firestore().collection("users").doc(userId).get();
+        if (!userSnap.exists) return;
+        const fcmToken = userSnap.data()?.fcmToken;
+        if (!fcmToken) return;
+        const title = "Pesan dari Admin Traka";
+        const body = text || "Ada pesan baru dari admin.";
+        const dataPayload = {
+          type: "admin_support",
+          title,
+          body,
+          click_action: "FLUTTER_NOTIFICATION_CLICK",
+        };
+        await sendFcmWithCollapse({
+          notification: { title, body },
+          data: dataPayload,
+          token: fcmToken,
+          android: {
+            priority: "high",
+            notification: {
+              channelId: "traka_admin_support_channel",
+              priority: "high",
+            },
+          },
+          apns: {
+            headers: { "apns-priority": "10" },
+            payload: {
+              aps: {
+                alert: { title, body },
+                sound: "default",
+              },
+            },
+          },
+        }, {
+          collapseKey: `admin_support_${userId}`,
+          tag: `admin_support_${userId}`,
+        });
+      } catch (e) {
+        console.error("onAdminSupportMessageCreated:", userId, e);
+      }
+    });
+
+// --- SOS: log frekuensi tinggi (monitoring / alert log-based di Cloud Logging) ---
+exports.onSosEventCreated = functions.firestore
+    .document("sos_events/{eventId}")
+    .onCreate(async (snap, context) => {
+      const d = snap.data();
+      const uid = d?.uid;
+      if (!uid || typeof uid !== "string") return;
+      const oneHourAgo = admin.firestore.Timestamp.fromMillis(Date.now() - 60 * 60 * 1000);
+      try {
+        const recent = await admin.firestore().collection("sos_events")
+            .where("uid", "==", uid)
+            .where("triggeredAt", ">", oneHourAgo)
+            .limit(25)
+            .get();
+        if (recent.size >= 10) {
+          console.warn("onSosEventCreated: high_frequency_sos uid=" + uid +
+              " events_last_hour=" + recent.size + " eventId=" + context.params.eventId);
+        }
+      } catch (e) {
+        console.error("onSosEventCreated rate check:", uid, e);
+      }
+    });
+
 // --- Subkoleksi schedule_items: sanitasi per dokumen + notifikasi create ---
 exports.onDriverScheduleItemWritten = functions.firestore
     .document("driver_schedules/{driverId}/schedule_items/{itemId}")
@@ -2448,6 +2537,285 @@ exports.verifyViolationPayment = callable.onCall(async (data, context) => {
     deductedAmount: deductAmount,
     remainingOutstanding: Math.max(0, outstandingFee - deductAmount),
   };
+});
+
+async function assertCallerIsAdmin(uid) {
+  const snap = await admin.firestore().collection("users").doc(uid).get();
+  if (!snap.exists || snap.data()?.role !== "admin") {
+    throw new functions.https.HttpsError("permission-denied", "Hanya admin.");
+  }
+}
+
+function normalizePhoneDigitsForNavPremiumExempt(s) {
+  if (!s || typeof s !== "string") return "";
+  let d = s.replace(/\D/g, "");
+  if (d.startsWith("0")) d = "62" + d.substring(1);
+  if (!d.startsWith("62") && d.length >= 9) d = "62" + d;
+  return d;
+}
+
+// --- Navigasi premium driver: cek nomor HP di daftar pembebasan (app_config/settings.driverNavPremiumExemptPhones) ---
+exports.checkDriverNavPremiumPhoneExempt = callable.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Harus login.");
+  }
+  const uid = context.auth.uid;
+  const userSnap = await admin.firestore().collection("users").doc(uid).get();
+  if (!userSnap.exists) {
+    return { exempt: false };
+  }
+  const phone = String(userSnap.data()?.phoneNumber || "").trim();
+  const userNorm = normalizePhoneDigitsForNavPremiumExempt(phone);
+  if (!userNorm) {
+    return { exempt: false };
+  }
+  const settings = await billingValidation.getSettingsData(admin.firestore());
+  const exemptList = settings?.driverNavPremiumExemptPhones;
+  if (!Array.isArray(exemptList)) {
+    return { exempt: false };
+  }
+  for (const entry of exemptList) {
+    if (normalizePhoneDigitsForNavPremiumExempt(String(entry)) === userNorm) {
+      return { exempt: true };
+    }
+  }
+  return { exempt: false };
+});
+
+// --- Navigasi premium: verifikasi IAP + selaraskan tarif server dengan settings ---
+exports.verifyDriverNavPremiumPayment = callable.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Harus login.");
+  }
+  const driverUid = context.auth.uid;
+  const purchaseToken = data?.purchaseToken;
+  const packageName = (data?.packageName || "id.traka.app").toString();
+  let productId = (data?.productId || "").toString().trim();
+  const routeJourneyIn = (data?.routeJourneyNumber || "").toString().trim();
+  const navScopeIn = (data?.navPremiumScope || "").toString().trim();
+  const routeDistIn = data?.routeDistanceMeters;
+
+  if (!purchaseToken) {
+    throw new functions.https.HttpsError("invalid-argument", "purchaseToken wajib.");
+  }
+
+  const userRef = admin.firestore().collection("users").doc(driverUid);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    throw new functions.https.HttpsError("not-found", "User tidak ditemukan.");
+  }
+  const udata = userSnap.data() || {};
+
+  const owedJourney = (udata.driverNavPremiumOwedJourney || "").toString().trim();
+  const journey = routeJourneyIn || owedJourney;
+  if (owedJourney && routeJourneyIn && owedJourney !== routeJourneyIn) {
+    throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Nomor rute tidak cocok dengan hutang navigasi premium.",
+    );
+  }
+
+  let scope = navScopeIn ||
+      (udata.driverNavPremiumOwedScope || "").toString().trim() ||
+      "dalamNegara";
+  let distanceMeters = null;
+  if (routeDistIn != null && routeDistIn !== "") {
+    const dm = typeof routeDistIn === "number" ? routeDistIn : parseInt(String(routeDistIn), 10);
+    if (!isNaN(dm) && dm > 0) distanceMeters = dm;
+  }
+  if (distanceMeters == null && udata.driverNavPremiumOwedDistanceM != null) {
+    const od = udata.driverNavPremiumOwedDistanceM;
+    const n = typeof od === "number" ? od : parseInt(String(od), 10);
+    if (!isNaN(n) && n > 0) distanceMeters = n;
+  }
+
+  if (journey) {
+    const q = await admin.firestore().collection("orders")
+        .where("routeJourneyNumber", "==", journey)
+        .where("driverUid", "==", driverUid)
+        .limit(5)
+        .get();
+    if (q.empty) {
+      throw new functions.https.HttpsError("not-found", "Pesanan untuk rute ini tidak ditemukan.");
+    }
+  }
+
+  const settings = await billingValidation.getSettingsData(admin.firestore());
+  const expected = computeNavPremiumRupiah({
+    scope,
+    distanceMeters,
+    settings,
+  });
+
+  if (!productId) {
+    productId = `traka_driver_nav_premium_${expected}`;
+  }
+
+  const verifyResult = await verifyProductPurchase(packageName, productId, purchaseToken);
+  if (!verifyResult.verified) {
+    throw new functions.https.HttpsError("failed-precondition", "Pembayaran tidak valid.");
+  }
+
+  const paidAmount = billingValidation.parseDriverNavPremiumAmountRupiah(productId);
+  if (paidAmount == null || paidAmount <= 0) {
+    throw new functions.https.HttpsError(
+        "invalid-argument",
+        "ID produk navigasi premium tidak dikenal.",
+    );
+  }
+
+  if (paidAmount !== expected) {
+    throw new functions.https.HttpsError(
+        "failed-precondition",
+        `Nominal tidak sesuai tarif saat ini (harus Rp ${expected}).`,
+    );
+  }
+
+  await userRef.update({
+    driverNavPremiumOwedJourney: admin.firestore.FieldValue.delete(),
+    driverNavPremiumOwedScope: admin.firestore.FieldValue.delete(),
+    driverNavPremiumOwedDistanceM: admin.firestore.FieldValue.delete(),
+    driverNavPremiumOwedFeeRupiah: admin.firestore.FieldValue.delete(),
+  });
+
+  return { success: true, amountRupiah: paidAmount };
+});
+
+// --- Rekonsiliasi navigasi jemput (driver_status vs orders) ---
+exports.onOrderNavigationPickupReconcile = functions.firestore
+    .document("orders/{orderId}")
+    .onUpdate(async (change, context) => {
+      try {
+        const orderId = context.params.orderId;
+        const before = change.before.exists ? change.before.data() : null;
+        const after = change.after.exists ? change.after.data() : null;
+        if (!after) return null;
+        const orderRef = change.after.ref;
+        await navPickupGuard.reconcileDriverStatusWhenOrderClearsNav(before, after, orderId);
+        await navPickupGuard.reconcileOrderNavigatingToPickupIfStale(orderRef, after, orderId);
+      } catch (e) {
+        console.error("onOrderNavigationPickupReconcile:", e);
+      }
+      return null;
+    });
+
+exports.onDriverStatusNavigationPickupReconcile = functions.firestore
+    .document("driver_status/{driverId}")
+    .onUpdate(async (change, context) => {
+      try {
+        const driverId = context.params.driverId;
+        await navPickupGuard.reconcileDriverStatusActivePointerIfStale(driverId, change.after);
+        await navPickupGuard.reconcilePreviousOrderWhenDriverStatusPointerMoves(change, driverId);
+      } catch (e) {
+        console.error("onDriverStatusNavigationPickupReconcile:", e);
+      }
+      return null;
+    });
+
+// --- Penumpang: notifikasi saat driver setuju + harga disepakati driver ---
+exports.onDriverAgreedPriceNotify = functions.firestore
+    .document("orders/{orderId}")
+    .onUpdate(async (change, context) => {
+      try {
+        const before = change.before.data();
+        const after = change.after.data();
+        const beforeDriverAgreed = before.driverAgreed || false;
+        const afterDriverAgreed = after.driverAgreed || false;
+        const ap = after.agreedPrice;
+        const hasPrice = ap != null && ap !== "" && (typeof ap !== "number" || !isNaN(ap));
+        if (beforeDriverAgreed || !afterDriverAgreed || !hasPrice) return null;
+        const passengerUid = after.passengerUid || "";
+        const orderId = context.params.orderId;
+        if (!passengerUid) return null;
+        const pSnap = await admin.firestore().collection("users").doc(passengerUid).get();
+        if (!pSnap.exists) return null;
+        const fcmToken = pSnap.data()?.fcmToken;
+        if (!fcmToken) return null;
+        const driverName = (after.driverName || "Driver").trim();
+        const priceStr = String(ap);
+        const payload = {
+          notification: {
+            title: "Driver menyepakati harga",
+            body: `${driverName} mengajukan harga Rp ${priceStr}. Buka chat untuk menanggapi.`,
+          },
+          data: {
+            type: "order",
+            orderId,
+            driverUid: after.driverUid || "",
+            driverName,
+          },
+          token: fcmToken,
+          android: {
+            priority: "high",
+            notification: {
+              channelId: "traka_chat",
+              priority: "high",
+            },
+          },
+        };
+        await sendFcmWithCollapse(payload, {
+          collapseKey: `order_${orderId}`,
+          tag: `order_${orderId}`,
+        });
+      } catch (e) {
+        console.error("onDriverAgreedPriceNotify:", e);
+      }
+      return null;
+    });
+
+// --- Admin: batalkan pesanan / paksa selesai (Admin SDK, bypass rules) ---
+exports.adminCancelOrder = callable.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Harus login.");
+  }
+  await assertCallerIsAdmin(context.auth.uid);
+  const orderId = (data?.orderId || "").toString().trim();
+  const reason = (data?.reason || "").toString().trim().slice(0, 500);
+  if (!orderId) {
+    throw new functions.https.HttpsError("invalid-argument", "orderId wajib.");
+  }
+  const orderRef = admin.firestore().collection("orders").doc(orderId);
+  const snap = await orderRef.get();
+  if (!snap.exists) {
+    throw new functions.https.HttpsError("not-found", "Pesanan tidak ditemukan.");
+  }
+  await orderRef.update({
+    status: "cancelled",
+    adminCancelled: true,
+    adminCancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+    adminCancelReason: reason || null,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { success: true };
+});
+
+exports.adminForceCompleteOrder = callable.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Harus login.");
+  }
+  await assertCallerIsAdmin(context.auth.uid);
+  const orderId = (data?.orderId || "").toString().trim();
+  if (!orderId) {
+    throw new functions.https.HttpsError("invalid-argument", "orderId wajib.");
+  }
+  const orderRef = admin.firestore().collection("orders").doc(orderId);
+  const snap = await orderRef.get();
+  if (!snap.exists) {
+    throw new functions.https.HttpsError("not-found", "Pesanan tidak ditemukan.");
+  }
+  const st = (snap.data()?.status || "").toString();
+  if (st === "completed") {
+    return { success: true, alreadyCompleted: true };
+  }
+  if (st === "cancelled") {
+    throw new functions.https.HttpsError("failed-precondition", "Pesanan sudah dibatalkan.");
+  }
+  await orderRef.update({
+    status: "completed",
+    completedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { success: true };
 });
 
 // --- Pembebasan kontribusi driver penguji: set contributionTravelPaidUpToRupiah = 999999999 untuk driver di daftar ---

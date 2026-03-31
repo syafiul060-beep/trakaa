@@ -103,7 +103,10 @@ class _PermissionRequiredScreenState extends State<PermissionRequiredScreen>
               Text(
                 'Aplikasi Traka memerlukan izin lokasi dan device ID untuk berfungsi.\n\n'
                 '• Lokasi: untuk peta dan menemukan driver\n'
-                '• Device ID: untuk keamanan akun',
+                '• Device ID: untuk keamanan akun\n\n'
+                'Berikan lokasi setidaknya saat aplikasi digunakan. '
+                'Untuk pembaruan lokasi saat app tidak di depan atau layar terkunci, Traka akan menawarkan izin Selalu '
+                'saat pesanan atau navigasi.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),

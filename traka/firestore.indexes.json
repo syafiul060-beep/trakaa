@@ -20,7 +20,8 @@
     {"collectionGroup":"admin_chats","queryScope":"COLLECTION","fields":[{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"queueJoinedAt","order":"ASCENDING"}]},
     {"collectionGroup":"promotions","queryScope":"COLLECTION","fields":[{"fieldPath":"priority","order":"DESCENDING"},{"fieldPath":"publishedAt","order":"DESCENDING"}]},
     {"collectionGroup":"app_feedback","queryScope":"COLLECTION","fields":[{"fieldPath":"userId","order":"ASCENDING"},{"fieldPath":"createdAt","order":"ASCENDING"}]},
-    {"collectionGroup":"orders","queryScope":"COLLECTION","fields":[{"fieldPath":"scheduledDate","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"}]}
+    {"collectionGroup":"orders","queryScope":"COLLECTION","fields":[{"fieldPath":"scheduledDate","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"}]},
+    {"collectionGroup":"sos_events","queryScope":"COLLECTION","fields":[{"fieldPath":"uid","order":"ASCENDING"},{"fieldPath":"triggeredAt","order":"ASCENDING"}]}
   ],
   "fieldOverrides": [
     {

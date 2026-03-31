@@ -24,6 +24,7 @@ import '../services/rating_service.dart';
 import '../services/violation_service.dart';
 import '../services/route_notification_service.dart';
 import '../services/sos_service.dart';
+import '../widgets/sos_emergency_confirm_dialog.dart';
 import '../services/track_share_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/responsive.dart';
@@ -150,6 +151,12 @@ class _DataOrderScreenState extends State<DataOrderScreen>
     super.dispose();
   }
 
+  /// Daftar di TabBarView: jarak bawah tambahan untuk inset sistem (gesture / home indicator).
+  EdgeInsets _listPaddingWithSafeBottom(BuildContext context) {
+    final s = context.responsive.spacing(16);
+    return EdgeInsets.fromLTRB(s, s, s, s + MediaQuery.paddingOf(context).bottom);
+  }
+
   /// Jika status picked_up dan jarak driver–penumpang > 500 m → selesai otomatis (tanpa tombol).
   Future<void> _checkAutoCompleteWhenFarApart() async {
     try {
@@ -232,9 +239,9 @@ class _DataOrderScreenState extends State<DataOrderScreen>
           controller: _tabController,
           isScrollable: true,
           labelPadding: const EdgeInsets.symmetric(horizontal: 16),
-          labelColor: Theme.of(context).primaryColor,
+          labelColor: Theme.of(context).colorScheme.primary,
           unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-          indicatorColor: Theme.of(context).primaryColor,
+          indicatorColor: Theme.of(context).colorScheme.primary,
           tabAlignment: TabAlignment.center,
           tabs: [
             Tab(text: TrakaL10n.of(context).tabOrders),
@@ -488,7 +495,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
             await Future.delayed(const Duration(milliseconds: 400));
           },
           child: ListView.builder(
-            padding: EdgeInsets.all(context.responsive.spacing(16)),
+            padding: _listPaddingWithSafeBottom(context),
             itemCount: agreedOrders.length,
             cacheExtent: 200,
             itemBuilder: (context, index) {
@@ -953,7 +960,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                 await Future.delayed(const Duration(milliseconds: 400));
               },
               child: ListView.builder(
-                padding: const EdgeInsets.all(16),
+                padding: _listPaddingWithSafeBottom(context),
                 itemCount: completedOrders.length,
                 cacheExtent: 200,
                 itemBuilder: (context, index) {
@@ -2089,32 +2096,13 @@ class _DataOrderScreenState extends State<DataOrderScreen>
 
   /// Tombol Chat: navigasi ke chat room dengan driver.
   Future<void> _onSOS(BuildContext context, OrderModel order) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('SOS Darurat'),
-        content: const Text(
-          'Kirim lokasi dan info pesanan ke admin via WhatsApp? Pastikan Anda dalam keadaan darurat.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Kirim SOS'),
-          ),
-        ],
-      ),
-    );
+    final confirmed = await showSosEmergencyConfirmDialog(context);
     if (confirmed != true || !context.mounted) return;
     await SosService.triggerSOSWithLocation(order: order, isDriver: false);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('SOS terkirim. WhatsApp akan terbuka ke admin.'),
+        SnackBar(
+          content: Text(TrakaL10n.of(context).sosSent),
           behavior: SnackBarBehavior.floating,
         ),
       );

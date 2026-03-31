@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/geocoding_service.dart';
 
 import '../theme/app_theme.dart';
@@ -36,6 +37,8 @@ import '../widgets/passenger_duplicate_pending_order_dialog.dart'
         passengerDuplicatePendingChoiceAnalyticsValue,
         showPassengerDuplicatePendingOrderDialog;
 import '../widgets/shimmer_loading.dart';
+import '../widgets/lollipop_pin_widgets.dart';
+import '../widgets/map_destination_picker_screen.dart';
 import 'chat_room_penumpang_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -1238,6 +1241,102 @@ class _FormCariTravelState extends State<_FormCariTravel> {
     if (mounted) setState(() => _loadingLocation = false);
   }
 
+  Future<void> _pickTujuanAwalOnMap() async {
+    final t = _originController.text.trim();
+    var initial = const LatLng(-6.2088, 106.8456);
+    if (t.length >= 3) {
+      try {
+        final locs = await GeocodingService.locationFromAddress(
+          '$t, Indonesia',
+          appendIndonesia: false,
+        );
+        if (locs.isNotEmpty) {
+          initial = LatLng(locs.first.latitude, locs.first.longitude);
+        }
+      } catch (_) {}
+    }
+    LatLng? device;
+    try {
+      final hasPermission = await LocationService.requestPermission();
+      if (hasPermission) {
+        final result = await LocationService.getCurrentPositionWithMockCheck();
+        if (!result.isFakeGpsDetected && result.position != null) {
+          device = LatLng(
+            result.position!.latitude,
+            result.position!.longitude,
+          );
+        }
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    final r = await Navigator.of(context).push<MapPickerResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => MapDestinationPickerScreen(
+          initialCameraTarget: initial,
+          deviceLocation: device,
+          title: TrakaL10n.of(context).pickOriginOnMapActionLabel,
+          pinVariant: LollipopPinVariant.origin,
+        ),
+      ),
+    );
+    if (r == null || !mounted) return;
+    setState(() {
+      _originController.text = r.label;
+      _originResults = [];
+      _showOrigin = false;
+    });
+    _schedulePrefetch();
+  }
+
+  Future<void> _pickTujuanAkhirOnMap() async {
+    final t = _destController.text.trim();
+    var initial = const LatLng(-6.2088, 106.8456);
+    if (t.length >= 3) {
+      try {
+        final locs = await GeocodingService.locationFromAddress(
+          '$t, Indonesia',
+          appendIndonesia: false,
+        );
+        if (locs.isNotEmpty) {
+          initial = LatLng(locs.first.latitude, locs.first.longitude);
+        }
+      } catch (_) {}
+    }
+    LatLng? device;
+    try {
+      final hasPermission = await LocationService.requestPermission();
+      if (hasPermission) {
+        final result = await LocationService.getCurrentPositionWithMockCheck();
+        if (!result.isFakeGpsDetected && result.position != null) {
+          device = LatLng(
+            result.position!.latitude,
+            result.position!.longitude,
+          );
+        }
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    final r = await Navigator.of(context).push<MapPickerResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => MapDestinationPickerScreen(
+          initialCameraTarget: initial,
+          deviceLocation: device,
+          title: TrakaL10n.of(context).pickOnMapActionLabel,
+          pinVariant: LollipopPinVariant.destination,
+        ),
+      ),
+    );
+    if (r == null || !mounted) return;
+    setState(() {
+      _destController.text = r.label;
+      _destResults = [];
+      _showDest = false;
+    });
+    _schedulePrefetch();
+  }
+
   void _submit() {
     final origin = _originController.text.trim();
     final dest = _destController.text.trim();
@@ -1402,6 +1501,16 @@ class _FormCariTravelState extends State<_FormCariTravel> {
                   labelText: 'Awal tujuan',
                   hintText: 'Stasiun, Mall, Bandara, Rumah Sakit, Perumahan, Terminal, Pelabuhan, Alun-alun',
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                  prefixIcon: const Padding(
+                    padding: EdgeInsets.only(left: 8, right: 4),
+                    child: LollipopPinFormIcon(
+                      variant: LollipopPinVariant.origin,
+                    ),
+                  ),
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 44,
+                    minHeight: 40,
+                  ),
                   suffixIcon: IconButton(
                     icon: _loadingLocation
                         ? const SizedBox(
@@ -1418,6 +1527,14 @@ class _FormCariTravelState extends State<_FormCariTravel> {
                   _searchOrigin(v);
                   _schedulePrefetch();
                 },
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _pickTujuanAwalOnMap,
+                  icon: const Icon(Icons.map_outlined, size: 20),
+                  label: Text(TrakaL10n.of(context).pickOriginOnMapActionLabel),
+                ),
               ),
               const SizedBox(height: 12),
               if (_showDest && _destResults.isNotEmpty)
@@ -1484,11 +1601,29 @@ class _FormCariTravelState extends State<_FormCariTravel> {
                   labelText: 'Tujuan travel',
                   hintText: 'Stasiun, Mall, Bandara, Rumah Sakit, Perumahan, Terminal, Pelabuhan, Alun-alun',
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                  prefixIcon: const Padding(
+                    padding: EdgeInsets.only(left: 8, right: 4),
+                    child: LollipopPinFormIcon(
+                      variant: LollipopPinVariant.destination,
+                    ),
+                  ),
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 44,
+                    minHeight: 40,
+                  ),
                 ),
                 onChanged: (v) {
                   _searchDest(v);
                   _schedulePrefetch();
                 },
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _pickTujuanAkhirOnMap,
+                  icon: const Icon(Icons.map_outlined, size: 20),
+                  label: Text(TrakaL10n.of(context).pickOnMapActionLabel),
+                ),
               ),
               const SizedBox(height: 24),
               SizedBox(
@@ -2655,9 +2790,11 @@ class _BuildJadwalListPage extends StatelessWidget {
     }
 
     return ListView.builder(
-      padding: EdgeInsets.symmetric(
-        horizontal: context.responsive.horizontalPadding,
-        vertical: context.responsive.spacing(8),
+      padding: EdgeInsets.fromLTRB(
+        context.responsive.horizontalPadding,
+        context.responsive.spacing(8),
+        context.responsive.horizontalPadding,
+        context.responsive.spacing(8) + MediaQuery.paddingOf(context).bottom,
       ),
       itemCount: list.length,
       itemBuilder: (context, i) {

@@ -99,6 +99,10 @@ class DriverStatusService {
     String? routeCategory,
     String? city,
     int? maxPassengers,
+    String? routeOriginKabKey,
+    String? routeDestKabKey,
+    String? routeOriginProvKey,
+    String? routeDestProvKey,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -144,6 +148,26 @@ class DriverStatusService {
       if (routeCategory != null && routeCategory.isNotEmpty) {
         data['routeCategory'] = routeCategory;
       }
+      if (routeOriginKabKey != null && routeOriginKabKey.isNotEmpty) {
+        data['routeOriginKabKey'] = routeOriginKabKey;
+      } else {
+        data['routeOriginKabKey'] = null;
+      }
+      if (routeDestKabKey != null && routeDestKabKey.isNotEmpty) {
+        data['routeDestKabKey'] = routeDestKabKey;
+      } else {
+        data['routeDestKabKey'] = null;
+      }
+      if (routeOriginProvKey != null && routeOriginProvKey.isNotEmpty) {
+        data['routeOriginProvKey'] = routeOriginProvKey;
+      } else {
+        data['routeOriginProvKey'] = null;
+      }
+      if (routeDestProvKey != null && routeDestProvKey.isNotEmpty) {
+        data['routeDestProvKey'] = routeDestProvKey;
+      } else {
+        data['routeDestProvKey'] = null;
+      }
     } else {
       // Jika tidak aktif, hapus info rute
       data['routeOriginLat'] = null;
@@ -160,6 +184,10 @@ class DriverStatusService {
       data['routeSelectedIndex'] = null;
       data['scheduleId'] = null;
       data['routeCategory'] = null;
+      data['routeOriginKabKey'] = null;
+      data['routeDestKabKey'] = null;
+      data['routeOriginProvKey'] = null;
+      data['routeDestProvKey'] = null;
     }
 
     if (TrakaApiConfig.isApiEnabled) {
@@ -187,6 +215,18 @@ class DriverStatusService {
         if (routeStartedAt != null) apiBody['routeStartedAt'] = routeStartedAt.toIso8601String();
         if (estimatedDurationSeconds != null) apiBody['estimatedDurationSeconds'] = estimatedDurationSeconds;
         if (routeCategory != null && routeCategory.isNotEmpty) apiBody['routeCategory'] = routeCategory;
+        if (routeOriginKabKey != null && routeOriginKabKey.isNotEmpty) {
+          apiBody['routeOriginKabKey'] = routeOriginKabKey;
+        }
+        if (routeDestKabKey != null && routeDestKabKey.isNotEmpty) {
+          apiBody['routeDestKabKey'] = routeDestKabKey;
+        }
+        if (routeOriginProvKey != null && routeOriginProvKey.isNotEmpty) {
+          apiBody['routeOriginProvKey'] = routeOriginProvKey;
+        }
+        if (routeDestProvKey != null && routeDestProvKey.isNotEmpty) {
+          apiBody['routeDestProvKey'] = routeDestProvKey;
+        }
       }
       await TrakaApiService.postDriverLocation(apiBody);
       // Firestore tetap memakai koordinat [position] di [data]. Redis (hybrid) di server

@@ -98,7 +98,8 @@ class _ReceiverContactPickerSheetState extends State<_ReceiverContactPickerSheet
 
       for (final c in contacts) {
         final phones = RegisteredContactsService.getPhonesFromContact(c);
-        final name = c.displayName.trim().isEmpty ? 'Tanpa nama' : c.displayName;
+        final dn = c.displayName ?? '';
+        final name = dn.trim().isEmpty ? 'Tanpa nama' : dn;
         for (final p in phones) {
           items.add(_ContactPhoneItem(
             contact: c,
@@ -325,7 +326,7 @@ class _ReceiverContactPickerSheetState extends State<_ReceiverContactPickerSheet
 
   Widget _buildAvatar(Contact c, Map<String, dynamic>? reg) {
     final photoUrl = reg?['photoUrl'] as String?;
-    final photoBytes = c.photo ?? c.thumbnail;
+    final photoBytes = c.photo?.thumbnail ?? c.photo?.fullSize;
 
     if (photoUrl != null && photoUrl.isNotEmpty) {
       return CircleAvatar(
@@ -345,7 +346,10 @@ class _ReceiverContactPickerSheetState extends State<_ReceiverContactPickerSheet
       radius: 24,
       backgroundColor: AppTheme.primary.withValues(alpha: 0.2),
       child: Text(
-        (c.displayName.isNotEmpty ? c.displayName[0] : '?').toUpperCase(),
+        ((c.displayName ?? '').trim().isNotEmpty
+                ? (c.displayName ?? '').trim()[0]
+                : '?')
+            .toUpperCase(),
         style: TextStyle(
           color: AppTheme.primary,
           fontWeight: FontWeight.w600,

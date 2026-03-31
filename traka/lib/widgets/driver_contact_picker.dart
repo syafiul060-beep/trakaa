@@ -75,9 +75,10 @@ class _DriverContactPickerSheetState extends State<_DriverContactPickerSheet> {
       _error = null;
     });
     try {
-      // Minta izin dulu agar tidak crash saat akses kontak
-      final granted = await FlutterContacts.requestPermission(readonly: true);
-      if (!granted) {
+      final status =
+          await FlutterContacts.permissions.request(PermissionType.read);
+      if (status != PermissionStatus.granted &&
+          status != PermissionStatus.limited) {
         if (mounted) {
           setState(() {
             _loading = false;
@@ -86,10 +87,8 @@ class _DriverContactPickerSheetState extends State<_DriverContactPickerSheet> {
         }
         return;
       }
-      // withPhoto: false untuk hindari OOM pada HP dengan banyak kontak
-      final contacts = await FlutterContacts.getContacts(
-        withProperties: true,
-        withPhoto: false,
+      final contacts = await FlutterContacts.getAll(
+        properties: {ContactProperty.phone, ContactProperty.photoThumbnail},
       );
       if (!mounted) return;
 
@@ -102,7 +101,8 @@ class _DriverContactPickerSheetState extends State<_DriverContactPickerSheet> {
             .where((n) => n.trim().isNotEmpty)
             .toList();
         if (phones.isEmpty) continue;
-        final name = (c.displayName).trim().isEmpty ? 'Tanpa nama' : c.displayName;
+        final dn = c.displayName ?? '';
+        final name = dn.trim().isEmpty ? 'Tanpa nama' : dn;
         for (final p in phones) {
           items.add(_ContactPhoneItem(contact: c, phone: p, displayName: name));
           allPhones.add(p);
@@ -261,7 +261,7 @@ class _DriverContactPickerSheetState extends State<_DriverContactPickerSheet> {
 
   Widget _buildAvatar(Contact c, Map<String, dynamic>? reg) {
     final photoUrl = reg?['photoUrl'] as String?;
-    final photoBytes = c.photo ?? c.thumbnail;
+    final photoBytes = c.photo?.thumbnail ?? c.photo?.fullSize;
 
     if (photoUrl != null && photoUrl.isNotEmpty) {
       try {
@@ -289,7 +289,10 @@ class _DriverContactPickerSheetState extends State<_DriverContactPickerSheet> {
       radius: 24,
       backgroundColor: AppTheme.primary.withValues(alpha: 0.2),
       child: Text(
-        (c.displayName.isNotEmpty ? c.displayName[0] : '?').toUpperCase(),
+        ((c.displayName ?? '').trim().isNotEmpty
+                ? (c.displayName ?? '').trim()[0]
+                : '?')
+            .toUpperCase(),
         style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600, fontSize: 18),
       ),
     );

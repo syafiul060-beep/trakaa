@@ -54,30 +54,48 @@ class TurnByTurnBanner extends StatelessWidget {
         ? steps[currentStepIndex + 1]
         : null;
     final mq = MediaQuery.of(context);
-    final colorScheme = Theme.of(context).colorScheme;
     final rem = remainingMetersToManeuver;
     final useLiveRemaining = rem != null && rem > 2;
     /// Banner: jarak live + aksi (Maps); suara tetap pakai [InstructionFormatter.formatStep] / proximity.
     final primaryCue = InstructionFormatter.formatStep(current);
     final maneuverOnly = InstructionFormatter.maneuverPhraseOnly(current);
 
-    // Di bawah pill Siap/Selesai kerja; [right] membebaskan kolom tema/satellite/zoom (MapTypeZoomControls).
+    // Di bawah pill Siap/Selesai kerja — offset selaras dengan [DriverWorkToggleButton].
     final safeTop = mq.padding.top;
-    const double topBelowWorkPill = 62;
+    const double workPillTopInset = 4;
+    const double workPillBlockHeight = 56;
+    const double gapBelowWorkPill = 12;
+    final double topBelowWorkPill =
+        workPillTopInset + workPillBlockHeight + gapBelowWorkPill;
     const double rightReserveForMapControls = 88;
+    const double bannerFillAlpha = 0.74;
+    final Color cueColor = Colors.white;
+    final Color cueMuted = Colors.white.withValues(alpha: 0.88);
     return Positioned(
       top: safeTop + topBelowWorkPill,
       left: 10,
       right: rightReserveForMapControls,
       child: Material(
-        elevation: 10,
+        elevation: 0,
+        color: Colors.transparent,
+        shadowColor: Colors.transparent,
         borderRadius: BorderRadius.circular(12),
-        color: colorScheme.surface,
-        shadowColor: Colors.black.withValues(alpha: 0.35),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: accentColor.withValues(alpha: bannerFillAlpha),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
             if (rerouteStatusText != null && rerouteStatusText!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -135,12 +153,12 @@ class TurnByTurnBanner extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: accentColor.withValues(alpha: 0.12),
+                      color: Colors.white.withValues(alpha: 0.22),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
                       InstructionFormatter.getIconForStep(current),
-                      color: accentColor,
+                      color: cueColor,
                       size: 28,
                     ),
                   ),
@@ -161,7 +179,7 @@ class TurnByTurnBanner extends StatelessWidget {
                               fontWeight: FontWeight.w700,
                               height: 1.05,
                               letterSpacing: -0.5,
-                              color: colorScheme.onSurface,
+                              color: cueColor,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -171,7 +189,7 @@ class TurnByTurnBanner extends StatelessWidget {
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                               height: 1.25,
-                              color: colorScheme.onSurface,
+                              color: cueColor,
                             ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -183,7 +201,7 @@ class TurnByTurnBanner extends StatelessWidget {
                               fontSize: 17,
                               fontWeight: FontWeight.w600,
                               height: 1.25,
-                              color: colorScheme.onSurface,
+                              color: cueColor,
                             ),
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
@@ -194,7 +212,7 @@ class TurnByTurnBanner extends StatelessWidget {
                             'Tiba ~${etaArrival!.hour.toString().padLeft(2, '0')}:${etaArrival!.minute.toString().padLeft(2, '0')}',
                             style: TextStyle(
                               fontSize: 12,
-                              color: colorScheme.onSurfaceVariant,
+                              color: cueMuted,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -211,8 +229,8 @@ class TurnByTurnBanner extends StatelessWidget {
                             : Icons.volume_up_rounded,
                         size: 22,
                         color: voiceMuted
-                            ? colorScheme.onSurfaceVariant
-                            : accentColor,
+                            ? Colors.white.withValues(alpha: 0.55)
+                            : cueColor,
                       ),
                       tooltip: voiceMuted
                           ? 'Nyalakan suara arahan'
@@ -304,8 +322,7 @@ class TurnByTurnBanner extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest
-                        .withValues(alpha: 0.9),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -314,7 +331,7 @@ class TurnByTurnBanner extends StatelessWidget {
                       Icon(
                         Icons.subdirectory_arrow_right_rounded,
                         size: 18,
-                        color: colorScheme.onSurfaceVariant,
+                        color: cueMuted,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -332,7 +349,7 @@ class TurnByTurnBanner extends StatelessWidget {
                           })(),
                           style: TextStyle(
                             fontSize: 13,
-                            color: colorScheme.onSurfaceVariant,
+                            color: cueMuted,
                             fontWeight: FontWeight.w500,
                           ),
                           maxLines: 2,
@@ -344,7 +361,8 @@ class TurnByTurnBanner extends StatelessWidget {
                 ),
               ),
             ],
-          ],
+            ],
+          ),
         ),
       ),
     );

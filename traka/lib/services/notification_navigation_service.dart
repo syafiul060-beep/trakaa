@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../models/user_role.dart';
+import '../screens/admin_chat_screen.dart';
 import '../screens/chat_driver_screen.dart';
 import '../screens/chat_room_penumpang_screen.dart';
 import '../screens/contribution_driver_screen.dart';
@@ -61,6 +62,16 @@ class NotificationNavigationService {
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+
+    if (type == 'admin_support') {
+      if (!context.mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const AdminChatScreen(),
+        ),
+      );
+      return;
+    }
 
     final role = await _getUserRole(user.uid);
     if (role == null) return;

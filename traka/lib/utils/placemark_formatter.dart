@@ -70,6 +70,18 @@ class PlacemarkFormatter {
     return formatDetail(p);
   }
 
+  /// Baris teks singkat untuk kartu pemilih peta (alat geocode).
+  static List<String> mapPickerLines(Placemark p) {
+    final detail = formatDetail(p);
+    if (detail.isEmpty || detail == 'Lokasi dipilih') return const [];
+    return detail
+        .split(', ')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .take(5)
+        .toList();
+  }
+
   /// Nama jalan saja (thoroughfare) untuk overlay di belakang icon mobil.
   static String streetNameOnly(Placemark p) {
     return _normalizeThoroughfare(p.thoroughfare ?? p.name);

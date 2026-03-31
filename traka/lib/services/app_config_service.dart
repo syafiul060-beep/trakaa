@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'driver_nav_premium_pricing.dart';
 import '../utils/app_logger.dart' show logError;
 
 /// Service untuk membaca konfigurasi aplikasi dari app_config/settings.
@@ -297,5 +298,30 @@ class AppConfigService {
       logError('AppConfigService.getVoiceCallIceServers', e, st);
     }
     return stun;
+  }
+
+  /// Biaya IAP navigasi premium untuk satu rute (Firestore + tier jarak/scope).
+  static Future<int> getDriverNavPremiumFeeForRoute({
+    String? navPremiumScope,
+    int? routeDistanceMeters,
+  }) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection(_collection)
+          .doc('settings')
+          .get();
+      return DriverNavPremiumPricing.computeRupiah(
+        scope: navPremiumScope,
+        distanceMeters: routeDistanceMeters?.toDouble(),
+        settings: doc.data(),
+      );
+    } catch (e, st) {
+      logError('AppConfigService.getDriverNavPremiumFeeForRoute', e, st);
+    }
+    return DriverNavPremiumPricing.computeRupiah(
+      scope: navPremiumScope,
+      distanceMeters: routeDistanceMeters?.toDouble(),
+      settings: null,
+    );
   }
 }

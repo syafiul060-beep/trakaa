@@ -1,19 +1,24 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/order_model.dart';
 import '../services/ferry_distance_service.dart';
 import '../services/lacak_barang_service.dart';
-import '../services/marker_icon_service.dart';
+import '../services/order_service.dart';
+import '../services/traka_pin_bitmap_service.dart';
 import '../services/sos_service.dart';
+import '../widgets/lacak_tracking_info_sheet.dart';
+import '../widgets/sos_emergency_confirm_dialog.dart';
+import '../widgets/traka_l10n_scope.dart';
 import '../utils/time_formatter.dart';
+
 import '../widgets/passenger_track_map_widget.dart';
 
-/// Halaman Lacak Barang: full-screen map dengan driver (marker + overlay mobil) + penerima/pengirim.
-/// Pengirim lihat: driver + pin penerima (foto profil). Penerima lihat: driver + pin pengirim (foto profil).
-/// Kebijakan ikon: `docs/KEBIJAKAN_ICON_MOBIL_DAN_OVERLAY.md`.
+/// Halaman Lacak Barang: driver (mobil hijau/merah) + pin awal (pengirim) + pin akhir (penerima).
+/// Kamera: fase jemput = pengirim + driver; setelah pickup = penerima + driver.
 class CekLokasiBarangScreen extends StatefulWidget {
   const CekLokasiBarangScreen({
     super.key,
@@ -31,121 +36,126 @@ class CekLokasiBarangScreen extends StatefulWidget {
 }
 
 class _CekLokasiBarangScreenState extends State<CekLokasiBarangScreen> {
-  Future<({OrderModel order, BitmapDescriptor? markerIcon})> _loadOrderAndMarkerIcon() async {
-    final snap = await FirebaseFirestore.instance
-        .collection('orders')
-        .doc(widget.orderId)
-        .get();
-    if (!snap.exists) throw Exception('Pesanan tidak ditemukan');
-    final order = widget.order ?? OrderModel.fromFirestore(snap);
-    BitmapDescriptor? markerIcon;
-    try {
-      // Hanya load icon yang dipakai: pengirim lihat penerima, penerima lihat pengirim
-      if (widget.isPengirim) {
-        markerIcon = await MarkerIconService.createProfilePhotoMarker(
-          name: order.receiverName ?? 'Penerima',
-          photoUrl: order.receiverPhotoUrl,
-          ribbonColor: Colors.orange,
-        );
-      } else {
-        markerIcon = await MarkerIconService.createProfilePhotoMarker(
-          name: order.passengerName,
-          photoUrl: order.passengerPhotoUrl,
-          ribbonColor: Colors.orange,
-        );
-      }
-    } catch (_) {}
-    return (order: order, markerIcon: markerIcon);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: FutureBuilder<
-          ({OrderModel order, BitmapDescriptor? markerIcon})>(
-        future: _loadOrderAndMarkerIcon(),
+      body: StreamBuilder<OrderModel?>(
+        stream: OrderService.streamOrderById(widget.orderId),
         builder: (context, snap) {
-          if (!snap.hasData) {
+          if (snap.hasError) {
             return _buildScaffold(
-              child: snap.hasError
-                  ? Center(child: Text('${snap.error}'))
-                  : const Center(child: CircularProgressIndicator()),
+              child: Center(child: Text('${snap.error}')),
             );
           }
-          final data = snap.data!;
-          final order = data.order;
-          final driverUid = order.driverUid;
-          if (driverUid.isEmpty) {
+          final order = snap.data;
+          if (order == null) {
             return _buildScaffold(
-              child: const Center(child: Text('Data driver tidak valid.')),
+              child: snap.connectionState == ConnectionState.waiting
+                  ? const Center(child: CircularProgressIndicator())
+                  : const Center(child: Text('Pesanan tidak ditemukan.')),
             );
           }
-
-          final receiverLat = order.receiverLat ?? order.destLat ?? 0.0;
-          final receiverLng = order.receiverLng ?? order.destLng ?? 0.0;
-          final passengerLat = order.passengerLat ?? order.originLat ?? 0.0;
-          final passengerLng = order.passengerLng ?? order.originLng ?? 0.0;
-
-          if (passengerLat == 0 && passengerLng == 0) {
-            return _buildScaffold(
-              child: const Center(child: Text('Lokasi pengirim tidak valid.')),
-            );
-          }
-          if (receiverLat == 0 && receiverLng == 0) {
-            return _buildScaffold(
-              child: const Center(child: Text('Lokasi penerima tidak valid.')),
-            );
-          }
-
-          final defaultOrange =
-              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
-          return PassengerTrackMapWidget(
-            order: order,
-            driverUid: driverUid,
-            originLat: passengerLat,
-            originLng: passengerLng,
-            destLat: receiverLat,
-            destLng: receiverLng,
-            destForDistanceLat: receiverLat,
-            destForDistanceLng: receiverLng,
-            showSOS: true,
-            onSOS: () => _onSOS(context, order),
-            enableFerryDetection: true,
-            extraMarkers: (driverPos) {
-              final markers = <Marker>{};
-              if (widget.isPengirim) {
-                markers.add(Marker(
-                  markerId: const MarkerId('penerima'),
-                  position: LatLng(receiverLat, receiverLng),
-                  icon: data.markerIcon ?? defaultOrange,
-                  anchor: const Offset(0.5, 1.0),
-                  infoWindow: InfoWindow(
-                    title: 'Penerima',
-                    snippet: order.receiverLocationText ?? order.destText,
-                  ),
-                ));
-              } else {
-                markers.add(Marker(
-                  markerId: const MarkerId('pengirim'),
-                  position: LatLng(passengerLat, passengerLng),
-                  icon: data.markerIcon ?? defaultOrange,
-                  anchor: const Offset(0.5, 1.0),
-                  infoWindow: InfoWindow(
-                    title: 'Pengirim',
-                    snippet: order.passengerLocationText ?? order.originText,
-                  ),
-                ));
+          return FutureBuilder<void>(
+            future: TrakaPinBitmapService.ensureLoaded(context),
+            builder: (context, _) {
+              final driverUid = order.driverUid;
+              if (driverUid.isEmpty) {
+                return _buildScaffold(
+                  child: const Center(child: Text('Data driver tidak valid.')),
+                );
               }
-              return markers;
+
+              final senderPair = order.coordsForDriverPickupProximity;
+              final dropoffPair = order.coordsForDriverDropoffProximity;
+              final passengerLat = senderPair?.$1 ??
+                  order.passengerLat ??
+                  order.originLat ??
+                  0.0;
+              final passengerLng = senderPair?.$2 ??
+                  order.passengerLng ??
+                  order.originLng ??
+                  0.0;
+              final receiverLat =
+                  dropoffPair?.$1 ?? order.receiverLat ?? order.destLat ?? 0.0;
+              final receiverLng =
+                  dropoffPair?.$2 ?? order.receiverLng ?? order.destLng ?? 0.0;
+
+              if (passengerLat == 0 && passengerLng == 0) {
+                return _buildScaffold(
+                  child: const Center(child: Text('Lokasi pengirim tidak valid.')),
+                );
+              }
+              if (receiverLat == 0 && receiverLng == 0) {
+                return _buildScaffold(
+                  child: const Center(child: Text('Lokasi penerima tidak valid.')),
+                );
+              }
+
+              final defaultOrange =
+                  BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
+              final iconAwal = TrakaPinBitmapService.mapAwal ?? defaultOrange;
+              final iconAhir = TrakaPinBitmapService.mapAhir ?? defaultOrange;
+
+              final pickupPhase = order.status != OrderService.statusPickedUp;
+              final destForPair =
+                  pickupPhase ? senderPair ?? (passengerLat, passengerLng) : dropoffPair ?? (receiverLat, receiverLng);
+              final destForDistanceLat = destForPair.$1;
+              final destForDistanceLng = destForPair.$2;
+              final focalLat = pickupPhase ? passengerLat : receiverLat;
+              final focalLng = pickupPhase ? passengerLng : receiverLng;
+
+              return _buildScaffold(
+                child: PassengerTrackMapWidget(
+                  order: order,
+                  driverUid: driverUid,
+                  originLat: passengerLat,
+                  originLng: passengerLng,
+                  destLat: receiverLat,
+                  destLng: receiverLng,
+                  destForDistanceLat: destForDistanceLat,
+                  destForDistanceLng: destForDistanceLng,
+                  useDualPartyBoundsCamera: true,
+                  dualPartyFocalLat: focalLat,
+                  dualPartyFocalLng: focalLng,
+                  showSOS: true,
+                  onSOS: () => _onSOS(context, order),
+                  enableFerryDetection: true,
+                  extraMarkers: (driverPos) {
+                    return {
+                      Marker(
+                        markerId: const MarkerId('pengirim'),
+                        position: LatLng(passengerLat, passengerLng),
+                        icon: iconAwal,
+                        anchor: const Offset(0.5, 1.0),
+                        infoWindow: InfoWindow(
+                          title: 'Pengirim',
+                          snippet: order.passengerLocationText ?? order.originText,
+                        ),
+                      ),
+                      Marker(
+                        markerId: const MarkerId('penerima'),
+                        position: LatLng(receiverLat, receiverLng),
+                        icon: iconAhir,
+                        anchor: const Offset(0.5, 1.0),
+                        infoWindow: InfoWindow(
+                          title: 'Penerima',
+                          snippet: order.receiverLocationText ?? order.destText,
+                        ),
+                      ),
+                    };
+                  },
+                  bottomBuilder: (pos, isMoving, distanceMeters, distanceText, etaText, driverLocationText, ferryStatus) =>
+                      _LacakBarangBottomPanel(
+                    order: order,
+                    pickupPhase: pickupPhase,
+                    distanceText: distanceText,
+                    etaText: etaText,
+                    driverLocationText: driverLocationText,
+                    ferryStatus: ferryStatus,
+                  ),
+                ),
+              );
             },
-            bottomBuilder: (pos, isMoving, distanceMeters, distanceText, etaText, driverLocationText, ferryStatus) =>
-                _LacakBarangBottomPanel(
-              order: order,
-              distanceText: distanceText,
-              etaText: etaText,
-              driverLocationText: driverLocationText,
-              ferryStatus: ferryStatus,
-            ),
           );
         },
       ),
@@ -171,37 +181,37 @@ class _CekLokasiBarangScreenState extends State<CekLokasiBarangScreen> {
             ),
           ),
         ),
+        Positioned(
+          top: MediaQuery.of(context).padding.top + 12,
+          right: 12,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.white,
+            child: IconButton(
+              icon: const Icon(Icons.info_outline),
+              tooltip: TrakaL10n.of(context).mapToolsLacakHelpTitle,
+              onPressed: () => unawaited(
+                showLacakTrackingInfoSheet(
+                  context,
+                  audience: LacakTrackingAudience.lacakBarangMap,
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
 
   Future<void> _onSOS(BuildContext context, OrderModel order) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('SOS Darurat'),
-        content: const Text(
-          'Kirim lokasi dan info pesanan ke admin via WhatsApp? Pastikan Anda dalam keadaan darurat.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Kirim SOS'),
-          ),
-        ],
-      ),
-    );
+    final confirmed = await showSosEmergencyConfirmDialog(context);
     if (confirmed != true || !context.mounted) return;
     await SosService.triggerSOSWithLocation(order: order, isDriver: false);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('SOS terkirim. WhatsApp akan terbuka ke admin.'),
+        SnackBar(
+          content: Text(TrakaL10n.of(context).sosSent),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -213,6 +223,7 @@ class _CekLokasiBarangScreenState extends State<CekLokasiBarangScreen> {
 class _LacakBarangBottomPanel extends StatelessWidget {
   const _LacakBarangBottomPanel({
     required this.order,
+    required this.pickupPhase,
     required this.distanceText,
     required this.etaText,
     required this.driverLocationText,
@@ -220,6 +231,8 @@ class _LacakBarangBottomPanel extends StatelessWidget {
   });
 
   final OrderModel order;
+  /// True = driver menuju pengirim (belum picked_up).
+  final bool pickupPhase;
   final String distanceText;
   final String etaText;
   final String? driverLocationText;
@@ -256,7 +269,6 @@ class _LacakBarangBottomPanel extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Info barang
                 Row(
                   children: [
                     Icon(
@@ -303,14 +315,23 @@ class _LacakBarangBottomPanel extends StatelessWidget {
                                 placeholder: (context, url) => Container(
                                   width: 80,
                                   height: 80,
-                                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                  child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest,
+                                  child: const Center(
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
                                 ),
                                 errorWidget: (_, url, error) => Container(
                                   width: 80,
                                   height: 80,
-                                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                  child: Icon(Icons.broken_image, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest,
+                                  child: Icon(Icons.broken_image,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant),
                                 ),
                               ),
                             ),
@@ -321,7 +342,6 @@ class _LacakBarangBottomPanel extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Biaya Lacak Barang
                 if (feeRupiah > 0) ...[
                   Text(
                     'Biaya Lacak Barang',
@@ -387,7 +407,8 @@ class _LacakBarangBottomPanel extends StatelessWidget {
                                 'Rute: ${ferryStatus!.routeLabel}',
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  color:
+                                      Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                           ],
@@ -424,7 +445,7 @@ class _LacakBarangBottomPanel extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Sisa jarak ke penerima: $distanceText',
+                        'Sisa jarak ke ${pickupPhase ? 'pengirim' : 'penerima'}: $distanceText',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -442,7 +463,7 @@ class _LacakBarangBottomPanel extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Estimasi sampai ke penerima: $etaText',
+                        'Estimasi sampai ke ${pickupPhase ? 'pengirim' : 'penerima'}: $etaText',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -471,7 +492,10 @@ class _LacakBarangBottomPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: sudahBayar
             ? Colors.green.shade50
-            : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            : Theme.of(context)
+                .colorScheme
+                .surfaceContainerHighest
+                .withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -487,11 +511,15 @@ class _LacakBarangBottomPanel extends StatelessWidget {
           ),
           const SizedBox(height: 2),
           Text(
-            sudahBayar ? 'Rp ${_formatRupiah(feeRupiah)} ✓' : 'Rp ${_formatRupiah(feeRupiah)}',
+            sudahBayar
+                ? 'Rp ${_formatRupiah(feeRupiah)} ✓'
+                : 'Rp ${_formatRupiah(feeRupiah)}',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: sudahBayar ? Colors.green.shade800 : Theme.of(context).colorScheme.onSurface,
+              color: sudahBayar
+                  ? Colors.green.shade800
+                  : Theme.of(context).colorScheme.onSurface,
             ),
           ),
         ],

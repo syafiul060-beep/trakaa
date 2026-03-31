@@ -27,6 +27,7 @@ import '../services/active_drivers_service.dart';
 import '../services/app_analytics_service.dart';
 import '../services/driver_status_service.dart';
 import '../services/fake_gps_overlay_service.dart';
+import '../services/field_observability_service.dart';
 import '../models/order_model.dart';
 import '../services/chat_badge_service.dart';
 import '../l10n/app_localizations.dart';
@@ -51,6 +52,7 @@ import '../widgets/styled_google_map_builder.dart';
 import '../services/route_utils.dart';
 import '../services/passenger_map_realtime_socket.dart';
 import '../services/traka_api_service.dart';
+import '../widgets/lacak_tracking_info_sheet.dart';
 import '../widgets/map_type_zoom_controls.dart';
 import '../widgets/penumpang_map_overlays.dart';
 import '../widgets/recommended_driver_glow_overlay.dart';
@@ -58,7 +60,10 @@ import '../widgets/kirim_barang_link_receiver_sheet.dart';
 import '../widgets/passenger_duplicate_pending_order_dialog.dart';
 import '../models/driver_track_state.dart';
 import '../widgets/penumpang_driver_detail_sheet.dart';
+import '../widgets/lollipop_pin_widgets.dart';
+import '../widgets/map_destination_picker_screen.dart';
 import '../widgets/penumpang_route_form_sheet.dart';
+import '../services/traka_pin_bitmap_service.dart';
 import '../widgets/promotion_banner_widget.dart';
 import 'data_order_screen.dart';
 import 'violation_pay_screen.dart';
@@ -120,6 +125,25 @@ class _PenumpangScreenState extends State<PenumpangScreen>
   Timer? _sessionInvalidCheckTimer;
   bool _sessionInvalidConfirmed = false;
   StreamSubscription<User?>? _authStateSub;
+
+  int? _lastPassengerFieldObsTab;
+  bool? _lastPassengerFieldObsTracking;
+
+  void _syncPassengerFieldObservabilityIfChanged() {
+    final tab = _currentIndex;
+    final tracking = _currentIndex == 0 &&
+        (_foundDrivers.isNotEmpty || _driverStreamSubs.isNotEmpty);
+    if (_lastPassengerFieldObsTab == tab &&
+        _lastPassengerFieldObsTracking == tracking) {
+      return;
+    }
+    _lastPassengerFieldObsTab = tab;
+    _lastPassengerFieldObsTracking = tracking;
+    FieldObservabilityService.syncPassengerHome(
+      tabIndex: tab,
+      trackingDrivers: tracking,
+    );
+  }
 
   // State untuk driver aktif yang ditemukan
   List<ActiveDriverRoute> _foundDrivers = [];
@@ -1458,6 +1482,84 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     });
   }
 
+  /// Menu «tune» di peta penumpang: bantuan lacak (selaras beranda driver).
+  Future<MapPickerResult?> _pickPassengerDestOnMap(BuildContext sheetCtx) async {
+    final pos = _currentPosition;
+    final initialFromDest = _passengerDestLat != null &&
+            _passengerDestLng != null
+        ? LatLng(_passengerDestLat!, _passengerDestLng!)
+        : null;
+    final fromText = _destinationController.text.trim();
+    var initial = initialFromDest ??
+        (pos != null
+            ? LatLng(pos.latitude, pos.longitude)
+            : const LatLng(-3.3194, 114.5907));
+    if (initialFromDest == null && fromText.length >= 3) {
+      try {
+        final locs = await GeocodingService.locationFromAddress(
+          '$fromText, Indonesia',
+          appendIndonesia: false,
+        );
+        if (locs.isNotEmpty) {
+          initial = LatLng(locs.first.latitude, locs.first.longitude);
+        }
+      } catch (_) {}
+    }
+    final device =
+        pos != null ? LatLng(pos.latitude, pos.longitude) : null;
+    if (!mounted || !sheetCtx.mounted) return null;
+    final pickTitle = TrakaL10n.of(sheetCtx).pickOnMapActionLabel;
+    return Navigator.of(sheetCtx).push<MapPickerResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => MapDestinationPickerScreen(
+          initialCameraTarget: initial,
+          deviceLocation: device,
+          title: pickTitle,
+          pinVariant: LollipopPinVariant.destination,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showPassengerMapToolsMenu() async {
+    if (!mounted) return;
+    final l10n = TrakaL10n.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: Text(l10n.mapToolsLacakHelpTitle),
+                subtitle: Text(
+                  l10n.mapToolsLacakHelpSubtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  unawaited(
+                    showLacakTrackingInfoSheet(
+                      context,
+                      audience: LacakTrackingAudience.lacakDriverMap,
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   /// Buka form pencarian dalam modal bottom sheet (seperti form driver)
   void _showSearchFormSheet() {
     showModalBottomSheet<void>(
@@ -1477,6 +1579,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
             ? null
             : _destinationController.text,
         mapController: _mapController,
+        onPickDestinationOnMap: () => _pickPassengerDestOnMap(ctx),
         onSearch: (
           String destText,
           double destLat,
@@ -1541,6 +1644,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
             ? null
             : _destinationController.text,
         mapController: _mapController,
+        onPickDestinationOnMap: () => _pickPassengerDestOnMap(ctx),
         onSearch: (destText, destLat, destLng) {
           Navigator.pop(ctx);
           _applyDestinationFromGate(destText, destLat, destLng);
@@ -1872,6 +1976,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
 
     // Marker lokasi penumpang — titik biru + cincin putih (gaya Google Maps), bukan pin default.
     if (_currentPosition != null) {
+      final pinAwal = TrakaPinBitmapService.mapAwal;
       markers.add(
         Marker(
           markerId: const MarkerId('current_location'),
@@ -1879,9 +1984,12 @@ class _PenumpangScreenState extends State<PenumpangScreen>
             _currentPosition!.latitude,
             _currentPosition!.longitude,
           ),
-          icon: _passengerBlueDotIcon ??
+          icon: pinAwal ??
+              _passengerBlueDotIcon ??
               BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-          anchor: const Offset(0.5, 0.5),
+          anchor: pinAwal != null
+              ? const Offset(0.5, 1.0)
+              : const Offset(0.5, 0.5),
           zIndexInt: 4,
           infoWindow: const InfoWindow(title: 'Lokasi Anda'),
         ),
@@ -1890,11 +1998,16 @@ class _PenumpangScreenState extends State<PenumpangScreen>
 
     // Marker tujuan yang dipilih di map (bisa di-drag)
     if (_selectedDestinationPosition != null) {
+      final pinAhir = TrakaPinBitmapService.mapAhir;
       markers.add(
         Marker(
           markerId: const MarkerId('selected_destination'),
           position: _selectedDestinationPosition!,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          icon: pinAhir ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          anchor: pinAhir != null
+              ? const Offset(0.5, 1.0)
+              : const Offset(0.5, 1.0),
           infoWindow: InfoWindow(
             title: 'Tujuan',
             snippet: _selectedDestinationAddress ?? 'Memuat alamat...',
@@ -2041,6 +2154,9 @@ class _PenumpangScreenState extends State<PenumpangScreen>
   /// [baseSize] jangan terlalu kecil — area tap marker mengikuti bitmap (± seukuran ikon).
   /// Asset: mobil menghadap ke bawah (selatan) setelah pipeline.
   Future<void> _loadCarIcons() async {
+    if (!mounted) return;
+    await TrakaPinBitmapService.ensureLoaded(context);
+    if (!mounted) return;
     try {
       const passengerMapCarBaseSize = 34.0;
       const passengerMapCarPadding = 8.0;
@@ -3096,6 +3212,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
                   : TrakaL10n.of(context).mapHeadingTooltipNorthUp,
               trafficEnabled: _trafficEnabled,
               onToggleTraffic: _togglePassengerTraffic,
+              onMapToolsTap: _showPassengerMapToolsMenu,
             );
           },
         ),
@@ -3355,6 +3472,8 @@ class _PenumpangScreenState extends State<PenumpangScreen>
         final profileIsComplete = profile.isVerified;
         final canUseOrderFeatures = profileIsComplete &&
             !profile.adminVerificationBlocksFeatures;
+
+        _syncPassengerFieldObservabilityIfChanged();
 
         // Tab 1–4 lazy; tab 0 (Beranda) selalu di IndexedStack agar GoogleMap tidak di-dispose saat pindah tab.
         // _visitedTabIndices diisi di _onTabTapped / _registerTabVisit — bukan di sini.

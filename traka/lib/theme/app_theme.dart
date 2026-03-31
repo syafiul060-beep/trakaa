@@ -241,6 +241,14 @@ class AppTheme {
         elevation: 8,
       ),
 
+      // TabBar (AppBar.bottom) — selaras M3, hindari Theme.primaryColor yang mudah tidak konsisten.
+      tabBarTheme: TabBarThemeData(
+        labelColor: primary,
+        unselectedLabelColor: onSurfaceVariant,
+        indicatorColor: primary,
+        dividerColor: Colors.transparent,
+      ),
+
       // ListTile
       listTileTheme: ListTileThemeData(
         shape: RoundedRectangleBorder(
@@ -460,6 +468,12 @@ class AppTheme {
         unselectedItemColor: onSurfaceVariantDark,
         type: BottomNavigationBarType.fixed,
         elevation: 8,
+      ),
+      tabBarTheme: TabBarThemeData(
+        labelColor: primaryLight,
+        unselectedLabelColor: onSurfaceVariantDark,
+        indicatorColor: primaryLight,
+        dividerColor: Colors.transparent,
       ),
       listTileTheme: ListTileThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radiusSm)),

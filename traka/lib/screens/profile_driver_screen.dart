@@ -49,6 +49,7 @@ import '../widgets/profile_face_validation_dialog.dart';
 import '../widgets/theme_toggle_widget.dart';
 import '../widgets/biometric_login_credential_tile.dart';
 import '../widgets/biometric_toggle_widget.dart';
+import '../widgets/lacak_tracking_info_sheet.dart';
 import '../widgets/delayed_loading_builder.dart';
 import '../widgets/shimmer_loading.dart';
 import 'data_kendaraan_screen.dart';
@@ -1231,7 +1232,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            Icon(Icons.directions_car, color: Theme.of(ctx).primaryColor),
+            Icon(Icons.directions_car, color: Theme.of(ctx).colorScheme.primary),
             const SizedBox(width: 8),
             const Text('Data Kendaraan'),
           ],
@@ -1748,6 +1749,20 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
         title: const ProfileAppBarTitle(),
         actions: [
           Semantics(
+            label: TrakaL10n.of(context).mapToolsLacakHelpTitle,
+            button: true,
+            child: IconButton(
+              icon: const Icon(Icons.info_outline),
+              tooltip: TrakaL10n.of(context).mapToolsLacakHelpTitle,
+              onPressed: () => unawaited(
+                showLacakTrackingInfoSheet(
+                  context,
+                  audience: LacakTrackingAudience.profileDriver,
+                ),
+              ),
+            ),
+          ),
+          Semantics(
             label: TrakaL10n.of(context).logout,
             button: true,
             child: IconButton(icon: const Icon(Icons.logout), onPressed: _onLogout),
@@ -1775,7 +1790,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                     left: context.responsive.spacing(AppTheme.spacingLg),
                     right: context.responsive.spacing(AppTheme.spacingLg),
                     top: context.responsive.spacing(AppTheme.spacingLg),
-                    bottom: context.responsive.spacing(AppTheme.spacingLg) + 80,
+                    bottom: context.responsive.spacing(AppTheme.spacingLg) +
+                        MediaQuery.paddingOf(context).bottom +
+                        96,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2062,7 +2079,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                         crossAxisCount: 3,
                         mainAxisSpacing: context.responsive.spacing(12),
                         crossAxisSpacing: context.responsive.spacing(12),
-                        childAspectRatio: 0.95,
+                        childAspectRatio:
+                            _profileGridAspectRatio(context, 0.92),
                         children: [
                           _buildMenuCard(
                             title: TrakaL10n.of(context).vehicleData,
@@ -2098,7 +2116,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                         crossAxisCount: 2,
                         mainAxisSpacing: context.responsive.spacing(12),
                         crossAxisSpacing: context.responsive.spacing(12),
-                        childAspectRatio: 0.95,
+                        childAspectRatio:
+                            _profileGridAspectRatio(context, 0.92),
                         children: [
                           _buildMenuCard(
                             title: TrakaL10n.of(context).locale == AppLocale.id
@@ -2188,7 +2207,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                         crossAxisCount: 3,
                         mainAxisSpacing: context.responsive.spacing(12),
                         crossAxisSpacing: context.responsive.spacing(12),
-                        childAspectRatio: 0.95,
+                        childAspectRatio:
+                            _profileGridAspectRatio(context, 0.92),
                         children: [
                           _buildMenuCard(
                             title: TrakaL10n.of(context).infoAndPromo,
@@ -2269,20 +2289,23 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                 ),
             ),
           ),
-          // Toggle tema (kiri) + Gambar admin (kanan): fixed di bawah viewport
-          if (!_loading)
-            Positioned(
-              bottom: 16,
-              left: 16,
-              right: 16,
+          // Toggle tema (kiri) + kontak admin (kanan): di atas inset sistem & nav bar.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              top: false,
+              minimum: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const ThemeToggleWidget(),
-                  const AdminContactWidget(),
+                children: const [
+                  ThemeToggleWidget(),
+                  AdminContactWidget(),
                 ],
               ),
             ),
+          ),
           // Overlay loading OCR (tanpa Navigator.pop — hindari _dependents.isEmpty)
           if (_isOcrLoading)
             Positioned.fill(
@@ -2332,6 +2355,14 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     );
   }
 
+  /// Grid profil: tetap proporsional saat aksesibilitas memperbesar teks (Flutter M3).
+  double _profileGridAspectRatio(BuildContext context, double base) {
+    final t = MediaQuery.textScalerOf(context);
+    final ratio = t.scale(14) / 14;
+    if (ratio <= 1.01) return base;
+    return (base / ratio).clamp(0.68, base);
+  }
+
   Widget _buildSectionHeader(String label) {
     return Align(
       alignment: Alignment.centerLeft,
@@ -2357,7 +2388,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
             vertical: context.responsive.spacing(12),
           ),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(context.responsive.radius(12)),
             border: Border.all(
               color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
@@ -2422,7 +2453,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
           vertical: context.responsive.spacing(16),
         ),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(context.responsive.radius(12)),
           boxShadow: [
             BoxShadow(

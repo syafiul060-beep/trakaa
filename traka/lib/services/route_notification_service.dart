@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -18,7 +19,7 @@ class RouteNotificationService {
     if (_initialized) return;
     const android = AndroidInitializationSettings(_notificationIcon);
     const settings = InitializationSettings(android: android);
-    await _plugin.initialize(settings);
+    await _plugin.initialize(settings: settings);
     if (Platform.isAndroid) {
       await _createAllChannels();
     }
@@ -77,13 +78,23 @@ class RouteNotificationService {
         importance: Importance.high,
       ),
     );
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _adminSupportChannelId,
+        'Dukungan admin',
+        description: 'Balasan live chat dari admin Traka',
+        importance: Importance.high,
+      ),
+    );
   }
 
   /// Channel untuk notifikasi pembayaran (Lacak Driver, Lacak Barang, Kontribusi, Violation).
   static const String _paymentChannelId = 'traka_payment_channel';
   static const String _verificationChannelId = 'traka_verification_channel';
+  static const String _adminSupportChannelId = 'traka_admin_support_channel';
   static const int _paymentNotificationIdBase = 4000;
   static const int _adminVerificationNotificationId = 4101;
+  static const int _adminSupportNotificationId = 4102;
 
   /// Notifikasi permintaan verifikasi dari admin (foreground FCM).
   static Future<void> showAdminVerificationNotification({
@@ -104,11 +115,43 @@ class RouteNotificationService {
       ),
     );
     await _plugin.show(
-      _adminVerificationNotificationId,
-      title,
-      body,
-      details,
+      id: _adminVerificationNotificationId,
+      title: title,
+      body: body,
+      notificationDetails: details,
       payload: '{"type":"admin_verification"}',
+    );
+  }
+
+  /// Notifikasi balasan admin di live chat (foreground / data FCM).
+  static Future<void> showAdminSupportNotification({
+    required String title,
+    required String body,
+  }) async {
+    if (!_initialized) await init();
+    if (!Platform.isAndroid) return;
+    await requestPermissionIfNeeded();
+    final payload = jsonEncode({
+      'type': 'admin_support',
+      'title': title,
+      'body': body,
+    });
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _adminSupportChannelId,
+        'Dukungan admin',
+        channelDescription: 'Balasan live chat dari admin Traka',
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: _notificationIcon,
+      ),
+    );
+    await _plugin.show(
+      id: _adminSupportNotificationId,
+      title: title,
+      body: body,
+      notificationDetails: details,
+      payload: payload,
     );
   }
 
@@ -132,7 +175,12 @@ class RouteNotificationService {
         icon: _notificationIcon,
       ),
     );
-    await _plugin.show(id, title, body, details);
+    await _plugin.show(
+      id: id,
+      title: title,
+      body: body,
+      notificationDetails: details,
+    );
   }
 
   /// Minta izin notifikasi (Android 13+)
@@ -175,17 +223,17 @@ class RouteNotificationService {
     );
     const details = NotificationDetails(android: androidDetails);
     await _plugin.show(
-      _routeActiveNotificationId,
-      'Traka',
-      'Rute tujuan anda masih aktif',
-      details,
+      id: _routeActiveNotificationId,
+      title: 'Traka',
+      body: 'Rute tujuan anda masih aktif',
+      notificationDetails: details,
     );
   }
 
   /// Hapus notifikasi rute aktif
   static Future<void> cancelRouteActiveNotification() async {
     _lastRouteNotificationShownAt = null; // Reset cooldown untuk rute berikutnya
-    await _plugin.cancel(_routeActiveNotificationId);
+    await _plugin.cancel(id: _routeActiveNotificationId);
   }
 
   // --- Notifikasi penumpang: kesepakatan & driver mendekati ---
@@ -225,10 +273,10 @@ class RouteNotificationService {
       ),
     );
     await _plugin.show(
-      _kesepakatanNotificationId,
-      'Traka',
-      'Kesepakatan sudah terjadi. Driver akan segera menuju lokasi Anda.',
-      details,
+      id: _kesepakatanNotificationId,
+      title: 'Traka',
+      body: 'Kesepakatan sudah terjadi. Driver akan segera menuju lokasi Anda.',
+      notificationDetails: details,
     );
   }
 
@@ -248,10 +296,10 @@ class RouteNotificationService {
       ),
     );
     await _plugin.show(
-      3010,
-      'Traka',
-      'Penumpang tercatat dijemput (konfirmasi otomatis).',
-      details,
+      id: 3010,
+      title: 'Traka',
+      body: 'Penumpang tercatat dijemput (konfirmasi otomatis).',
+      notificationDetails: details,
     );
   }
 
@@ -271,10 +319,10 @@ class RouteNotificationService {
       ),
     );
     await _plugin.show(
-      3011,
-      'Traka',
-      'Pesanan selesai (konfirmasi otomatis – Anda sudah sampai tujuan).',
-      details,
+      id: 3011,
+      title: 'Traka',
+      body: 'Pesanan selesai (konfirmasi otomatis – Anda sudah sampai tujuan).',
+      notificationDetails: details,
     );
   }
 
@@ -297,10 +345,10 @@ class RouteNotificationService {
       ),
     );
     await _plugin.show(
-      notificationId,
-      'Driver mendekati',
-      'Driver sudah dekat ($distanceLabel). Siap-siap.',
-      details,
+      id: notificationId,
+      title: 'Driver mendekati',
+      body: 'Driver sudah dekat ($distanceLabel). Siap-siap.',
+      notificationDetails: details,
     );
   }
 
@@ -343,10 +391,10 @@ class RouteNotificationService {
       ),
     );
     await _plugin.show(
-      notificationId,
-      'Traka',
-      body,
-      details,
+      id: notificationId,
+      title: 'Traka',
+      body: body,
+      notificationDetails: details,
     );
   }
 }

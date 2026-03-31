@@ -24,7 +24,9 @@ class PermissionService {
             title: const Text('Izin Diperlukan'),
             content: const Text(
               'Aplikasi memerlukan izin lokasi dan device ID untuk masuk. '
-              'Lokasi untuk peta, device ID untuk keamanan akun.',
+              'Lokasi dipakai untuk peta dan layanan di sekitar Anda; device ID untuk keamanan akun. '
+              'Untuk berbagi posisi saat aplikasi di latar belakang, nanti Anda bisa mengaktifkan izin lokasi '
+              'Selalu—biasanya ditawarkan saat ada pesanan atau saat navigasi.',
             ),
             actions: [
               TextButton(
@@ -102,7 +104,8 @@ class PermissionService {
             title: const Text('Izin Diperlukan'),
             content: const Text(
               'Aplikasi Traka memerlukan beberapa izin untuk berfungsi dengan baik:\n\n'
-              '• Lokasi: untuk menemukan driver dan menentukan rute\n'
+              '• Lokasi: peta, mencari driver, dan rute; untuk pembaruan lokasi saat layar mati atau app di belakang, '
+              'nanti Anda bisa memilih izin Selalu (diminta saat perjalanan atau berbagi lokasi)\n'
               '• Device ID: untuk keamanan akun\n'
               '• Kamera: untuk verifikasi wajah\n'
               '• Notifikasi: untuk menerima pesan dan update\n\n'
@@ -179,8 +182,8 @@ class PermissionService {
           builder: (ctx) => AlertDialog(
             title: const Text('GPS Tidak Aktif'),
             content: const Text(
-              'Aplikasi Traka memerlukan GPS untuk berfungsi. '
-              'Silakan aktifkan GPS/Lokasi di pengaturan perangkat Anda.',
+              'Aplikasi Traka memerlukan layanan lokasi/GPS agar peta, penjemputan, dan navigasi akurat. '
+              'Silakan aktifkan di pengaturan perangkat Anda.',
             ),
             actions: [
               TextButton(
@@ -252,7 +255,9 @@ class PermissionService {
               title: const Text('Izin Lokasi Diperlukan'),
               content: const Text(
                 'Aplikasi Traka memerlukan izin lokasi untuk berfungsi. '
-                'Tanpa izin lokasi, aplikasi tidak dapat digunakan.',
+                'Anda bisa mulai dengan izin saat aplikasi digunakan; untuk berbagi posisi saat layar terkunci atau '
+                'app di belakang layar, nanti pilih izin Selalu ketika diminta. '
+                'Tanpa izin lokasi dasar, aplikasi tidak dapat digunakan.',
               ),
               actions: [
                 TextButton(

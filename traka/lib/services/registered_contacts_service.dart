@@ -56,11 +56,18 @@ class RegisteredContactsService {
 
   /// Ambil kontak dari HP (dengan properties untuk nomor, photo).
   static Future<List<Contact>> getContacts() async {
-    final granted = await FlutterContacts.requestPermission(readonly: true);
-    if (!granted) return [];
-    return FlutterContacts.getContacts(
-      withProperties: true,
-      withPhoto: true,
+    final status =
+        await FlutterContacts.permissions.request(PermissionType.read);
+    if (status != PermissionStatus.granted &&
+        status != PermissionStatus.limited) {
+      return [];
+    }
+    return FlutterContacts.getAll(
+      properties: {
+        ContactProperty.phone,
+        ContactProperty.photoThumbnail,
+        ContactProperty.photoFullRes,
+      },
     );
   }
 

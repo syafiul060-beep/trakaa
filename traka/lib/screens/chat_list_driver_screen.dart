@@ -445,7 +445,12 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
               child: ListView.separated(
                 controller: _scrollController,
                 reverse: false,
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding: EdgeInsets.fromLTRB(
+                  0,
+                  8,
+                  0,
+                  8 + MediaQuery.paddingOf(context).bottom,
+                ),
                 itemCount: orders.length,
                 separatorBuilder: (_, _) => const Divider(height: 1),
                 itemBuilder: (context, i) {

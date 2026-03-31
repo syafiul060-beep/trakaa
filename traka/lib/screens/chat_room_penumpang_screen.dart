@@ -72,8 +72,14 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
   late final Stream<List<ChatMessageModel>> _messagesStream;
   Timer?
   _orderRefreshTimer; // Refresh order berkala agar deteksi saat driver kirim harga
-  Timer? _passengerLocationUpdateTimer; // Update lokasi penumpang ke order saat menunggu jemput
+  /// Satu stream berbagi lokasi (FGS Android) untuk fase kirim GPS ke order dari chat.
+  StreamSubscription<Position>? _passengerShareSub;
+  final Object _chatPassengerShareToken = Object();
   (double, double)? _lastPassengerLocationUpdate; // Lokasi terakhir yang di-push ke Firestore
+  (double, double)? _lastReceiverLocationUpdate;
+  DateTime? _lastPassengerStreamPushAt;
+  DateTime? _lastReceiverStreamPushAt;
+  static const Duration _orderGpsMinInterval = Duration(seconds: 30);
   /// Foto driver dari widget atau hasil load Firestore (fallback).
   String? _driverPhotoUrl;
   final TextEditingController _textController = TextEditingController();
@@ -166,7 +172,9 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
   @override
   void dispose() {
     _orderRefreshTimer?.cancel();
-    _passengerLocationUpdateTimer?.cancel();
+    _passengerShareSub?.cancel();
+    _passengerShareSub = null;
+    LocationService.releasePassengerSharePositionStream(_chatPassengerShareToken);
     _focusNode.removeListener(_onFocusChange);
     _focusNode.dispose();
     _textController.dispose();
@@ -189,35 +197,132 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
       });
 
       // Order agreed & belum dijemput: mulai update lokasi penumpang ke Firestore (untuk live tracking driver)
-      _startOrStopPassengerLocationUpdates();
+      await _startOrStopPassengerLocationUpdates();
     }
   }
 
   bool _shouldPushPassengerLocationToOrder(OrderModel? order) {
     if (order == null || widget.isReceiver) return false;
-    if (order.orderType != OrderModel.typeTravel) return false;
+    if (order.orderType != OrderModel.typeTravel &&
+        order.orderType != OrderModel.typeKirimBarang) {
+      return false;
+    }
     if (order.isCompleted) return false;
+    if (!order.isPassengerGpsSharingDayForPickup) return false;
     if (order.status == OrderService.statusAgreed && !order.hasDriverScannedPassenger) {
       return true;
     }
-    if (order.status == OrderService.statusPickedUp) return true;
+    // Travel: tetap kirim saat perjalanan. Kirim barang: pengirim berhenti setelah barang terangkut.
+    if (order.status == OrderService.statusPickedUp) {
+      return order.orderType == OrderModel.typeTravel;
+    }
     return false;
   }
 
-  /// Mulai atau hentikan timer update lokasi penumpang ke order.
-  void _startOrStopPassengerLocationUpdates() {
-    final order = _order;
-    final shouldUpdate = _shouldPushPassengerLocationToOrder(order);
+  bool _shouldPushReceiverLocationToOrder(OrderModel? order) {
+    if (order == null || !widget.isReceiver) return false;
+    if (order.orderType != OrderModel.typeKirimBarang) return false;
+    if (order.isCompleted) return false;
+    if (order.status != OrderService.statusPickedUp) return false;
+    if (order.hasReceiverScannedDriver) return false;
+    return true;
+  }
 
-    if (shouldUpdate && _passengerLocationUpdateTimer == null) {
-      _passengerLocationUpdateTimer =
-          Timer.periodic(const Duration(seconds: 30), (_) {
-        _updatePassengerLocationToOrder();
-      });
-    } else if (!shouldUpdate && _passengerLocationUpdateTimer != null) {
-      _passengerLocationUpdateTimer?.cancel();
-      _passengerLocationUpdateTimer = null;
+  /// Mulai atau hentikan stream update lokasi penumpang/penerima ke order.
+  Future<void> _startOrStopPassengerLocationUpdates() async {
+    final order = _order;
+    final shouldPassenger = _shouldPushPassengerLocationToOrder(order);
+    final shouldReceiver = _shouldPushReceiverLocationToOrder(order);
+    final shouldUpdate = shouldPassenger || shouldReceiver;
+
+    if (shouldUpdate && _passengerShareSub == null) {
+      if (mounted) {
+        await LocationService.promptBackgroundLocationForLiveTrackingIfNeeded(
+          context,
+          kind: LiveLocationBackgroundPromptKind.passengerLiveShare,
+        );
+      }
+      if (!mounted) return;
+      final stream = LocationService.acquirePassengerSharePositionStream(
+        _chatPassengerShareToken,
+      );
+      _passengerShareSub = stream.listen(_onPassengerSharePosition);
+      unawaited(_syncGpsToOrderIfNeeded());
+    } else if (!shouldUpdate && _passengerShareSub != null) {
+      _passengerShareSub?.cancel();
+      _passengerShareSub = null;
+      LocationService.releasePassengerSharePositionStream(_chatPassengerShareToken);
       _lastPassengerLocationUpdate = null;
+      _lastReceiverLocationUpdate = null;
+      _lastPassengerStreamPushAt = null;
+      _lastReceiverStreamPushAt = null;
+    }
+  }
+
+  void _onPassengerSharePosition(Position position) {
+    if (!mounted) return;
+    if (position.isMocked && !kDisableFakeGpsCheck) {
+      FakeGpsOverlayService.showOverlay();
+      return;
+    }
+    unawaited(_applyShareStreamToOrder(position));
+  }
+
+  Future<void> _syncGpsToOrderIfNeeded() async {
+    if (!mounted || _order == null) return;
+    if (_shouldPushPassengerLocationToOrder(_order)) {
+      await _updatePassengerLocationToOrder();
+    }
+    if (_shouldPushReceiverLocationToOrder(_order)) {
+      await _updateReceiverLocationToOrder();
+    }
+  }
+
+  /// Update order dari titik stream (sama seperti timer + getCurrent, tetap hemat API).
+  Future<void> _applyShareStreamToOrder(Position position) async {
+    if (!mounted || _order == null) return;
+    final now = DateTime.now();
+    if (_shouldPushPassengerLocationToOrder(_order)) {
+      final lat = position.latitude;
+      final lng = position.longitude;
+      final last = _lastPassengerLocationUpdate;
+      final lastAt = _lastPassengerStreamPushAt;
+      final distOk = last == null ||
+          Geolocator.distanceBetween(last.$1, last.$2, lat, lng) >= 50;
+      final timeOk =
+          lastAt == null || now.difference(lastAt) >= _orderGpsMinInterval;
+      if (distOk || timeOk) {
+        final ok = await OrderService.updatePassengerLocation(
+          widget.orderId,
+          passengerLat: lat,
+          passengerLng: lng,
+        );
+        if (ok && mounted) {
+          _lastPassengerLocationUpdate = (lat, lng);
+          _lastPassengerStreamPushAt = now;
+        }
+      }
+    }
+    if (_shouldPushReceiverLocationToOrder(_order)) {
+      final lat = position.latitude;
+      final lng = position.longitude;
+      final last = _lastReceiverLocationUpdate;
+      final lastAt = _lastReceiverStreamPushAt;
+      final distOk = last == null ||
+          Geolocator.distanceBetween(last.$1, last.$2, lat, lng) >= 50;
+      final timeOk =
+          lastAt == null || now.difference(lastAt) >= _orderGpsMinInterval;
+      if (distOk || timeOk) {
+        final ok = await OrderService.updateReceiverLiveLocation(
+          widget.orderId,
+          lat: lat,
+          lng: lng,
+        );
+        if (ok && mounted) {
+          _lastReceiverLocationUpdate = (lat, lng);
+          _lastReceiverStreamPushAt = now;
+        }
+      }
     }
   }
 
@@ -246,6 +351,35 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
         );
         if (ok && mounted) {
           _lastPassengerLocationUpdate = (lat, lng);
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _updateReceiverLocationToOrder() async {
+    if (!mounted || _order == null) return;
+    if (!_shouldPushReceiverLocationToOrder(_order)) return;
+    try {
+      final result = await LocationService.getCurrentPositionWithMockCheck();
+      if (result.isFakeGpsDetected) {
+        if (mounted) FakeGpsOverlayService.showOverlay();
+        return;
+      }
+      final position = result.position;
+      if (!mounted || position == null) return;
+      final lat = position.latitude;
+      final lng = position.longitude;
+      final last = _lastReceiverLocationUpdate;
+      final shouldUpdate = last == null ||
+          Geolocator.distanceBetween(last.$1, last.$2, lat, lng) >= 50;
+      if (shouldUpdate) {
+        final ok = await OrderService.updateReceiverLiveLocation(
+          widget.orderId,
+          lat: lat,
+          lng: lng,
+        );
+        if (ok && mounted) {
+          _lastReceiverLocationUpdate = (lat, lng);
         }
       }
     } catch (_) {}
@@ -1066,22 +1200,28 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     if (_submittingPassengerSetuju) return;
     _submittingPassengerSetuju = true;
     try {
-    final hasPermission = await LocationService.requestPermission();
-    if (!hasPermission) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Izin lokasi diperlukan untuk menyelesaikan kesepakatan.',
+      final hasPermission = await LocationService.requestPermission();
+      if (!hasPermission) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Izin lokasi diperlukan untuk menyelesaikan kesepakatan.',
+              ),
+              behavior: SnackBarBehavior.floating,
             ),
-            behavior: SnackBarBehavior.floating,
-          ),
+          );
+        }
+        return;
+      }
+      if (mounted) {
+        await LocationService.promptBackgroundLocationForLiveTrackingIfNeeded(
+          context,
+          kind: LiveLocationBackgroundPromptKind.passengerLiveShare,
         );
       }
-      return;
-    }
 
-    final result = await LocationService.getCurrentPositionWithMockCheck();
+      final result = await LocationService.getCurrentPositionWithMockCheck();
     if (result.isFakeGpsDetected) {
       if (mounted) FakeGpsOverlayService.showOverlay();
       return;

@@ -108,6 +108,10 @@ class TrackShareService {
       'orderNumber': order.orderNumber ?? order.id,
       'status': order.status,
       'passengerUid': user.uid,
+      'originLat': order.originLat,
+      'originLng': order.originLng,
+      'destLat': order.destLat,
+      'destLng': order.destLng,
       'createdAt': FieldValue.serverTimestamp(),
     });
 

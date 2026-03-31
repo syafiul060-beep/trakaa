@@ -4,6 +4,7 @@
 #        .\scripts\build_hybrid.ps1 -EnableMapWs -RealtimeWsUrl "https://<worker>.up.railway.app"
 #        .\scripts\build_hybrid.ps1 -CertSha256 "AA:BB:..."  # opsional: TRAKA_API_CERT_SHA256
 #        .\scripts\build_hybrid.ps1 -CreateOrderViaApi      # POST /api/orders + fallback Firestore
+#        .\scripts\build_hybrid.ps1 -Debug                   # APK debug (kompilasi lebih cepat, uji USB)
 
 param(
     [Parameter(Mandatory=$false)]
@@ -17,7 +18,9 @@ param(
     [ValidateSet("apk","appbundle","ios")]
     [string]$Target = "apk",
     [Parameter(Mandatory=$false)]
-    [switch]$CreateOrderViaApi
+    [switch]$CreateOrderViaApi,
+    [Parameter(Mandatory=$false)]
+    [switch]$Debug
 )
 
 # Pastikan jalan dari root proyek (sama seperti run_hybrid.ps1)
@@ -60,7 +63,20 @@ if ($EnableMapWs -and $rt) {
 }
 
 switch ($Target) {
-    "apk"       { flutter build apk $dartDefines }
-    "appbundle" { flutter build appbundle $dartDefines }
-    "ios"       { flutter build ios $dartDefines }
+    "apk" {
+        if ($Debug) {
+            Write-Host "APK mode: DEBUG (uji USB / iterasi cepat)" -ForegroundColor Cyan
+            flutter build apk --debug $dartDefines
+        } else {
+            flutter build apk $dartDefines
+        }
+    }
+    "appbundle" {
+        if ($Debug) { Write-Host "WARNING: -Debug diabaikan untuk appbundle." -ForegroundColor Yellow }
+        flutter build appbundle $dartDefines
+    }
+    "ios" {
+        if ($Debug) { Write-Host "WARNING: -Debug untuk iOS — gunakan scheme/profile Xcode jika perlu." -ForegroundColor Yellow }
+        flutter build ios $dartDefines
+    }
 }

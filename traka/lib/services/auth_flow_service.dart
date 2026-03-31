@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../models/user_role.dart';
+import 'admin_contact_config_service.dart';
 import 'fcm_service.dart';
+import 'role_based_proximity_session.dart';
 import 'verification_service.dart';
 import 'voice_call_incoming_service.dart';
 import '../screens/driver_screen.dart';
@@ -51,7 +55,9 @@ class AuthFlowService {
     if (userRole == null) return;
 
     FcmService.saveTokenForUser(uid);
+    unawaited(AdminContactConfigService.load(force: true));
     VoiceCallIncomingService.start(uid);
+    unawaited(RoleBasedProximitySession.applyForCurrentUserFromFirestore());
 
     final faceUrl = (userData['faceVerificationUrl'] as String?)?.trim();
     final hasFacePhoto = faceUrl != null && faceUrl.isNotEmpty;

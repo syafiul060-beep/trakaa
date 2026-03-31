@@ -15,22 +15,35 @@ class AdminContactConfigService {
   static String get adminWhatsApp => _adminWhatsApp;
   static String? get adminInstagram => _adminInstagram;
 
+  /// True jika nomor WhatsApp admin tersedia (buka jalur SOS WhatsApp).
+  static bool get adminWhatsAppEnabled => _adminWhatsApp.trim().isNotEmpty;
+
   /// Muat konfigurasi dari Firestore. Fallback ke default jika belum ada.
-  static Future<void> load() async {
-    if (_loaded) return;
+  /// [force] true = baca ulang dari server (untuk SOS / dialog: hindari nomor WA usang setelah admin ubah di web).
+  static Future<void> load({bool force = false}) async {
+    if (_loaded && !force) return;
     try {
+      final getOptions =
+          force ? GetOptions(source: Source.server) : const GetOptions(source: Source.serverAndCache);
       final doc = await FirebaseFirestore.instance
           .collection(_collection)
           .doc(_docId)
-          .get();
+          .get(getOptions);
       final d = doc.data();
       if (d != null) {
         final e = d['adminEmail'] as String?;
         final w = d['adminWhatsApp'] as String?;
         final i = d['adminInstagram'] as String?;
         if (e != null && e.isNotEmpty) _adminEmail = e.trim();
-        if (w != null && w.isNotEmpty) _adminWhatsApp = _normalizeWhatsApp(w);
-        if (i != null && i.isNotEmpty) _adminInstagram = i.trim();
+        if (w != null) {
+          final t = w.trim();
+          _adminWhatsApp = t.isNotEmpty ? _normalizeWhatsApp(t) : '';
+        }
+        if (i != null && i.isNotEmpty) {
+          _adminInstagram = i.trim();
+        } else if (d.containsKey('adminInstagram')) {
+          _adminInstagram = null;
+        }
       }
       _loaded = true;
     } catch (_) {}
@@ -52,10 +65,19 @@ class AdminContactConfigService {
         .map((doc) {
       final d = doc.data();
       if (d != null) {
-        _adminEmail = (d['adminEmail'] as String?)?.trim() ?? _adminEmail;
-        final w = d['adminWhatsApp'] as String?;
-        if (w != null && w.isNotEmpty) _adminWhatsApp = _normalizeWhatsApp(w);
-        _adminInstagram = (d['adminInstagram'] as String?)?.trim();
+        final e = (d['adminEmail'] as String?)?.trim();
+        if (e != null && e.isNotEmpty) _adminEmail = e;
+        final wRaw = d['adminWhatsApp'];
+        if (wRaw is String) {
+          final t = wRaw.trim();
+          _adminWhatsApp = t.isNotEmpty ? _normalizeWhatsApp(t) : '';
+        }
+        final ig = (d['adminInstagram'] as String?)?.trim();
+        if (ig != null && ig.isNotEmpty) {
+          _adminInstagram = ig;
+        } else if (d.containsKey('adminInstagram')) {
+          _adminInstagram = null;
+        }
       }
       return {
         'email': _adminEmail,

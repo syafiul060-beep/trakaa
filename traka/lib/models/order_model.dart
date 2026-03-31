@@ -186,6 +186,11 @@ class OrderModel {
   final double? passengerLiveLng;
   final DateTime? passengerLiveUpdatedAt;
 
+  /// Lokasi penerima live saat driver mengantar (kirim barang).
+  final double? receiverLiveLat;
+  final double? receiverLiveLng;
+  final DateTime? receiverLiveUpdatedAt;
+
   /// Waktu penumpang bayar Lacak Driver (Rp 3000) untuk order ini.
   final DateTime? passengerTrackDriverPaidAt;
 
@@ -314,6 +319,9 @@ class OrderModel {
     this.passengerLiveLat,
     this.passengerLiveLng,
     this.passengerLiveUpdatedAt,
+    this.receiverLiveLat,
+    this.receiverLiveLng,
+    this.receiverLiveUpdatedAt,
     this.passengerTrackDriverPaidAt,
     this.lacakBarangIapFeeRupiah,
     this.passengerLacakBarangPaidAt,
@@ -418,6 +426,9 @@ class OrderModel {
       passengerLiveLat: (d['passengerLiveLat'] as num?)?.toDouble(),
       passengerLiveLng: (d['passengerLiveLng'] as num?)?.toDouble(),
       passengerLiveUpdatedAt: (d['passengerLiveUpdatedAt'] as Timestamp?)?.toDate(),
+      receiverLiveLat: (d['receiverLiveLat'] as num?)?.toDouble(),
+      receiverLiveLng: (d['receiverLiveLng'] as num?)?.toDouble(),
+      receiverLiveUpdatedAt: (d['receiverLiveUpdatedAt'] as Timestamp?)?.toDate(),
       passengerTrackDriverPaidAt: (d['passengerTrackDriverPaidAt'] as Timestamp?)?.toDate(),
       lacakBarangIapFeeRupiah: (d['lacakBarangIapFeeRupiah'] as num?)?.toInt(),
       passengerLacakBarangPaidAt: (d['passengerLacakBarangPaidAt'] as Timestamp?)?.toDate(),
@@ -598,6 +609,25 @@ class OrderModel {
     return null;
   }
 
+  /// Titik antar untuk kirim barang: utamakan **receiver live** segar (≤5 mnt), lalu koordinat statis.
+  (double, double)? get coordsForDriverDropoffProximity {
+    final now = DateTime.now();
+    if (receiverLiveLat != null &&
+        receiverLiveLng != null &&
+        receiverLiveUpdatedAt != null) {
+      if (now.difference(receiverLiveUpdatedAt!).inSeconds <= 300) {
+        return (receiverLiveLat!, receiverLiveLng!);
+      }
+    }
+    if (receiverLat != null && receiverLng != null) {
+      return (receiverLat!, receiverLng!);
+    }
+    if (receiverLiveLat != null && receiverLiveLng != null) {
+      return (receiverLiveLat!, receiverLiveLng!);
+    }
+    return null;
+  }
+
   /// Apakah sudah ada yang klik batalkan (driver, penumpang, atau admin).
   bool get isCancelled =>
       driverCancelled || passengerCancelled || adminCancelled;
@@ -629,6 +659,25 @@ class OrderModel {
 
   /// Pesanan dari "Pesan nanti" (terjadwal), bukan driver aktif.
   bool get isScheduledOrder => scheduleId != null && scheduleId!.isNotEmpty;
+
+  /// Hari ini sudah memasuki tanggal jadwal (atau lewat): boleh kirim GPS penumpang/pengirim untuk fase jemput.
+  /// Sebelum hari H: false → hemat baterai/data.
+  bool get isPassengerGpsSharingDayForPickup {
+    if (!isScheduledOrder) return true;
+    if (scheduledDate == null || scheduledDate!.trim().isEmpty) return true;
+    final raw = scheduledDate!.trim();
+    final parts = raw.split('-');
+    if (parts.length != 3) return true;
+    final y = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    final d = int.tryParse(parts[2]);
+    if (y == null || m == null || d == null) return true;
+    final schedDay = DateTime(y, m, d);
+    final n = DateTime.now();
+    final today = DateTime(n.year, n.month, n.day);
+    final sched = DateTime(schedDay.year, schedDay.month, schedDay.day);
+    return !sched.isAfter(today);
+  }
 
   /// Penumpang memakai bahasa Inggris (turis). Driver tampilkan badge.
   bool get isPassengerEnglish => passengerAppLocale == 'en';

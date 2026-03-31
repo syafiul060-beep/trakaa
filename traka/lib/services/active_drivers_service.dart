@@ -11,7 +11,9 @@ import 'directions_service.dart';
 import 'driver_hybrid_diagnostics.dart';
 import 'traka_api_service.dart';
 import 'rating_service.dart';
+import 'route_category_service.dart';
 import 'route_utils.dart';
+import 'travel_admin_region.dart';
 
 /// Data driver dengan rute aktif (untuk penumpang memilih travel).
 /// [driverLat], [driverLng]: posisi driver saat ini (untuk map & filter jarak).
@@ -61,6 +63,12 @@ class ActiveDriverRoute {
   /// Null = driver dari Beranda (belum pilih kategori) atau data lama.
   final String? routeCategory;
 
+  /// Kunci wilayah admin trayek (opsional, dari `driver_status` setelah geocode di sisi driver).
+  final String? routeOriginKabKey;
+  final String? routeDestKabKey;
+  final String? routeOriginProvKey;
+  final String? routeDestProvKey;
+
   const ActiveDriverRoute({
     required this.driverUid,
     required this.routeJourneyNumber,
@@ -83,6 +91,10 @@ class ActiveDriverRoute {
     this.averageRating,
     this.reviewCount = 0,
     this.routeCategory,
+    this.routeOriginKabKey,
+    this.routeDestKabKey,
+    this.routeOriginProvKey,
+    this.routeDestProvKey,
   });
 
   /// Sisa kapasitas penumpang (hanya penumpang yang mengurangi; kirim barang tidak).
@@ -421,6 +433,10 @@ class ActiveDriversService {
       }
 
       final routeCategory = d['routeCategory'] as String?;
+      final routeOriginKabKey = d['routeOriginKabKey'] as String?;
+      final routeDestKabKey = d['routeDestKabKey'] as String?;
+      final routeOriginProvKey = d['routeOriginProvKey'] as String?;
+      final routeDestProvKey = d['routeDestProvKey'] as String?;
       list.add(
         ActiveDriverRoute(
           driverUid: uid,
@@ -442,6 +458,10 @@ class ActiveDriversService {
           lastUpdated: lastUpdated,
           isVerified: isVerified,
           routeCategory: routeCategory,
+          routeOriginKabKey: routeOriginKabKey,
+          routeDestKabKey: routeDestKabKey,
+          routeOriginProvKey: routeOriginProvKey,
+          routeDestProvKey: routeDestProvKey,
         ),
       );
     }
@@ -477,6 +497,10 @@ class ActiveDriversService {
           averageRating: ratings[i].$1,
           reviewCount: ratings[i].$2,
           routeCategory: list[i].routeCategory,
+          routeOriginKabKey: list[i].routeOriginKabKey,
+          routeDestKabKey: list[i].routeDestKabKey,
+          routeOriginProvKey: list[i].routeOriginProvKey,
+          routeDestProvKey: list[i].routeDestProvKey,
         ),
     ];
   }
@@ -626,6 +650,26 @@ class ActiveDriversService {
     final matchParams = _matchingParamsForPassengerOd(odMeters);
     final enforceDriverBeforePickup = onlyDriversBeforePassenger &&
         odMeters < AppConstants.passengerOdMetersRelaxDriverBeforePickupFilter;
+    var passengerRouteCategory = RouteCategoryService.categoryUnknownGeocode;
+    TravelAdminRegion? passengerOriginReg;
+    TravelAdminRegion? passengerDestReg;
+    try {
+      final cat = await RouteCategoryService.getRouteCategory(
+        originLat: passengerOriginLat,
+        originLng: passengerOriginLng,
+        destLat: passengerDestLat,
+        destLng: passengerDestLng,
+      );
+      passengerRouteCategory = cat.category;
+      passengerOriginReg = await TravelAdminRegion.fromCoordinates(
+        passengerOriginLat,
+        passengerOriginLng,
+      );
+      passengerDestReg = await TravelAdminRegion.fromCoordinates(
+        passengerDestLat,
+        passengerDestLng,
+      );
+    } catch (_) {}
     final filtered = <ActiveDriverRoute>[];
     var skippedDirectionsEmpty = 0;
     var skippedDirectionsError = 0;
@@ -721,6 +765,18 @@ class ActiveDriversService {
           d.driverLng,
         );
         if (distToPickup > matchParams.maxDriverFromPickupMeters) continue;
+
+        if (!TravelAdminRegion.passengerDriverAdminMatch(
+          passengerRouteCategory: passengerRouteCategory,
+          passengerOrigin: passengerOriginReg,
+          passengerDest: passengerDestReg,
+          driverOriginKabKey: d.routeOriginKabKey,
+          driverDestKabKey: d.routeDestKabKey,
+          driverOriginProvKey: d.routeOriginProvKey,
+          driverDestProvKey: d.routeDestProvKey,
+        )) {
+          continue;
+        }
 
         filtered.add(d);
       } catch (e) {

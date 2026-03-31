@@ -45,6 +45,7 @@ import 'services/car_icon_service.dart';
 import 'widgets/biometric_lifecycle_handler.dart';
 import 'widgets/biometric_lock_overlay.dart';
 import 'config/traka_api_config.dart';
+import 'traka_feature_bootstrap.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -87,6 +88,8 @@ void main() async {
   // Harus sebelum Firestore.settings — cacheSize mengikuti deteksi RAM / preferensi lite.
   await LiteModeService.init();
   await NavigationSettingsService.init();
+
+  trakaTouchTravelAdminRegionInDebug();
 
   // Firestore cache: 100 MB standar, 50 MB saat mode lite (HP RAM < 3 GB)
   final firestore = FirebaseFirestore.instance;

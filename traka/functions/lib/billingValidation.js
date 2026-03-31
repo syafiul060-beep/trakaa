@@ -52,6 +52,12 @@ function parseDriverDuesAmountRupiah(productId) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+/** traka_driver_nav_premium_<rupiah> */
+function parseDriverNavPremiumAmountRupiah(productId) {
+  const m = (productId || "").match(/^traka_driver_nav_premium_(\d+)$/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 /** traka_violation_fee_5k | traka_violation_fee_5000 */
 function parseViolationFeeAmountRupiah(productId) {
   if (!productId || typeof productId !== "string") return null;
@@ -66,11 +72,13 @@ function parseViolationFeeAmountRupiah(productId) {
 const MAX_DRIVER_DUES_SINGLE_PURCHASE_RUPIAH = 200000;
 
 module.exports = {
+  getSettingsData,
   getLacakDriverFeeRupiah,
   expectedLacakDriverProductId,
   parseLacakBarangAmountRupiah,
   getLacakBarangTierFeesRupiah,
   parseDriverDuesAmountRupiah,
+  parseDriverNavPremiumAmountRupiah,
   parseViolationFeeAmountRupiah,
   MAX_DRIVER_DUES_SINGLE_PURCHASE_RUPIAH,
 };

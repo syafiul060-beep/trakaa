@@ -21,8 +21,11 @@ class PassengerProximityNotificationService {
 
   static StreamSubscription<List<OrderModel>>? _ordersSub;
   static final Map<String, StreamSubscription<(double, double)?>> _driverSubs = {};
-  /// Stream lokasi penumpang ke Firestore saat driver navigate (driverNavigatingToPickupAt set).
-  static final Map<String, Timer> _passengerLocationTimers = {};
+  /// Pump lokasi penumpang ke Firestore saat driver navigate (satu stream + FGS Android).
+  static StreamSubscription<Position>? _passengerLiveShareSub;
+  static final Object _proximityPassengerShareToken = Object();
+  static Set<String> _passengerLiveOrderIds = {};
+  static DateTime? _lastPassengerLiveSentAt;
   static const Duration _passengerLocationInterval = Duration(seconds: 5);
   /// Status order terakhir yang kita lihat (untuk deteksi transisi ke agreed).
   static final Map<String, String> _lastOrderStatus = {};
@@ -57,21 +60,22 @@ class PassengerProximityNotificationService {
         }
       }
 
-      // Stream lokasi penumpang ke Firestore saat driver navigate ke jemput
+      // Lokasi penumpang live ke Firestore saat driver navigate ke jemput (background-friendly).
       final navigatingOrders = orders.where((o) =>
           o.status == OrderService.statusAgreed &&
           !o.hasDriverScannedPassenger &&
           o.driverNavigatingToPickupAt != null).toList();
-      for (final o in _passengerLocationTimers.keys.toList()) {
-        if (!navigatingOrders.any((x) => x.id == o)) {
-          _passengerLocationTimers[o]?.cancel();
-          _passengerLocationTimers.remove(o);
-        }
-      }
-      for (final order in navigatingOrders) {
-        if (!_passengerLocationTimers.containsKey(order.id)) {
-          _startPassengerLocationStream(order.id);
-        }
+      _passengerLiveOrderIds = navigatingOrders.map((o) => o.id).toSet();
+      if (_passengerLiveOrderIds.isEmpty) {
+        _passengerLiveShareSub?.cancel();
+        _passengerLiveShareSub = null;
+        LocationService.releasePassengerSharePositionStream(_proximityPassengerShareToken);
+        _lastPassengerLiveSentAt = null;
+      } else if (_passengerLiveShareSub == null) {
+        final stream = LocationService.acquirePassengerSharePositionStream(
+          _proximityPassengerShareToken,
+        );
+        _passengerLiveShareSub = stream.listen(_onPassengerLivePosition);
       }
 
       // Hapus subscription driver untuk order yang tidak lagi aktif
@@ -91,21 +95,23 @@ class PassengerProximityNotificationService {
     });
   }
 
-  static void _startPassengerLocationStream(String orderId) {
-    void sendLocation() async {
-      final result = await LocationService.getCurrentPositionWithMockCheck();
-      final pos = result.position;
-      if (pos != null) {
-        await OrderService.updatePassengerLiveLocation(
-          orderId,
-          lat: pos.latitude,
-          lng: pos.longitude,
-        );
-      }
+  static Future<void> _onPassengerLivePosition(Position pos) async {
+    if (pos.isMocked && !kDisableFakeGpsCheck) return;
+    final now = DateTime.now();
+    if (_lastPassengerLiveSentAt != null &&
+        now.difference(_lastPassengerLiveSentAt!) < _passengerLocationInterval) {
+      return;
     }
-    sendLocation(); // Kirim segera
-    final timer = Timer.periodic(_passengerLocationInterval, (_) => sendLocation());
-    _passengerLocationTimers[orderId] = timer;
+    _lastPassengerLiveSentAt = now;
+    final ids = _passengerLiveOrderIds;
+    if (ids.isEmpty) return;
+    for (final orderId in ids) {
+      await OrderService.updatePassengerLiveLocation(
+        orderId,
+        lat: pos.latitude,
+        lng: pos.longitude,
+      );
+    }
   }
 
   static void _startDriverPositionListener(OrderModel order) {
@@ -167,10 +173,11 @@ class PassengerProximityNotificationService {
       sub.cancel();
     }
     _driverSubs.clear();
-    for (final t in _passengerLocationTimers.values) {
-      t.cancel();
-    }
-    _passengerLocationTimers.clear();
+    _passengerLiveShareSub?.cancel();
+    _passengerLiveShareSub = null;
+    LocationService.releasePassengerSharePositionStream(_proximityPassengerShareToken);
+    _passengerLiveOrderIds = {};
+    _lastPassengerLiveSentAt = null;
     _proximityNotified.clear();
     _lastOrderStatus.clear();
   }

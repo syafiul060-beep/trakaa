@@ -4,6 +4,7 @@ import 'dart:math' show asin, cos, sqrt;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 import 'geocoding_service.dart';
 import 'package:uuid/uuid.dart';
 
@@ -26,6 +27,15 @@ import '../utils/phone_utils.dart';
 /// Service untuk pesanan penumpang (nomor pesanan, kesepakatan driver-penumpang).
 /// Nomor pesanan unik; dibuat otomatis saat driver dan penumpang sama-sama klik kesepakatan.
 class OrderService {
+  @visibleForTesting
+  static FirebaseFirestore? firestoreForTesting;
+  @visibleForTesting
+  static FirebaseAuth? authForTesting;
+
+  static FirebaseFirestore get _fs =>
+      firestoreForTesting ?? FirebaseFirestore.instance;
+  static FirebaseAuth get _fa => authForTesting ?? FirebaseAuth.instance;
+
   static const String _collectionOrders = 'orders';
   static const String _fieldRouteJourneyNumber = 'routeJourneyNumber';
   static const String _fieldDriverUid = 'driverUid';
@@ -64,6 +74,22 @@ class OrderService {
       if (isTravelOrderBlockingPassengerHomeMap(o)) return true;
     }
     return false;
+  }
+
+  /// Pesanan terjadwal: GPS penumpang/pengirim untuk jemput hanya di tanggal jadwal (hari H atau sudah lewat).
+  static bool scheduledPickupDateAllowsPassengerGps(String? scheduledDate) {
+    if (scheduledDate == null || scheduledDate.trim().isEmpty) return true;
+    final parts = scheduledDate.trim().split('-');
+    if (parts.length != 3) return true;
+    final y = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    final d = int.tryParse(parts[2]);
+    if (y == null || m == null || d == null) return true;
+    final schedDay = DateTime(y, m, d);
+    final n = DateTime.now();
+    final today = DateTime(n.year, n.month, n.day);
+    final sched = DateTime(schedDay.year, schedDay.month, schedDay.day);
+    return !sched.isAfter(today);
   }
 
   /// Status travel yang dianggap "berjalan" untuk notifikasi jarak / UX (bukan blokir beranda).
@@ -718,40 +744,27 @@ class OrderService {
     String scheduleId, {
     String? legacyScheduleId,
   }) async {
-    try {
-      if (await _scheduleIdHasNonTerminalOrders(scheduleId)) return true;
-      if (legacyScheduleId != null &&
-          legacyScheduleId.isNotEmpty &&
-          legacyScheduleId != scheduleId) {
-        if (await _scheduleIdHasNonTerminalOrders(legacyScheduleId)) return true;
-      }
-      return false;
-    } catch (e, st) {
-      logError('OrderService.scheduleHasActiveScheduledOrders', e, st);
-      return true;
-    }
+    final s = await getScheduleSlotBookingSnapshot(
+      scheduleId,
+      legacyScheduleId: legacyScheduleId,
+    );
+    return s.hasNonTerminalOrders;
   }
 
-  static Future<bool> _scheduleIdHasNonTerminalOrders(String scheduleId) async {
-    final snap = await FirebaseFirestore.instance
-        .collection(_collectionOrders)
-        .where('scheduleId', isEqualTo: scheduleId)
-        .get()
-        .timeout(const Duration(seconds: 20));
-    for (final doc in snap.docs) {
-      final s = doc.data()[_fieldStatus] as String?;
-      if (s != statusCompleted && s != statusCancelled) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /// Jumlah penumpang dan jumlah kirim barang yang sudah dipesan untuk jadwal ini (status agreed/picked_up).
-  /// [kargoCount]: hanya barangCategory == 'kargo' (barang besar, mengurangi kapasitas). Dokumen tidak.
-  /// [legacyScheduleId]: format lama (tanpa hash) untuk backward compat dengan order yang sudah ada.
-  static Future<({int totalPenumpang, int kirimBarangCount, int kargoCount})>
-  getScheduledBookingCounts(String scheduleId, {String? legacyScheduleId}) async {
+  /// Satu baca `orders` untuk slot jadwal: hitungan pemesan (agreed/picked), badge pending,
+  /// dan flag **blok edit/hapus** jika ada order non-terminal (pending_agreement, agreed, picked_up, pending_receiver, …).
+  static Future<
+      ({
+        int totalPenumpang,
+        int kirimBarangCount,
+        int kargoCount,
+        bool hasNonTerminalOrders,
+        int pendingTravelCount,
+        int pendingBarangCount,
+      })> getScheduleSlotBookingSnapshot(
+    String scheduleId, {
+    String? legacyScheduleId,
+  }) async {
     try {
       final ids = [
         scheduleId,
@@ -764,40 +777,88 @@ class OrderService {
           ? await FirebaseFirestore.instance
               .collection(_collectionOrders)
               .where('scheduleId', isEqualTo: scheduleId)
-              .where(_fieldStatus, whereIn: [statusAgreed, statusPickedUp])
               .get()
+              .timeout(const Duration(seconds: 20))
           : await FirebaseFirestore.instance
               .collection(_collectionOrders)
               .where('scheduleId', whereIn: ids)
-              .where(_fieldStatus, whereIn: [statusAgreed, statusPickedUp])
-              .get();
+              .get()
+              .timeout(const Duration(seconds: 20));
 
-      int totalPenumpang = 0;
-      int kirimBarangCount = 0;
-      int kargoCount = 0;
+      var totalPenumpang = 0;
+      var kirimBarangCount = 0;
+      var kargoCount = 0;
+      var hasNonTerminal = false;
+      var pendingTravelCount = 0;
+      var pendingBarangCount = 0;
+
       for (final doc in snapshot.docs) {
         final d = doc.data();
+        final s = d[_fieldStatus] as String?;
+        final terminal = s == statusCompleted || s == statusCancelled;
+        if (!terminal) {
+          hasNonTerminal = true;
+        }
         final orderType = (d['orderType'] as String?) ?? 'travel';
-        if (orderType == OrderModel.typeKirimBarang) {
-          kirimBarangCount++;
-          final cat = (d['barangCategory'] as String?) ?? '';
-          if (cat == OrderModel.barangCategoryKargo || cat.isEmpty) {
-            kargoCount++;
+        if (!terminal) {
+          if (orderType == OrderModel.typeKirimBarang) {
+            if (s == statusPendingAgreement || s == statusPendingReceiver) {
+              pendingBarangCount++;
+            }
+          } else {
+            if (s == statusPendingAgreement) {
+              pendingTravelCount++;
+            }
           }
-        } else {
-          final jk = (d['jumlahKerabat'] as num?)?.toInt();
-          totalPenumpang += (jk == null || jk <= 0) ? 1 : (1 + jk);
+        }
+        if (s == statusAgreed || s == statusPickedUp) {
+          if (orderType == OrderModel.typeKirimBarang) {
+            kirimBarangCount++;
+            final cat = (d['barangCategory'] as String?) ?? '';
+            if (cat == OrderModel.barangCategoryKargo || cat.isEmpty) {
+              kargoCount++;
+            }
+          } else {
+            final jk = (d['jumlahKerabat'] as num?)?.toInt();
+            totalPenumpang += (jk == null || jk <= 0) ? 1 : (1 + jk);
+          }
         }
       }
       return (
         totalPenumpang: totalPenumpang,
         kirimBarangCount: kirimBarangCount,
         kargoCount: kargoCount,
+        hasNonTerminalOrders: hasNonTerminal,
+        pendingTravelCount: pendingTravelCount,
+        pendingBarangCount: pendingBarangCount,
       );
     } catch (e, st) {
-      logError('OrderService.getPassengerAndBarangCountsForRoute', e, st);
-      return (totalPenumpang: 0, kirimBarangCount: 0, kargoCount: 0);
+      logError('OrderService.getScheduleSlotBookingSnapshot', e, st);
+      return (
+        totalPenumpang: 0,
+        kirimBarangCount: 0,
+        kargoCount: 0,
+        hasNonTerminalOrders: true,
+        pendingTravelCount: 0,
+        pendingBarangCount: 0,
+      );
     }
+  }
+
+  /// Jumlah penumpang dan jumlah kirim barang yang sudah dipesan untuk jadwal ini (status agreed/picked_up).
+  /// [kargoCount]: hanya barangCategory == 'kargo' (barang besar, mengurangi kapasitas). Dokumen tidak.
+  /// [legacyScheduleId]: format lama (tanpa hash) untuk backward compat dengan order yang sudah ada.
+  static Future<({int totalPenumpang, int kirimBarangCount, int kargoCount})>
+  getScheduledBookingCounts(String scheduleId, {String? legacyScheduleId}) async {
+    final s = await getScheduleSlotBookingSnapshot(
+      scheduleId,
+      legacyScheduleId: legacyScheduleId,
+    );
+    return (
+      totalPenumpang: s.totalPenumpang,
+      kirimBarangCount: s.kirimBarangCount,
+      kargoCount: s.kargoCount,
+    );
   }
 
   /// Pindah pesanan terjadwal ke jadwal lain. Hanya driver pemilik order yang bisa.
@@ -1095,11 +1156,11 @@ class OrderService {
     String orderId,
     double priceRp,
   ) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _fa.currentUser;
     if (user == null) return false;
     if (priceRp < 0) return false;
 
-    final ref = FirebaseFirestore.instance
+    final ref = _fs
         .collection(_collectionOrders)
         .doc(orderId);
     final doc = await ref.get();
@@ -1120,16 +1181,23 @@ class OrderService {
 
   /// Driver klik kesepakatan (tanpa harga, backward compat). Set driverAgreed = true.
   static Future<bool> setDriverAgreed(String orderId) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _fa.currentUser;
     if (user == null) return false;
 
-    final ref = FirebaseFirestore.instance
+    final ref = _fs
         .collection(_collectionOrders)
         .doc(orderId);
     final doc = await ref.get();
     if (!doc.exists) return false;
     final data = doc.data();
     if (data == null || (data[_fieldDriverUid] as String?) != user.uid) {
+      return false;
+    }
+
+    final currentStatus = (data[_fieldStatus] as String?) ?? '';
+    if (currentStatus == statusPickedUp ||
+        currentStatus == statusCompleted ||
+        currentStatus == statusCancelled) {
       return false;
     }
 
@@ -1149,10 +1217,10 @@ class OrderService {
     required double passengerLng,
     required String passengerLocationText,
   }) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _fa.currentUser;
     if (user == null) return (false, null, false);
 
-    final ref = FirebaseFirestore.instance
+    final ref = _fs
         .collection(_collectionOrders)
         .doc(orderId);
     final doc = await ref.get();
@@ -1165,6 +1233,10 @@ class OrderService {
     final driverAgreed = (data['driverAgreed'] as bool?) ?? false;
     final passengerAgreedAlready = (data['passengerAgreed'] as bool?) ?? false;
     final currentStatus = (data[_fieldStatus] as String?) ?? '';
+
+    if (currentStatus == statusCompleted || currentStatus == statusCancelled) {
+      return (false, null, false);
+    }
 
     if (driverAgreed &&
         passengerAgreedAlready &&
@@ -1241,7 +1313,7 @@ class OrderService {
   }
 
   /// Update lokasi penumpang di order (cadangan jika live tidak ada: chat ~30 dtk, ≥50 m).
-  /// Travel: saat **agreed** (belum dijemput) **atau** **picked_up** (perjalanan) — bukan setelah selesai.
+  /// Travel & kirim barang (pengirim): **agreed** belum jemput, atau travel **picked_up**.
   static Future<bool> updatePassengerLocation(
     String orderId, {
     required double passengerLat,
@@ -1263,10 +1335,19 @@ class OrderService {
       final status = data[_fieldStatus] as String?;
       final pickedUp = data['driverScannedAt'] != null || data['passengerScannedPickupAt'] != null;
       final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
-      final allowPrePickup = status == statusAgreed && !pickedUp;
+      final allowPrePickup = status == statusAgreed &&
+          !pickedUp &&
+          (orderType == OrderModel.typeTravel ||
+              orderType == OrderModel.typeKirimBarang);
       final allowInTrip =
           status == statusPickedUp && orderType == OrderModel.typeTravel;
       if (!allowPrePickup && !allowInTrip) return false;
+      if (allowPrePickup &&
+          !scheduledPickupDateAllowsPassengerGps(
+            data['scheduledDate'] as String?,
+          )) {
+        return false;
+      }
 
       await ref.update({
         'passengerLat': passengerLat,
@@ -1282,10 +1363,10 @@ class OrderService {
 
   /// Set driver sedang navigasi ke penumpang (klik "Ya, arahkan"). Penumpang akan stream lokasi live.
   static Future<bool> setDriverNavigatingToPickup(String orderId) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _fa.currentUser;
     if (user == null) return false;
     try {
-      final ref = FirebaseFirestore.instance
+      final ref = _fs
           .collection(_collectionOrders)
           .doc(orderId);
       final doc = await ref.get();
@@ -1307,10 +1388,10 @@ class OrderService {
 
   /// Clear driver navigasi ke penumpang (driver klik Kembali atau penumpang sudah dijemput).
   static Future<bool> clearDriverNavigatingToPickup(String orderId) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _fa.currentUser;
     if (user == null) return false;
     try {
-      final ref = FirebaseFirestore.instance
+      final ref = _fs
           .collection(_collectionOrders)
           .doc(orderId);
       final doc = await ref.get();
@@ -1333,16 +1414,51 @@ class OrderService {
     }
   }
 
+  /// Lokasi penerima live saat driver mengantar (kirim barang). Hanya penerima + status picked_up.
+  static Future<bool> updateReceiverLiveLocation(
+    String orderId, {
+    required double lat,
+    required double lng,
+  }) async {
+    final user = _fa.currentUser;
+    if (user == null) return false;
+    try {
+      final ref = _fs.collection(_collectionOrders).doc(orderId);
+      final doc = await ref.get();
+      if (!doc.exists) return false;
+      final data = doc.data();
+      if (data == null || (data['receiverUid'] as String?) != user.uid) {
+        return false;
+      }
+      if ((data['orderType'] as String?) != OrderModel.typeKirimBarang) {
+        return false;
+      }
+      if ((data[_fieldStatus] as String?) != statusPickedUp) return false;
+      if (data['receiverScannedAt'] != null) return false;
+
+      await ref.update({
+        'receiverLiveLat': lat,
+        'receiverLiveLng': lng,
+        'receiverLiveUpdatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (e, st) {
+      logError('OrderService.updateReceiverLiveLocation', e, st);
+      return false;
+    }
+  }
+
   /// Update lokasi penumpang live (saat driver navigate). Hanya jika driverNavigatingToPickupAt set.
   static Future<bool> updatePassengerLiveLocation(
     String orderId, {
     required double lat,
     required double lng,
   }) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _fa.currentUser;
     if (user == null) return false;
     try {
-      final ref = FirebaseFirestore.instance
+      final ref = _fs
           .collection(_collectionOrders)
           .doc(orderId);
       final doc = await ref.get();
@@ -1355,6 +1471,16 @@ class OrderService {
       final pickedUp = data['driverScannedAt'] != null ||
           data['passengerScannedPickupAt'] != null;
       if (pickedUp) return false;
+      final orderType = (data['orderType'] as String?) ?? OrderModel.typeTravel;
+      if (orderType != OrderModel.typeTravel &&
+          orderType != OrderModel.typeKirimBarang) {
+        return false;
+      }
+      if (!scheduledPickupDateAllowsPassengerGps(
+            data['scheduledDate'] as String?,
+          )) {
+        return false;
+      }
 
       await ref.update({
         'passengerLiveLat': lat,
@@ -1379,7 +1505,7 @@ class OrderService {
   ) async {
     try {
       // Ambil semua order dari jenis yang sama yang belum agreed
-      final snapshot = await FirebaseFirestore.instance
+      final snapshot = await _fs
           .collection(_collectionOrders)
           .where(_fieldPassengerUid, isEqualTo: passengerUid)
           .where('orderType', isEqualTo: orderType)
@@ -1387,7 +1513,7 @@ class OrderService {
           .get();
 
       int deletedCount = 0;
-      final batch = FirebaseFirestore.instance.batch();
+      final batch = _fs.batch();
       final deleteStoragePromises = <Future<void>>[];
 
       for (final doc in snapshot.docs) {
@@ -2082,6 +2208,10 @@ class OrderService {
           'pickupLng': pickupLng,
           'status': statusPickedUp,
           'updatedAt': FieldValue.serverTimestamp(),
+          'driverNavigatingToPickupAt': FieldValue.delete(),
+          'passengerLiveLat': FieldValue.delete(),
+          'passengerLiveLng': FieldValue.delete(),
+          'passengerLiveUpdatedAt': FieldValue.delete(),
         });
       });
       return (true, null, driverPayload);
@@ -2434,6 +2564,10 @@ class OrderService {
           'driverBarcodePayload': driverPayload,
           'status': statusPickedUp,
           'updatedAt': FieldValue.serverTimestamp(),
+          'driverNavigatingToPickupAt': FieldValue.delete(),
+          'passengerLiveLat': FieldValue.delete(),
+          'passengerLiveLng': FieldValue.delete(),
+          'passengerLiveUpdatedAt': FieldValue.delete(),
         });
       });
       return (true, null, orderId);
@@ -3400,6 +3534,9 @@ class OrderService {
       'updatedAt': FieldValue.serverTimestamp(),
       'dropLat': dropLat,
       'dropLng': dropLng,
+      'receiverLiveLat': FieldValue.delete(),
+      'receiverLiveLng': FieldValue.delete(),
+      'receiverLiveUpdatedAt': FieldValue.delete(),
       'chatHiddenByPassenger': true,
       'chatHiddenByDriver': true,
       'passengerLastReadAt': FieldValue.serverTimestamp(),

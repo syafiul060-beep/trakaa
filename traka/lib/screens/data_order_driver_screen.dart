@@ -35,6 +35,7 @@ import '../services/order_receipt_pdf_flow.dart';
 import '../services/route_session_service.dart';
 import '../services/violation_service.dart';
 import '../services/sos_service.dart';
+import '../widgets/sos_emergency_confirm_dialog.dart';
 import 'chat_driver_screen.dart';
 import 'contribution_driver_screen.dart';
 import 'driver_earnings_screen.dart';
@@ -441,6 +442,21 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
     super.dispose();
   }
 
+  /// Daftar di TabBarView: ruang bawah untuk inset sistem.
+  EdgeInsets _listPaddingWithSafeBottom(
+    BuildContext context, {
+    double top = 16,
+  }) {
+    const h = 16.0;
+    const bottomBase = 16.0;
+    return EdgeInsets.fromLTRB(
+      h,
+      top,
+      h,
+      bottomBase + MediaQuery.paddingOf(context).bottom,
+    );
+  }
+
   /// Stream untuk tab Pesanan Terjadwal (cached).
   Stream<List<OrderModel>> get _allOrdersStreamForScheduled {
     final user = FirebaseAuth.instance.currentUser;
@@ -484,9 +500,9 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
           controller: _tabController,
           isScrollable: true,
           labelPadding: const EdgeInsets.symmetric(horizontal: 12),
-          labelColor: Theme.of(context).primaryColor,
+          labelColor: Theme.of(context).colorScheme.primary,
           unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-          indicatorColor: Theme.of(context).primaryColor,
+          indicatorColor: Theme.of(context).colorScheme.primary,
           labelStyle: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
@@ -734,7 +750,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
             ),
             Expanded(
               child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                padding: _listPaddingWithSafeBottom(context, top: 0),
                 itemCount: ordersForDate.length,
                 itemBuilder: (context, index) {
                   final order = ordersForDate[index];
@@ -1115,7 +1131,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                       await Future.delayed(const Duration(milliseconds: 400));
                     },
                     child: ListView.builder(
-                      padding: const EdgeInsets.all(16),
+                      padding: _listPaddingWithSafeBottom(context),
                       itemCount: orders.length,
                       cacheExtent: 200,
                       itemBuilder: (context, index) {
@@ -1911,26 +1927,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
 
   /// Tombol Chat: navigasi ke chat room dengan driver/penumpang.
   Future<void> _onSOS(BuildContext context, OrderModel order) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('SOS Darurat'),
-        content: const Text(
-          'Kirim lokasi dan info pesanan ke admin via WhatsApp? Pastikan Anda dalam keadaan darurat.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Kirim SOS'),
-          ),
-        ],
-      ),
-    );
+    final confirmed = await showSosEmergencyConfirmDialog(context);
     if (confirmed != true || !context.mounted) return;
     await SosService.triggerSOSWithLocation(order: order, isDriver: true);
     if (context.mounted) {
@@ -2611,7 +2608,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
           );
         }
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
+          padding: _listPaddingWithSafeBottom(context),
           itemCount: orders.length,
           cacheExtent: 200,
           itemBuilder: (context, index) => RepaintBoundary(
@@ -2659,7 +2656,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
           );
         }
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
+          padding: _listPaddingWithSafeBottom(context),
           itemCount: transfers.length,
           itemBuilder: (context, index) {
             final t = transfers[index];
@@ -2878,7 +2875,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
           );
         }
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
+          padding: _listPaddingWithSafeBottom(context),
           itemCount: completedOrders.length,
           cacheExtent: 200,
           itemBuilder: (context, index) => RepaintBoundary(
@@ -2993,7 +2990,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                 return bt.compareTo(at);
               });
             return ListView.builder(
-              padding: const EdgeInsets.all(16),
+              padding: _listPaddingWithSafeBottom(context),
               itemCount: entries.length,
               itemBuilder: (context, index) {
                 final entry = entries[index];

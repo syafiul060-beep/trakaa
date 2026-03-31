@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'theme_service.dart';
 
@@ -76,4 +77,7 @@ class MapStyleService {
   static const double searchZoom = 11.0;
   /// Tilt awal untuk efek 3D gedung (35° = gedung tampil 3D, tidak terlalu curam).
   static const double defaultTilt = 35.0;
+
+  /// Satelit + label jalan (setara lapisan «Satelit» di aplikasi Google Maps).
+  static const MapType mapTypeForGoogleMap = MapType.hybrid;
 }

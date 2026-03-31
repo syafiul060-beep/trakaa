@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 
 import '../config/maps_config.dart';
 import '../utils/retry_utils.dart';
+import 'navigation_diagnostics.dart';
+import 'route_utils.dart';
 
 /// Cache untuk hasil Directions API (hemat biaya API).
 final Map<String, ({DirectionsResult result, DateTime expiredAt})> _routeCache = {};
@@ -104,6 +106,21 @@ class DirectionsResult {
   });
 }
 
+/// Segmen polyline dengan fraksi «macet» (warna garis rute).
+class RoutePolylineTrafficSegment {
+  final List<LatLng> points;
+  final double trafficRatio;
+  final double startDistanceMeters;
+  final double endDistanceMeters;
+
+  const RoutePolylineTrafficSegment({
+    required this.points,
+    required this.trafficRatio,
+    required this.startDistanceMeters,
+    required this.endDistanceMeters,
+  });
+}
+
 /// Satu langkah petunjuk belok (turn-by-turn).
 class RouteStep {
   final String instruction;
@@ -127,10 +144,12 @@ class RouteStep {
 class DirectionsResultWithSteps {
   final DirectionsResult result;
   final List<RouteStep> steps;
+  final List<RoutePolylineTrafficSegment> trafficSegments;
 
   const DirectionsResultWithSteps({
     required this.result,
     required this.steps,
+    this.trafficSegments = const [],
   });
 }
 
@@ -348,6 +367,10 @@ class DirectionsService {
             errorStatus: 'http_${response.statusCode}',
           );
         }
+        NavigationDiagnostics.reportDirectionsFailureThrottled(
+          scope: 'getRouteWithSteps',
+          errorKey: 'http_${response.statusCode}',
+        );
         return DirectionsWithStepsOutcome(
           data: null,
           errorStatus: 'http_${response.statusCode}',
@@ -369,6 +392,10 @@ class DirectionsService {
             );
           }
         }
+        NavigationDiagnostics.reportDirectionsFailureThrottled(
+          scope: 'getRouteWithSteps',
+          errorKey: status ?? 'not_ok',
+        );
         return DirectionsWithStepsOutcome(data: null, errorStatus: status ?? 'not_ok');
       }
       _stepsQuotaBackoffUntil = null;
@@ -440,7 +467,14 @@ class DirectionsService {
         durationText: durationText,
         warnings: warnings,
       );
-      final withSteps = DirectionsResultWithSteps(result: result, steps: steps);
+      final trafficSegments = legs != null && legs.isNotEmpty
+          ? _trafficSegmentsFromLeg(legs.first as Map<String, dynamic>, points)
+          : <RoutePolylineTrafficSegment>[];
+      final withSteps = DirectionsResultWithSteps(
+        result: result,
+        steps: steps,
+        trafficSegments: trafficSegments,
+      );
       _routeWithStepsCache[key] = (
         data: withSteps,
         expiredAt: DateTime.now().add(trafficAware ? _trafficCacheDuration : _cacheDuration),
@@ -457,6 +491,10 @@ class DirectionsService {
           errorStatus: 'network',
         );
       }
+      NavigationDiagnostics.reportDirectionsFailureThrottled(
+        scope: 'getRouteWithSteps',
+        errorKey: 'network',
+      );
       return const DirectionsWithStepsOutcome(data: null, errorStatus: 'network');
     }
   }
@@ -693,7 +731,16 @@ class DirectionsService {
           durationText: durationText,
           warnings: warnings,
         );
-        results.add(DirectionsResultWithSteps(result: result, steps: steps));
+        final trafficSegments = legs != null && legs.isNotEmpty
+            ? _trafficSegmentsFromLeg(legs.first as Map<String, dynamic>, points)
+            : <RoutePolylineTrafficSegment>[];
+        results.add(
+          DirectionsResultWithSteps(
+            result: result,
+            steps: steps,
+            trafficSegments: trafficSegments,
+          ),
+        );
       }
       if (results.isNotEmpty) {
         _altRouteWithStepsCache[key] = (
@@ -755,6 +802,47 @@ class DirectionsService {
       }
     }
     return allPoints.isEmpty ? null : allPoints;
+  }
+
+  /// Segmen warna lalu lintas sepanjang polyline (duration_in_traffic vs duration per step).
+  static List<RoutePolylineTrafficSegment> _trafficSegmentsFromLeg(
+    Map<String, dynamic> leg,
+    List<LatLng> fullPoints,
+  ) {
+    final legSteps = leg['steps'] as List<dynamic>?;
+    if (legSteps == null || legSteps.isEmpty || fullPoints.length < 2) {
+      return const [];
+    }
+    double cumMeters = 0;
+    final out = <RoutePolylineTrafficSegment>[];
+    for (final s in legSteps) {
+      final step = s as Map<String, dynamic>;
+      final stepDist = step['distance'] as Map<String, dynamic>?;
+      final stepDistM = (stepDist?['value'] as num?)?.toDouble() ?? 0;
+      final dur = step['duration'] as Map<String, dynamic>?;
+      final durSec = (dur?['value'] as num?)?.toDouble() ?? 0;
+      final durTf = step['duration_in_traffic'] as Map<String, dynamic>?;
+      final durTfSec = (durTf?['value'] as num?)?.toDouble();
+      final startM = cumMeters;
+      cumMeters += stepDistM;
+      var ratio = 1.0;
+      if (durSec >= 8 && durTfSec != null && durTfSec > 0) {
+        ratio = (durTfSec / durSec).clamp(1.0, 2.6);
+      }
+      final slice =
+          RouteUtils.slicePolylineByDistanceRange(fullPoints, startM, cumMeters);
+      if (slice.length >= 2) {
+        out.add(
+          RoutePolylineTrafficSegment(
+            points: slice,
+            trafficRatio: ratio,
+            startDistanceMeters: startM,
+            endDistanceMeters: cumMeters,
+          ),
+        );
+      }
+    }
+    return out;
   }
 
   /// Fallback: overview_polyline (versi disederhanakan).

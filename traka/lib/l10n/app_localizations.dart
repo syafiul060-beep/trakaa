@@ -308,6 +308,15 @@ class AppLocalizations {
   String get offlineBannerMessage => locale == AppLocale.id
       ? 'Anda offline. Data dari cache akan tampil. Perubahan akan disinkronkan saat online.'
       : 'You are offline. Cached data will be shown. Changes will sync when online.';
+  String get offlineMapPrecacheTitle =>
+      locale == AppLocale.id ? 'Cache peta (OSM)' : 'Offline map cache (OSM)';
+  String get offlineMapPrecacheIntro => locale == AppLocale.id
+      ? 'Pratinjau ubin OpenStreetMap dan cache ke perangkat sebelum masuk daerah sinyal lemah. Peta utama perjalanan tetap Google Maps.'
+      : 'Preview OpenStreetMap tiles and cache them before entering areas with poor signal. Main trip maps still use Google Maps.';
+  String get offlineMapPrecacheOsmAttribution => '© OpenStreetMap contributors';
+  String get offlineMapPrecacheFooter => locale == AppLocale.id
+      ? 'Cache menghemat kuota; unduh hanya untuk wilayah yang Anda perlukan.'
+      : 'Caching saves data; download only for areas you need.';
   String get modeLite => locale == AppLocale.id ? 'Mode Lite' : 'Lite Mode';
   String get modeLiteDescription => locale == AppLocale.id
       ? 'Optimasi untuk HP RAM rendah (< 3 GB). Kurangi cache & beban memori. Restart aplikasi untuk menerapkan.'
@@ -456,6 +465,103 @@ class AppLocalizations {
   String get reject => locale == AppLocale.id ? 'Tolak' : 'Reject';
   String get agree => locale == AppLocale.id ? 'Setuju' : 'Agree';
   String get sos => 'SOS';
+  String get driverNavPremiumChipLabel =>
+      locale == AppLocale.id ? 'Nav premium' : 'Premium nav';
+  String get driverNavPremiumInfoTitle =>
+      locale == AppLocale.id ? 'Navigasi Premium' : 'Premium navigation';
+  String get driverNavPremiumInfoIntro => locale == AppLocale.id
+      ? 'Fitur ini membuat petunjuk jalan lebih jelas saat Anda mengemudi: '
+          'arah belok per langkah, jarak ke manuver, peta yang mengikuti arah '
+          'kendaraan, dan suara bimbingan jika diaktifkan.'
+      : 'This adds clearer guidance while you drive: step-by-step turns, '
+          'distance to maneuvers, a map aligned with your heading, and voice '
+          'guidance when enabled.';
+  String get driverNavPremiumInfoBullet1 => locale == AppLocale.id
+      ? '• Petunjuk belok dan lajur lebih mudah dipahami'
+      : '• Turn and lane guidance is easier to follow';
+  String get driverNavPremiumInfoBullet2 => locale == AppLocale.id
+      ? '• Kurangi tekanan mengingat rute di jalan ramai'
+      : '• Less mental load on busy roads';
+  String get driverNavPremiumInfoBullet3 => locale == AppLocale.id
+      ? '• Selaras dengan biaya layanan peta, rute, dan pemeliharaan aplikasi'
+      : '• Helps cover maps, routing, and app maintenance';
+  String get driverNavPremiumWhyPaid => locale == AppLocale.id
+      ? 'Biaya navigasi premium dihitung per penggunaan (setelah perjalanan '
+          'tertentu selesai), agar yang memakai fitur lanjutan ikut '
+          'membantu biaya operasional — bukan langganan wajib untuk semua driver.'
+      : 'Premium navigation is usage-based (after certain trips), so drivers '
+          'who use advanced guidance help cover operational costs — it isn’t '
+          'a mandatory subscription for everyone.';
+  String get driverNavPremiumInfoCtaPay =>
+      locale == AppLocale.id ? 'Bayar / cek status' : 'Pay / check status';
+  String get driverNavPremiumInfoClose =>
+      locale == AppLocale.id ? 'Tutup' : 'Close';
+  String get sosConfirmDialogTitle =>
+      locale == AppLocale.id ? 'Kirim SOS ke admin?' : 'Send SOS to admin?';
+  String get sosConfirmDialogBodyWhenWhatsApp => locale == AppLocale.id
+      ? 'Kami akan membuka WhatsApp ke nomor admin. Pastikan situasi benar-benar darurat.'
+      : 'We will open WhatsApp to the admin number. Only use for real emergencies.';
+  String get sosConfirmDialogBodyWhenLiveChatOnly => locale == AppLocale.id
+      ? 'Anda akan terhubung ke chat dukungan di aplikasi.'
+      : 'You will be connected to in-app support chat.';
+  String get sosConfirmSendAction =>
+      locale == AppLocale.id ? 'Kirim SOS' : 'Send SOS';
+  String get pickOnMapActionLabel =>
+      locale == AppLocale.id ? 'Pilih di peta' : 'Pick on map';
+  /// Driver / jadwal: pemilih titik awal rute di peta (pin awal).
+  String get pickOriginOnMapActionLabel => locale == AppLocale.id
+      ? 'Pilih titik awal di peta'
+      : 'Pick start point on map';
+  /// Info window untuk marker pratinjau titik awal form rute driver.
+  String get mapFormOriginPreviewTitle => locale == AppLocale.id
+      ? 'Titik awal (pratinjau)'
+      : 'Start point (preview)';
+
+  /// Validasi titik di peta — form rute driver (filter provinsi / pulau).
+  String get driverMapPickPointUnreadable => locale == AppLocale.id
+      ? 'Alamat titik tidak terbaca. Geser sedikit atau pilih titik lain.'
+      : 'Could not read this location. Move the map slightly or pick another point.';
+
+  String driverMapPickOriginMustSameProvince(String provinceLabel) {
+    final p =
+        provinceLabel.trim().isEmpty ? '—' : provinceLabel.trim();
+    return locale == AppLocale.id
+        ? 'Titik awal harus dalam provinsi yang sama dengan lokasi Anda ($p).'
+        : 'Start point must be in the same province as your location ($p).';
+  }
+
+  String driverMapPickDestMustSameProvinceWithinRoute(String provinceLabel) {
+    final p =
+        provinceLabel.trim().isEmpty ? '—' : provinceLabel.trim();
+    return locale == AppLocale.id
+        ? 'Untuk rute dalam provinsi, titik tujuan harus di provinsi yang sama '
+            'dengan lokasi Anda ($p).'
+        : 'For same-province routes, the destination must be in the same province '
+            'as your location ($p).';
+  }
+
+  String get driverMapPickOriginMustSameIsland => locale == AppLocale.id
+      ? 'Titik awal harus di salah satu provinsi di pulau yang sama dengan lokasi Anda.'
+      : 'Start point must be in a province on the same island as your location.';
+
+  String get driverMapPickDestMustSameIsland => locale == AppLocale.id
+      ? 'Titik tujuan harus di provinsi di pulau yang sama (bukan pulau lain).'
+      : 'Destination must be on the same island (not another island).';
+
+  String get driverMapPickDestMustDifferentProvinceInterProvince =>
+      locale == AppLocale.id
+          ? 'Untuk rute antar provinsi, pilih tujuan di provinsi lain '
+              '(masih di pulau yang sama).'
+          : 'For inter-province routes, pick a destination in a different province '
+              '(still on the same island).';
+
+  /// Driver: sheet alat peta → penjelasan lacak.
+  String get mapToolsLacakHelpTitle => locale == AppLocale.id
+      ? 'Bantuan pelacakan (Lacak)'
+      : 'Tracking help (Lacak)';
+  String get mapToolsLacakHelpSubtitle => locale == AppLocale.id
+      ? 'Cara kerja tampilan posisi dan privasi singkat.'
+      : 'How position sharing works and a short privacy note.';
   String get share => locale == AppLocale.id ? 'Bagikan' : 'Share';
   String get trackGoods => locale == AppLocale.id ? 'Lacak Barang' : 'Track Goods';
   String get trackDriver => locale == AppLocale.id ? 'Lacak Driver' : 'Track Driver';
@@ -465,6 +571,13 @@ class AppLocalizations {
   String get etaToYourLocation => locale == AppLocale.id
       ? 'Estimasi tiba di lokasi Anda'
       : 'Estimated arrival at your location';
+  /// Lacak driver setelah penumpang dijemput: jarak/ETA ke titik tujuan perjalanan.
+  String get driverDistanceToTripDestination => locale == AppLocale.id
+      ? 'Jarak driver ke tujuan perjalanan'
+      : 'Driver distance to trip destination';
+  String get etaToTripDestination => locale == AppLocale.id
+      ? 'Estimasi tiba di tujuan perjalanan'
+      : 'Estimated arrival at trip destination';
   String get driverDetailRecommended => locale == AppLocale.id
       ? 'Direkomendasikan'
       : 'Recommended';

@@ -2,7 +2,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show HapticFeedback, PlatformException;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:local_auth/error_codes.dart' as auth_error;
 import 'package:local_auth/local_auth.dart';
 
 /// Layanan login dengan sidik jari/wajah.
@@ -15,7 +14,7 @@ class BiometricLoginService {
 
   static final _auth = LocalAuthentication();
   static final _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    aOptions: const AndroidOptions(),
   );
 
   static bool get _isMobile =>
@@ -90,10 +89,8 @@ class BiometricLoginService {
     try {
       final ok = await _auth.authenticate(
         localizedReason: reason,
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          useErrorDialogs: false,
-        ),
+        persistAcrossBackgrounding: true,
+        sensitiveTransaction: true,
       );
       if (!ok) return (false, null);
 
@@ -110,6 +107,12 @@ class BiometricLoginService {
         password: password,
       );
       return (cred.user != null, null);
+    } on LocalAuthException catch (e) {
+      if (e.code == LocalAuthExceptionCode.userCanceled) {
+        return (false, null);
+      }
+      final msg = _localAuthCodeToMessage(e.code, isId);
+      return (false, msg);
     } on PlatformException catch (e) {
       final msg = _biometricErrorToMessage(e.code, isId);
       return (false, msg);
@@ -121,28 +124,66 @@ class BiometricLoginService {
     }
   }
 
-  static String _biometricErrorToMessage(String code, bool isId) {
+  static String _localAuthCodeToMessage(LocalAuthExceptionCode code, bool isId) {
     switch (code) {
-      case auth_error.notEnrolled:
+      case LocalAuthExceptionCode.noBiometricsEnrolled:
         return isId
             ? 'Sidik jari/wajah belum didaftarkan. Aktifkan di Pengaturan HP.'
             : 'Fingerprint/face not enrolled. Enable in device settings.';
-      case auth_error.notAvailable:
+      case LocalAuthExceptionCode.noBiometricHardware:
+      case LocalAuthExceptionCode.biometricHardwareTemporarilyUnavailable:
         return isId
             ? 'Biometric tidak tersedia di perangkat ini'
             : 'Biometric not available on this device';
-      case auth_error.lockedOut:
+      case LocalAuthExceptionCode.temporaryLockout:
         return isId
             ? 'Terlalu banyak percobaan. Coba lagi nanti.'
             : 'Too many attempts. Try again later.';
-      case auth_error.permanentlyLockedOut:
+      case LocalAuthExceptionCode.biometricLockout:
         return isId
             ? 'Biometric terkunci. Gunakan PIN/pattern HP untuk membuka.'
             : 'Biometric locked. Use device PIN/pattern to unlock.';
-      case auth_error.passcodeNotSet:
+      case LocalAuthExceptionCode.noCredentialsSet:
         return isId
             ? 'Atur PIN/pattern HP terlebih dahulu'
             : 'Set device PIN/pattern first';
+      default:
+        return isId ? 'Verifikasi gagal. Coba lagi.' : 'Verification failed. Try again.';
+    }
+  }
+
+  static String _biometricErrorToMessage(String code, bool isId) {
+    switch (code) {
+      case 'NotEnrolled':
+      case 'notEnrolled':
+        return _localAuthCodeToMessage(
+          LocalAuthExceptionCode.noBiometricsEnrolled,
+          isId,
+        );
+      case 'NotAvailable':
+      case 'notAvailable':
+        return _localAuthCodeToMessage(
+          LocalAuthExceptionCode.noBiometricHardware,
+          isId,
+        );
+      case 'LockedOut':
+      case 'lockedOut':
+        return _localAuthCodeToMessage(
+          LocalAuthExceptionCode.temporaryLockout,
+          isId,
+        );
+      case 'PermanentlyLockedOut':
+      case 'permanentlyLockedOut':
+        return _localAuthCodeToMessage(
+          LocalAuthExceptionCode.biometricLockout,
+          isId,
+        );
+      case 'PasscodeNotSet':
+      case 'passcodeNotSet':
+        return _localAuthCodeToMessage(
+          LocalAuthExceptionCode.noCredentialsSet,
+          isId,
+        );
       default:
         return isId ? 'Verifikasi gagal. Coba lagi.' : 'Verification failed. Try again.';
     }

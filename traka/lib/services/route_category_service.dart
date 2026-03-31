@@ -1,4 +1,5 @@
 import 'geocoding_service.dart';
+import 'travel_admin_region.dart';
 
 import '../config/province_island.dart';
 
@@ -11,6 +12,8 @@ class RouteCategoryService {
   static const String categoryAntarKabupaten = 'antar_kabupaten';
   static const String categoryAntarProvinsi = 'antar_provinsi';
   static const String categoryNasional = 'nasional';
+  /// Kategori fallback saat geocoding gagal / tidak tersedia.
+  static const String categoryUnknownGeocode = 'unknown_geocode';
 
   /// Label singkat untuk tampilan.
   static String getLabel(String category) {
@@ -28,24 +31,15 @@ class RouteCategoryService {
     }
   }
 
-  /// Ambil placemark (provinsi, kabupaten) dari koordinat.
-  static Future<({String? province, String? kabupaten})> _getPlacemark(
-    double lat,
-    double lng,
-  ) async {
+  /// Ambil placemark pertama dari koordinat.
+  static Future<Placemark?> _placemarkAt(double lat, double lng) async {
     try {
       final placemarks =
           await GeocodingService.placemarkFromCoordinates(lat, lng);
-      if (placemarks.isEmpty) return (province: null, kabupaten: null);
-      final p = placemarks.first;
-      final province = (p.administrativeArea ?? '').trim();
-      final kabupaten = (p.subAdministrativeArea ?? '').trim();
-      return (
-        province: province.isEmpty ? null : province,
-        kabupaten: kabupaten.isEmpty ? null : kabupaten,
-      );
+      if (placemarks.isEmpty) return null;
+      return placemarks.first;
     } catch (_) {
-      return (province: null, kabupaten: null);
+      return null;
     }
   }
 
@@ -58,18 +52,33 @@ class RouteCategoryService {
     required double destLat,
     required double destLng,
   }) async {
-    final origin = await _getPlacemark(originLat, originLng);
-    final dest = await _getPlacemark(destLat, destLng);
+    final oPm = await _placemarkAt(originLat, originLng);
+    final dPm = await _placemarkAt(destLat, destLng);
+    final oReg = oPm != null ? TravelAdminRegion.fromPlacemark(oPm) : null;
+    final dReg = dPm != null ? TravelAdminRegion.fromPlacemark(dPm) : null;
 
     // Default
     String category = categoryAntarProvinsi;
     String duration = '–';
 
-    if (origin.province != null && dest.province != null) {
-      final sameProvince = origin.province == dest.province;
-      final sameKabupaten = (origin.kabupaten != null &&
-          dest.kabupaten != null &&
-          origin.kabupaten == dest.kabupaten);
+    final oProvRaw = (oPm?.administrativeArea ?? '').trim();
+    final dProvRaw = (dPm?.administrativeArea ?? '').trim();
+    final oProv = oProvRaw.isEmpty ? null : oProvRaw;
+    final dProv = dProvRaw.isEmpty ? null : dProvRaw;
+
+    if (oProv != null && dProv != null) {
+      final sameProvince = (oReg?.provinceKey != null &&
+              dReg?.provinceKey != null &&
+              oReg!.provinceKey == dReg!.provinceKey) ||
+          (oProv == dProv);
+      final oKabRaw = (oPm?.subAdministrativeArea ?? '').trim();
+      final dKabRaw = (dPm?.subAdministrativeArea ?? '').trim();
+      final sameKabupaten = (oReg?.kabupatenKey != null &&
+              dReg?.kabupatenKey != null &&
+              oReg!.kabupatenKey == dReg!.kabupatenKey) ||
+          (oKabRaw.isNotEmpty &&
+              dKabRaw.isNotEmpty &&
+              oKabRaw == dKabRaw);
 
       if (sameProvince && sameKabupaten) {
         category = categoryDalamKota;
@@ -78,9 +87,8 @@ class RouteCategoryService {
         category = categoryAntarKabupaten;
         duration = '~2–6 jam';
       } else {
-        final originIsland =
-            ProvinceIsland.getIslandForProvince(origin.province);
-        final destIsland = ProvinceIsland.getIslandForProvince(dest.province);
+        final originIsland = ProvinceIsland.getIslandForProvince(oProv);
+        final destIsland = ProvinceIsland.getIslandForProvince(dProv);
         if (originIsland != null &&
             destIsland != null &&
             originIsland != destIsland) {

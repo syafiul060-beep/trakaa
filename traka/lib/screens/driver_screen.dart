@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../config/app_constants.dart';
+import '../l10n/app_localizations.dart' show AppLocale;
 import '../config/marker_assets.dart';
 import '../config/province_island.dart';
 import '../models/order_model.dart';
@@ -28,7 +29,12 @@ import '../services/driver_car_marker_service.dart';
 import '../services/driver_contribution_service.dart';
 import '../services/driver_location_icon_service.dart';
 import '../services/driver_schedule_service.dart';
+import '../services/driver_nav_premium_service.dart';
+import '../services/driver_driving_ux_service.dart';
 import '../services/driver_status_service.dart';
+import '../services/field_observability_service.dart';
+import '../services/map_device_tilt_service.dart';
+import '../services/offline_nav_route_cache_service.dart';
 import '../services/exemption_service.dart';
 import '../services/fake_gps_overlay_service.dart';
 import '../services/geocoding_service.dart';
@@ -50,6 +56,8 @@ import '../services/route_session_service.dart';
 import '../services/route_utils.dart';
 import '../services/routes_toll_service.dart';
 import '../services/theme_service.dart';
+import '../services/traka_pin_bitmap_service.dart';
+import '../services/travel_admin_region.dart';
 import '../services/trip_service.dart';
 import '../services/user_shell_profile_stream.dart';
 import '../services/verification_service.dart';
@@ -60,10 +68,14 @@ import '../utils/app_logger.dart';
 import '../utils/instruction_formatter.dart';
 import '../utils/placemark_formatter.dart';
 import '../widgets/driver_focus_button.dart';
+import '../widgets/driver_nav_premium_map_chip.dart';
 import '../widgets/driver_map_overlays.dart';
 import '../widgets/driver_route_form_sheet.dart';
 import '../widgets/driver_route_info_panel.dart';
 import '../widgets/driver_stops_list_overlay.dart';
+import '../widgets/lacak_tracking_info_sheet.dart';
+import '../widgets/lollipop_pin_widgets.dart';
+import '../widgets/map_destination_picker_screen.dart';
 import '../widgets/map_type_zoom_controls.dart';
 import '../widgets/navigating_to_destination_overlay.dart';
 import '../widgets/navigating_to_passenger_overlay.dart';
@@ -76,6 +88,8 @@ import '../widgets/traka_main_bottom_navigation_bar.dart';
 import '../widgets/turn_by_turn_banner.dart';
 import 'chat_list_driver_screen.dart';
 import 'contribution_driver_screen.dart';
+import 'driver_nav_premium_payment_screen.dart';
+import 'offline_map_precache_screen.dart';
 import 'data_order_driver_screen.dart';
 import 'driver_jadwal_rute_screen.dart';
 import 'login_screen.dart';
@@ -84,6 +98,10 @@ import 'profile_driver_screen.dart';
 /// Tipe rute: dalam provinsi, antar provinsi, dalam negara.
 enum RouteType { dalamProvinsi, antarProvinsi, dalamNegara }
 
+/// Titik masuk fitur lapangan (tahap integrasi 2→4): ikon «tune» kontrol zoom → sheet
+/// (precache OSM, bantuan lacak, pilih tujuan di peta memakai form); chip navigasi premium;
+/// sensor tilt + sinkron [DriverDrivingUxService]/[FieldObservabilityService]; cache rute
+/// [OfflineNavRouteCacheService] + arahan [NavigationDiagnostics] di [DirectionsService].
 class DriverScreen extends StatefulWidget {
   const DriverScreen({super.key});
 
@@ -271,10 +289,22 @@ class _DriverScreenState extends State<DriverScreen>
   LatLng? _lastRouteDestLatLng;
   String _lastRouteOriginText = '';
   String _lastRouteDestText = '';
+  /// Kunci admin asal/tujuan rute (untuk filter penumpang / `driver_status`).
+  String? _routeOriginKabKey;
+  String? _routeDestKabKey;
+  String? _routeOriginProvKey;
+  String? _routeDestProvKey;
+  Timer? _routeAdminKeysResolveTimer;
+  int _routeAdminKeysResolveGen = 0;
+  double? _adminKeysCachedOLat;
+  double? _adminKeysCachedOLng;
+  double? _adminKeysCachedDLat;
+  double? _adminKeysCachedDLng;
 
   // Tracking update lokasi ke Firestore (efisien: jika pindah 1.5 km atau per 12 menit)
   Position? _lastUpdatedPosition;
   DateTime? _lastUpdatedTime;
+  int _consecutiveDriverStatusWriteFailures = 0;
 
   // Icon mobil untuk marker lokasi driver (cache sekali, pakai Marker.rotation)
   BitmapDescriptor? _carIconRed;
@@ -370,12 +400,17 @@ class _DriverScreenState extends State<DriverScreen>
   /// Preview pin tujuan di peta saat memilih dari autocomplete form rute.
   final ValueNotifier<LatLng?> _formDestPreviewNotifier =
       ValueNotifier<LatLng?>(null);
+  /// Preview titik awal dari peta pada form rute (sebelum submit).
+  final ValueNotifier<LatLng?> _formOriginPreviewNotifier =
+      ValueNotifier<LatLng?>(null);
 
   /// Mode navigasi ke penumpang: driver klik "Ya, arahkan" → tetap di Beranda, rute ke penumpang di peta.
   /// Setelah scan/konfirmasi otomatis, kembali ke rute utama.
   String? _navigatingToOrderId;
   List<LatLng>? _polylineToPassenger;
   List<RouteStep> _routeSteps = [];
+  /// Segmen laju per langkah Directions (warna jalur). Selalu sejajar dengan polyline yang memuat [_routeSteps] aktif.
+  List<RoutePolylineTrafficSegment> _activeRouteTrafficSegments = [];
   int _currentStepIndex = -1;
   String _routeToPassengerDistanceText = '';
   String _routeToPassengerDurationText = '';
@@ -491,17 +526,35 @@ class _DriverScreenState extends State<DriverScreen>
             : null);
     if (poly == null || poly.length < 2) return;
 
-    final pos = LatLng(position.latitude, position.longitude);
+    // Ikuti posisi tersmooth di peta + proyeksi lebih longgar agar jarak TBT tidak «melenceng».
+    final rawPos = LatLng(position.latitude, position.longitude);
+    final navPos = _displayedPosition ?? rawPos;
+    final pos = Geolocator.distanceBetween(
+              navPos.latitude,
+              navPos.longitude,
+              rawPos.latitude,
+              rawPos.longitude,
+            ) <=
+            92
+        ? navPos
+        : rawPos;
     var proj = RouteUtils.projectPointOntoPolyline(
       pos,
       poly,
-      maxDistanceMeters: 280,
+      maxDistanceMeters: 320,
     );
     if (proj.$2 < 0) {
       proj = RouteUtils.projectPointOntoPolyline(
         pos,
         poly,
         maxDistanceMeters: 520,
+      );
+    }
+    if (proj.$2 < 0) {
+      proj = RouteUtils.projectPointOntoPolyline(
+        rawPos,
+        poly,
+        maxDistanceMeters: 620,
       );
     }
     if (proj.$2 < 0) {
@@ -652,6 +705,10 @@ class _DriverScreenState extends State<DriverScreen>
     });
     unawaited(PerformanceTraceService.stopStartupToInteractive());
     WidgetsBinding.instance.addObserver(this);
+    MapDeviceTiltService.instance.addListener(_onDeviceTiltChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_refreshNavPremiumOwed());
+    });
     _authStateSub = FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user != null && mounted) {
         _sessionInvalidCheckTimer?.cancel();
@@ -741,6 +798,7 @@ class _DriverScreenState extends State<DriverScreen>
       _polylineToPassenger = null;
       _polylineToDestination = null;
       _routeSteps = [];
+                  _activeRouteTrafficSegments = [];
                   _currentStepIndex = -1;
                   _routeToPassengerDistanceText = '';
                   _routeToPassengerDurationText = '';
@@ -793,6 +851,7 @@ class _DriverScreenState extends State<DriverScreen>
                     _navigatingToOrderId = null;
                     _polylineToPassenger = null;
                     _routeSteps = [];
+                    _activeRouteTrafficSegments = [];
                     _currentStepIndex = -1;
                     _routeToPassengerDistanceText = '';
                     _routeToPassengerDurationText = '';
@@ -879,7 +938,8 @@ class _DriverScreenState extends State<DriverScreen>
       });
     });
     _tryRestoreActiveRoute();
-    _formDestPreviewNotifier.addListener(_onFormDestPreviewChanged);
+    _formDestPreviewNotifier.addListener(_onFormRoutePreviewChanged);
+    _formOriginPreviewNotifier.addListener(_onFormRoutePreviewChanged);
     NavigationSettingsService.dataSaverNotifier
         .addListener(_onNavigationDataSaverChanged);
     _restartLocationTimer();
@@ -926,10 +986,13 @@ class _DriverScreenState extends State<DriverScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.paused) {
+      MapDeviceTiltService.instance.setBackgroundPaused(true);
+      DriverDrivingUxService.clearForegroundDrivingContext();
       _driverPausedAt = DateTime.now();
       return;
     }
     if (state == AppLifecycleState.resumed) {
+      MapDeviceTiltService.instance.setBackgroundPaused(false);
       _refreshAuthTokenSilently();
       final pausedAt = _driverPausedAt;
       _driverPausedAt = null;
@@ -1211,6 +1274,13 @@ class _DriverScreenState extends State<DriverScreen>
   double _displayedZoom = 16.65;
   double _displayedTilt = 22.0;
 
+  bool _navPremiumOwedCache = false;
+  int? _lastFieldObsTab;
+  bool? _lastFieldObsRouteNav;
+  String? _lastFieldObsOrderId;
+  bool? _lastUxNavigating;
+  bool? _lastUxTbt;
+
   /// Zoom mengikuti kecepatan tanpa lompatan tier (kurangi «tiba-tiba dekat/jauh»).
   double _getTrackingZoom(double speedKmh) {
     final s = speedKmh.clamp(0.0, 120.0);
@@ -1239,6 +1309,481 @@ class _DriverScreenState extends State<DriverScreen>
     const alphaTilt = 0.21;
     _displayedZoom += (targetZoom - _displayedZoom) * alphaZoom;
     _displayedTilt += (targetTilt - _displayedTilt) * alphaTilt;
+  }
+
+  double _effectiveCameraTiltForNav() {
+    if (!MapDeviceTiltService.supportsPlatform) return _displayedTilt;
+    if (!_isDriverWorking && _navigatingToOrderId == null) {
+      return _displayedTilt;
+    }
+    return (_displayedTilt + MapDeviceTiltService.instance.offsetDegrees)
+        .clamp(0.0, 60.0);
+  }
+
+  void _onDeviceTiltChanged() {
+    if (!mounted) return;
+    if (_isDriverWorking || _navigatingToOrderId != null) {
+      setState(() {});
+    }
+  }
+
+  void _syncMapDeviceTiltSession() {
+    if (!MapDeviceTiltService.supportsPlatform) return;
+    if (_isDriverWorking || _navigatingToOrderId != null) {
+      MapDeviceTiltService.instance.setOrientation(
+        MediaQuery.orientationOf(context),
+      );
+      MapDeviceTiltService.instance.startListening();
+    } else {
+      MapDeviceTiltService.instance.stopListening();
+    }
+  }
+
+  void _syncFieldObservabilityIfChanged() {
+    final tab = _currentIndex;
+    final routeNav = _isDriverWorking &&
+        (_routePolyline != null && _routePolyline!.length >= 2);
+    final oid = _navigatingToOrderId;
+    if (_lastFieldObsTab == tab &&
+        _lastFieldObsRouteNav == routeNav &&
+        _lastFieldObsOrderId == oid) {
+      return;
+    }
+    _lastFieldObsTab = tab;
+    _lastFieldObsRouteNav = routeNav;
+    _lastFieldObsOrderId = oid;
+    FieldObservabilityService.syncDriverHome(
+      tabIndex: tab,
+      routeNavActive: routeNav || oid != null,
+      orderNavigationId: oid,
+    );
+  }
+
+  void _syncDriverDrivingUxIfChanged() {
+    final nav = _navigatingToOrderId != null;
+    final tbt = _routeSteps.isNotEmpty &&
+        (nav ||
+            (_isDriverWorking &&
+                _routePolyline != null &&
+                _routePolyline!.length >= 2));
+    if (_lastUxNavigating == nav && _lastUxTbt == tbt) return;
+    _lastUxNavigating = nav;
+    _lastUxTbt = tbt;
+    DriverDrivingUxService.syncDriverMapState(
+      navigatingToOrder: nav,
+      turnByTurnChromeVisible: tbt,
+    );
+  }
+
+  Future<void> _refreshNavPremiumOwed() async {
+    final o = await DriverNavPremiumService.hasOwedPayment();
+    if (mounted) setState(() => _navPremiumOwedCache = o);
+  }
+
+  void _persistOfflineWorkRouteFromSteps(DirectionsResultWithSteps withSteps) {
+    if (_routeDestLatLng == null) return;
+    final idx = _currentStepIndex >= 0 ? _currentStepIndex : 0;
+    unawaited(
+      OfflineNavRouteCacheService.saveWorkRoute(
+        destLat: _routeDestLatLng!.latitude,
+        destLng: _routeDestLatLng!.longitude,
+        polyline: withSteps.result.points,
+        steps: withSteps.steps,
+        currentStepIndex: idx,
+        distanceText: withSteps.result.distanceText,
+        durationText: withSteps.result.durationText,
+        durationSeconds: withSteps.result.durationSeconds,
+        warnings: withSteps.result.warnings,
+        tollInfoText: withSteps.result.tollInfoText,
+        trafficSegments: withSteps.trafficSegments,
+      ),
+    );
+  }
+
+  void _persistOfflineOrderNavFromSteps({
+    required OrderModel order,
+    required DirectionsResultWithSteps withSteps,
+    required double destLat,
+    required double destLng,
+    required bool navigatingToDestination,
+    int? stepIndexOverride,
+  }) {
+    final idx = stepIndexOverride ??
+        (_currentStepIndex >= 0 ? _currentStepIndex : 0);
+    unawaited(
+      OfflineNavRouteCacheService.saveOrderNavigation(
+        orderId: order.id,
+        navigatingToDestination: navigatingToDestination,
+        destLat: destLat,
+        destLng: destLng,
+        polyline: withSteps.result.points,
+        steps: withSteps.steps,
+        currentStepIndex: idx,
+        distanceText: withSteps.result.distanceText,
+        durationText: withSteps.result.durationText,
+        durationSeconds: withSteps.result.durationSeconds,
+        warnings: withSteps.result.warnings,
+        tollInfoText: withSteps.result.tollInfoText,
+        trafficSegments: withSteps.trafficSegments,
+      ),
+    );
+  }
+
+  /// Update cache offline dengan indeks langkah TBT terbaru (polyline & langkah sama seperti sesi aktif).
+  void _persistOfflineNavSnapshotForStep(int stepIdx) {
+    if (_routeSteps.isEmpty) return;
+    final clamped = stepIdx.clamp(0, _routeSteps.length - 1);
+
+    List<LatLng>? poly;
+    if (_navigatingToOrderId != null) {
+      poly = _navigatingToDestination
+          ? _polylineToDestination
+          : _polylineToPassenger;
+    } else if (_isDriverWorking) {
+      poly = _routePolyline;
+    }
+    if (poly == null || poly.length < 2) return;
+
+    final distM = RouteUtils.polylineLengthMeters(poly);
+    final distKm = distM / 1000.0;
+    final orderNav = _navigatingToOrderId != null;
+    final distanceText = orderNav
+        ? _routeToPassengerDistanceText
+        : _routeDistanceText;
+    final durationText = orderNav
+        ? _routeToPassengerDurationText
+        : _routeDurationText;
+    final durationSeconds = orderNav
+        ? (_routeToPassengerDurationSeconds ?? 0)
+        : (_routeEstimatedDurationSeconds ?? 0);
+
+    final result = DirectionsResult(
+      points: poly,
+      distanceKm: distKm,
+      distanceText: distanceText,
+      durationSeconds: durationSeconds,
+      durationText: durationText,
+      tollInfoText: _routeTollInfo,
+      warnings: _routeWarnings,
+    );
+    final withSteps = DirectionsResultWithSteps(
+      result: result,
+      steps: _routeSteps,
+      trafficSegments:
+          List<RoutePolylineTrafficSegment>.from(_activeRouteTrafficSegments),
+    );
+
+    if (orderNav) {
+      OrderModel? navOrder;
+      for (final o in _driverOrders) {
+        if (o.id == _navigatingToOrderId) {
+          navOrder = o;
+          break;
+        }
+      }
+      if (navOrder == null) return;
+      double? destLat;
+      double? destLng;
+      if (_navigatingToDestination) {
+        (destLat, destLng) = _getOrderDestinationLatLng(navOrder);
+      } else {
+        destLat = navOrder.passengerLiveLat ??
+            navOrder.passengerLat ??
+            navOrder.originLat;
+        destLng = navOrder.passengerLiveLng ??
+            navOrder.passengerLng ??
+            navOrder.originLng;
+      }
+      if (destLat == null || destLng == null) return;
+      _persistOfflineOrderNavFromSteps(
+        order: navOrder,
+        withSteps: withSteps,
+        destLat: destLat,
+        destLng: destLng,
+        navigatingToDestination: _navigatingToDestination,
+        stepIndexOverride: clamped,
+      );
+    } else {
+      if (_routeDestLatLng == null) return;
+      unawaited(
+        OfflineNavRouteCacheService.saveWorkRoute(
+          destLat: _routeDestLatLng!.latitude,
+          destLng: _routeDestLatLng!.longitude,
+          polyline: poly,
+          steps: _routeSteps,
+          currentStepIndex: clamped,
+          distanceText: distanceText,
+          durationText: durationText,
+          durationSeconds: durationSeconds,
+          warnings: _routeWarnings,
+          tollInfoText: _routeTollInfo,
+          trafficSegments:
+              List<RoutePolylineTrafficSegment>.from(_activeRouteTrafficSegments),
+        ),
+      );
+    }
+  }
+
+  Future<void> _openNavPremiumPaymentScreen() async {
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => const DriverNavPremiumPaymentScreen(),
+      ),
+    );
+    if (mounted) await _refreshNavPremiumOwed();
+  }
+
+  Future<void> _showDriverNavPremiumInfoSheet() async {
+    if (!mounted) return;
+    final l10n = TrakaL10n.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final bottomInset = MediaQuery.paddingOf(ctx).bottom;
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 8,
+            bottom: bottomInset + 20,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  l10n.driverNavPremiumInfoTitle,
+                  style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  l10n.driverNavPremiumInfoIntro,
+                  style: Theme.of(ctx).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  l10n.driverNavPremiumInfoBullet1,
+                  style: Theme.of(ctx).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  l10n.driverNavPremiumInfoBullet2,
+                  style: Theme.of(ctx).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  l10n.driverNavPremiumInfoBullet3,
+                  style: Theme.of(ctx).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  l10n.driverNavPremiumWhyPaid,
+                  style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    unawaited(_openNavPremiumPaymentScreen());
+                  },
+                  child: Text(l10n.driverNavPremiumInfoCtaPay),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(l10n.driverNavPremiumInfoClose),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<MapPickerResult?> _pickDestinationOnMapFromSheet(
+    BuildContext sheetCtx,
+  ) async {
+    final pos = _currentPosition;
+    final fromPreview = _formDestPreviewNotifier.value;
+    final fromRoute = _routeDestLatLng;
+    final initial = fromPreview ??
+        fromRoute ??
+        (pos != null
+            ? LatLng(pos.latitude, pos.longitude)
+            : const LatLng(-3.3194, 114.5907));
+    final device =
+        pos != null ? LatLng(pos.latitude, pos.longitude) : null;
+    return Navigator.of(sheetCtx).push<MapPickerResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => MapDestinationPickerScreen(
+          initialCameraTarget: initial,
+          deviceLocation: device,
+          title: TrakaL10n.of(sheetCtx).pickOnMapActionLabel,
+          pinVariant: LollipopPinVariant.destination,
+        ),
+      ),
+    );
+  }
+
+  Future<MapPickerResult?> _pickOriginOnMapFromSheet(
+    BuildContext sheetCtx,
+  ) async {
+    final pos = _currentPosition;
+    final initial = pos != null
+        ? LatLng(pos.latitude, pos.longitude)
+        : const LatLng(-3.3194, 114.5907);
+    final device =
+        pos != null ? LatLng(pos.latitude, pos.longitude) : null;
+    return Navigator.of(sheetCtx).push<MapPickerResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => MapDestinationPickerScreen(
+          initialCameraTarget: initial,
+          deviceLocation: device,
+          title: TrakaL10n.of(sheetCtx).pickOriginOnMapActionLabel,
+          pinVariant: LollipopPinVariant.origin,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDriverMapToolsMenu() async {
+    if (!mounted) return;
+    final l10n = TrakaL10n.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.cloud_download_outlined),
+                title: Text(l10n.offlineMapPrecacheTitle),
+                subtitle: Text(
+                  l10n.offlineMapPrecacheIntro,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  unawaited(
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => const OfflineMapPrecacheScreen(),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: Text(l10n.mapToolsLacakHelpTitle),
+                subtitle: Text(
+                  l10n.mapToolsLacakHelpSubtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  unawaited(
+                    showLacakTrackingInfoSheet(
+                      context,
+                      audience: LacakTrackingAudience.lacakDriverMap,
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.push_pin_outlined),
+                title: Text(l10n.pickOnMapActionLabel),
+                subtitle: Text(
+                  l10n.driverRoutePassengerMatchingHint,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  if (!_canStartDriverWork) {
+                    _showDriverVerificationGateDialog();
+                    return;
+                  }
+                  unawaited(_openMapPickerStandaloneFromTools());
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Dari menu peta: buka picker; jika rute sudah dipilih, isi tujuan akhir.
+  Future<void> _openMapPickerStandaloneFromTools() async {
+    if (!mounted) return;
+    final pos = _currentPosition;
+    final initial = _routeDestLatLng ??
+        _formDestPreviewNotifier.value ??
+        (pos != null
+            ? LatLng(pos.latitude, pos.longitude)
+            : const LatLng(-3.3194, 114.5907));
+    final device =
+        pos != null ? LatLng(pos.latitude, pos.longitude) : null;
+    final r = await Navigator.of(context).push<MapPickerResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => MapDestinationPickerScreen(
+          initialCameraTarget: initial,
+          deviceLocation: device,
+          title: TrakaL10n.of(context).pickOnMapActionLabel,
+          pinVariant: LollipopPinVariant.destination,
+        ),
+      ),
+    );
+    if (r == null || !mounted) return;
+    final dest = LatLng(r.lat, r.lng);
+    _formDestPreviewNotifier.value = dest;
+    if (_routeOriginLatLng != null && (_routeSelected || _isDriverWorking)) {
+      setState(() {
+        _routeDestLatLng = dest;
+        _routeDestText = r.label;
+      });
+      await _persistCurrentRoute();
+      if (_currentPosition != null) {
+        unawaited(
+          _maybeRerouteFromCurrentPosition(
+            LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+            force: true,
+            quiet: true,
+          ),
+        );
+      }
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            TrakaL10n.of(context).locale == AppLocale.id
+                ? 'Titik di peta tersimpan di pratinjau. Buka form rute (tombol biru) untuk memuat rute ke lokasi ini.'
+                : 'Map point saved as preview. Open the route form to build a route to this location.',
+          ),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   /// Titik pandang kamera di depan GPS (meter) — makin jauh, makin «ikon di bawah, jalan di atas»
@@ -1468,24 +2013,34 @@ class _DriverScreenState extends State<DriverScreen>
   double _fuseDeviceHeadingWithRouteBearing(
     double deviceHeadingDeg,
     double routeBearingDeg,
-    double speedMps,
-  ) {
+    double speedMps, {
+    double routeDeviationMeters = 0,
+  }) {
     if (!deviceHeadingDeg.isFinite || !routeBearingDeg.isFinite) {
       return routeBearingDeg;
     }
-    if (speedMps < 2.0) return routeBearingDeg;
+    if (routeDeviationMeters >= 32 &&
+        speedMps >= 0.95 &&
+        deviceHeadingDeg.isFinite) {
+      return RouteUtils.smoothBearingDegrees(
+        routeBearingDeg,
+        deviceHeadingDeg,
+        alpha: 0.78,
+      );
+    }
+    if (speedMps < 1.15) return routeBearingDeg;
     var diff = (deviceHeadingDeg - routeBearingDeg) % 360;
     if (diff > 180) diff -= 360;
     if (diff < -180) diff += 360;
     final ad = diff.abs();
-    if (ad >= 100 && ad <= 260) {
+    if (ad >= 95 && ad <= 265) {
       return deviceHeadingDeg;
     }
-    if (ad > 48 && ad < 100) {
+    if (ad > 42 && ad < 95) {
       return RouteUtils.smoothBearingDegrees(
         routeBearingDeg,
         deviceHeadingDeg,
-        alpha: 0.42,
+        alpha: 0.5,
       );
     }
     return routeBearingDeg;
@@ -1513,11 +2068,37 @@ class _DriverScreenState extends State<DriverScreen>
     if (poly == null || poly.length < 2) return;
 
     final raw = LatLng(position.latitude, position.longitude);
-    final (_, seg, ratio) = RouteUtils.projectPointOntoPolyline(
-      raw,
+    final navPos = _displayedPosition ?? raw;
+    final pos = Geolocator.distanceBetween(
+              navPos.latitude,
+              navPos.longitude,
+              raw.latitude,
+              raw.longitude,
+            ) <=
+            92
+        ? navPos
+        : raw;
+    var proj = RouteUtils.projectPointOntoPolyline(
+      pos,
       poly,
       maxDistanceMeters: 320,
     );
+    if (proj.$2 < 0) {
+      proj = RouteUtils.projectPointOntoPolyline(
+        pos,
+        poly,
+        maxDistanceMeters: 520,
+      );
+    }
+    if (proj.$2 < 0) {
+      proj = RouteUtils.projectPointOntoPolyline(
+        raw,
+        poly,
+        maxDistanceMeters: 620,
+      );
+    }
+    final seg = proj.$2;
+    final ratio = proj.$3;
     if (seg < 0) return;
     final distM = RouteUtils.distanceAlongPolyline(poly, seg, ratio);
     final step = _routeSteps[_currentStepIndex];
@@ -1655,7 +2236,7 @@ class _DriverScreenState extends State<DriverScreen>
           CameraPosition(
             target: target,
             bearing: camBearing,
-            tilt: _displayedTilt,
+            tilt: _effectiveCameraTiltForNav(),
             zoom: _displayedZoom,
           ),
         ),
@@ -1764,7 +2345,8 @@ class _DriverScreenState extends State<DriverScreen>
     } else {
       _cancelDriverNavigationPositionStream();
       _lastDriverNavStreamAt = null;
-      _locationRefreshTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
+      // Bukan Siap Kerja / navigasi order: jarang bangunkan GPS (hemat baterai & data).
+      _locationRefreshTimer = Timer.periodic(const Duration(seconds: 120), (_) async {
         _getCurrentLocation(forTracking: true);
         if (_isDriverWorking &&
             _routeDestLatLng != null &&
@@ -1791,6 +2373,13 @@ class _DriverScreenState extends State<DriverScreen>
     if (!(_isDriverWorking || _navigatingToOrderId != null)) return;
     final ok = await LocationService.requestPermission();
     if (!ok || !mounted) return;
+    if (mounted) {
+      await LocationService.promptBackgroundLocationForLiveTrackingIfNeeded(
+        context,
+        kind: LiveLocationBackgroundPromptKind.driverNavigation,
+      );
+    }
+    if (!mounted) return;
     if (!await Geolocator.isLocationServiceEnabled()) return;
     try {
       _driverNavPositionSub =
@@ -1832,7 +2421,7 @@ class _DriverScreenState extends State<DriverScreen>
     }
   }
 
-  void _onFormDestPreviewChanged() {
+  void _onFormRoutePreviewChanged() {
     if (mounted) setState(() {});
   }
 
@@ -1844,6 +2433,7 @@ class _DriverScreenState extends State<DriverScreen>
     } else {
       WakelockPlus.disable();
     }
+    if (mounted) _syncMapDeviceTiltSession();
   }
 
   @override
@@ -1855,11 +2445,17 @@ class _DriverScreenState extends State<DriverScreen>
       ..dispose();
     NotificationNavigationService.unregisterOpenProfileTab();
     WidgetsBinding.instance.removeObserver(this);
+    MapDeviceTiltService.instance
+      ..removeListener(_onDeviceTiltChanged)
+      ..stopListening();
     _authTokenRefreshTimer?.cancel();
     _sessionInvalidCheckTimer?.cancel();
     _authStateSub?.cancel();
     WakelockPlus.disable();
-    _formDestPreviewNotifier.removeListener(_onFormDestPreviewChanged);
+    _formDestPreviewNotifier.removeListener(_onFormRoutePreviewChanged);
+    _formOriginPreviewNotifier.removeListener(_onFormRoutePreviewChanged);
+    _formDestPreviewNotifier.dispose();
+    _formOriginPreviewNotifier.dispose();
     _disposeDriverOrdersSub();
     _locationRefreshTimer?.cancel();
     _cancelDriverNavigationPositionStream();
@@ -1869,6 +2465,7 @@ class _DriverScreenState extends State<DriverScreen>
     _trafficAlternativesCheckTimer?.cancel();
     _driverOrdersUiDebounce?.cancel();
     _pendingJadwalSafetyTimer?.cancel();
+    _routeAdminKeysResolveTimer?.cancel();
     _mapController?.dispose();
     RouteBackgroundHandler.unregister();
     // Hapus status driver dari Firestore saat screen dispose (agar driver tidak tampil siap kerja).
@@ -1917,12 +2514,93 @@ class _DriverScreenState extends State<DriverScreen>
     await RoutePersistenceService.updateBackgroundSince(DateTime.now());
   }
 
+  void _cancelRouteAdminKeysResolve() {
+    _routeAdminKeysResolveTimer?.cancel();
+    _routeAdminKeysResolveGen++;
+  }
+
+  void _resetRouteAdminKeysFields() {
+    _routeOriginKabKey = null;
+    _routeDestKabKey = null;
+    _routeOriginProvKey = null;
+    _routeDestProvKey = null;
+    _adminKeysCachedOLat = null;
+    _adminKeysCachedOLng = null;
+    _adminKeysCachedDLat = null;
+    _adminKeysCachedDLng = null;
+  }
+
+  void _scheduleRouteAdminKeysResolve() {
+    _routeAdminKeysResolveTimer?.cancel();
+    if (_routeOriginLatLng == null ||
+        _routeDestLatLng == null ||
+        !_isDriverWorking) {
+      return;
+    }
+    _routeAdminKeysResolveTimer = Timer(const Duration(milliseconds: 600), () {
+      unawaited(_resolveRouteAdminKeys());
+    });
+  }
+
+  Future<void> _resolveRouteAdminKeys() async {
+    final o = _routeOriginLatLng;
+    final d = _routeDestLatLng;
+    if (o == null || d == null || !mounted || !_isDriverWorking) return;
+
+    final oLat = o.latitude;
+    final oLng = o.longitude;
+    final dLat = d.latitude;
+    final dLng = d.longitude;
+
+    final startGen = _routeAdminKeysResolveGen;
+
+    if (_adminKeysCachedOLat == oLat &&
+        _adminKeysCachedOLng == oLng &&
+        _adminKeysCachedDLat == dLat &&
+        _adminKeysCachedDLng == dLng) {
+      return;
+    }
+
+    final originReg = await TravelAdminRegion.fromCoordinates(oLat, oLng);
+    final destReg = await TravelAdminRegion.fromCoordinates(dLat, dLng);
+    if (!mounted || startGen != _routeAdminKeysResolveGen) return;
+
+    final o2 = _routeOriginLatLng;
+    final d2 = _routeDestLatLng;
+    if (o2 == null ||
+        d2 == null ||
+        o2.latitude != oLat ||
+        o2.longitude != oLng ||
+        d2.latitude != dLat ||
+        d2.longitude != dLng ||
+        !_isDriverWorking) {
+      return;
+    }
+
+    setState(() {
+      _routeOriginKabKey = originReg?.kabupatenKey;
+      _routeOriginProvKey = originReg?.provinceKey;
+      _routeDestKabKey = destReg?.kabupatenKey;
+      _routeDestProvKey = destReg?.provinceKey;
+      _adminKeysCachedOLat = oLat;
+      _adminKeysCachedOLng = oLng;
+      _adminKeysCachedDLat = dLat;
+      _adminKeysCachedDLng = dLng;
+    });
+    final pos = _currentPosition;
+    if (pos != null && _isDriverWorking) {
+      unawaited(_updateDriverStatusToFirestore(pos));
+    }
+  }
+
   /// Mengembalikan state setelah [getAlternativeRoutes] gagal — jangan biarkan UI "aktif" tanpa polyline.
   void _revertOptimisticRouteRestoreFailure() {
     if (!mounted) return;
+    _cancelRouteAdminKeysResolve();
     setState(() {
       _isDriverWorking = false;
       _routePolyline = null;
+      _activeRouteTrafficSegments = [];
       _routeOriginLatLng = null;
       _routeDestLatLng = null;
       _routeOriginText = '';
@@ -1942,6 +2620,7 @@ class _DriverScreenState extends State<DriverScreen>
       _destinationReachedAt = null;
       _currentScheduleId = null;
       _routeRestoreAwaitingPolyline = false;
+      _resetRouteAdminKeysFields();
     });
   }
 
@@ -2050,6 +2729,84 @@ class _DriverScreenState extends State<DriverScreen>
     }
     if (!mounted) return;
     if (alternatives.isEmpty) {
+      final offline = await OfflineNavRouteCacheService.loadWorkRouteMatch(
+        destLat: dLat,
+        destLng: dLng,
+      );
+      if (offline != null && mounted) {
+        var journeyNumber = firestoreRoute?.routeJourneyNumber;
+        if (journeyNumber == null || journeyNumber.isEmpty) {
+          journeyNumber =
+              await RouteJourneyNumberService.generateRouteJourneyNumber();
+        }
+        if (!mounted) return;
+        final w = offline.data;
+        final startedAt = DateTime.now();
+        setState(() {
+          _routeRestoreAwaitingPolyline = false;
+          _routeOriginLatLng = LatLng(oLat, oLng);
+          _routeDestLatLng = LatLng(dLat, dLng);
+          _routeOriginText = originText;
+          _routeDestText = destText;
+          _routePolyline = w.result.points;
+          _routeDistanceText = w.result.distanceText;
+          _routeDurationText = w.result.durationText;
+          _alternativeRoutes = [w.result];
+          _selectedRouteIndex = 0;
+          _routeSelected = true;
+          _originalRouteIndex = 0;
+          _lastRouteSwitchTime = null;
+          _isDriverWorking = true;
+          _destinationReachedAt = null;
+          _routeJourneyNumber = journeyNumber;
+          _routeStartedAt = firestoreRoute?.routeStartedAt ?? startedAt;
+          _routeEstimatedDurationSeconds =
+              firestoreRoute?.estimatedDurationSeconds ??
+              w.result.durationSeconds;
+          _activeRouteFromJadwal = fromJadwal ?? false;
+          _routeSteps = w.steps;
+          _activeRouteTrafficSegments = w.trafficSegments;
+          _currentStepIndex = offline.currentStepIndex;
+          _hasMovedAfterStart = true;
+          _positionWhenStarted = _currentPosition;
+          if (_currentPosition != null) {
+            final raw = LatLng(
+              _currentPosition!.latitude,
+              _currentPosition!.longitude,
+            );
+            _displayedPosition = raw;
+            _targetPosition = raw;
+          }
+        });
+        _registerRouteBackgroundHandler();
+        await _persistCurrentRoute();
+        if (_currentPosition != null) {
+          unawaited(_updateDriverStatusToFirestore(_currentPosition!));
+        } else {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            if (!mounted) return;
+            final pos = _currentPosition;
+            if (pos != null && _isDriverWorking) {
+              await _updateDriverStatusToFirestore(pos);
+            }
+          });
+        }
+        _restartLocationTimer();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                TrakaL10n.of(context).locale == AppLocale.id
+                    ? 'Memakai petunjuk jalan terakhir yang tersimpan (koneksi terbatas).'
+                    : 'Using last saved turn-by-turn (limited connectivity).',
+              ),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+        return;
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -2101,6 +2858,7 @@ class _DriverScreenState extends State<DriverScreen>
           firestoreRoute?.estimatedDurationSeconds ??
           selectedRoute.durationSeconds;
       _activeRouteFromJadwal = fromJadwal ?? false;
+      _activeRouteTrafficSegments = [];
       // Saat restore, asumsikan sudah bergerak (pakai icon hijau)
       _hasMovedAfterStart = true;
       _positionWhenStarted = _currentPosition;
@@ -2500,6 +3258,7 @@ class _DriverScreenState extends State<DriverScreen>
           position.heading,
           rawBearing,
           speedMps,
+          routeDeviationMeters: routeDeviationMeters,
         );
       } else if (!isStationary && position.heading.isFinite) {
         rawBearing = position.heading;
@@ -2890,6 +3649,7 @@ class _DriverScreenState extends State<DriverScreen>
               _routeDistanceText = sel.distanceText;
               _routeDurationText = sel.durationText;
               _routeEstimatedDurationSeconds = sel.durationSeconds;
+              _activeRouteTrafficSegments = [];
               _lastRouteSwitchTime = now;
             });
 
@@ -2907,6 +3667,10 @@ class _DriverScreenState extends State<DriverScreen>
               routeFromJadwal: _activeRouteFromJadwal,
               routeSelectedIndex: _selectedRouteIndex,
               routeCategory: _currentRouteCategory,
+              routeOriginKabKey: _routeOriginKabKey,
+              routeDestKabKey: _routeDestKabKey,
+              routeOriginProvKey: _routeOriginProvKey,
+              routeDestProvKey: _routeDestProvKey,
             );
 
             if (kDebugMode) {
@@ -2934,6 +3698,7 @@ class _DriverScreenState extends State<DriverScreen>
               _routeDistanceText = selBack.distanceText;
               _routeDurationText = selBack.durationText;
               _routeEstimatedDurationSeconds = selBack.durationSeconds;
+              _activeRouteTrafficSegments = [];
               _lastRouteSwitchTime = now;
               _originalRouteIndex =
                   -1; // Reset karena sudah kembali ke rute awal
@@ -2953,6 +3718,10 @@ class _DriverScreenState extends State<DriverScreen>
               routeFromJadwal: _activeRouteFromJadwal,
               routeSelectedIndex: _selectedRouteIndex,
               routeCategory: _currentRouteCategory,
+              routeOriginKabKey: _routeOriginKabKey,
+              routeDestKabKey: _routeDestKabKey,
+              routeOriginProvKey: _routeOriginProvKey,
+              routeDestProvKey: _routeDestProvKey,
             );
 
             if (kDebugMode) {
@@ -3093,6 +3862,11 @@ class _DriverScreenState extends State<DriverScreen>
 
   /// Update status dan lokasi driver ke Firestore.
   Future<void> _updateDriverStatusToFirestore(Position position) async {
+    if (_isDriverWorking &&
+        _routeOriginLatLng != null &&
+        _routeDestLatLng != null) {
+      _scheduleRouteAdminKeysResolve();
+    }
     try {
       int? passengerCount;
       int? maxPassengers;
@@ -3149,14 +3923,32 @@ class _DriverScreenState extends State<DriverScreen>
         routeCategory: _currentRouteCategory,
         city: _currentCitySlug,
         maxPassengers: maxPassengers,
+        routeOriginKabKey: _routeOriginKabKey,
+        routeDestKabKey: _routeDestKabKey,
+        routeOriginProvKey: _routeOriginProvKey,
+        routeDestProvKey: _routeDestProvKey,
       );
       // Update tracking untuk pengecekan berikutnya
-      setState(() {
-        _lastUpdatedPosition = position;
-        _lastUpdatedTime = DateTime.now();
-      });
-    } catch (_) {
-      // Gagal update ke Firestore - tidak perlu tampilkan error, coba lagi nanti
+      _consecutiveDriverStatusWriteFailures = 0;
+      _lastUpdatedPosition = position;
+      _lastUpdatedTime = DateTime.now();
+      if (mounted) setState(() {});
+    } catch (e, st) {
+      logError('DriverScreen._updateDriverStatusToFirestore', e, st);
+      if (!mounted) return;
+      _consecutiveDriverStatusWriteFailures++;
+      if (_consecutiveDriverStatusWriteFailures >= 5) {
+        _consecutiveDriverStatusWriteFailures = 0;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Lokasi driver tidak terkirim beberapa kali. Periksa jaringan lalu coba lagi.',
+            ),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 
@@ -3284,6 +4076,7 @@ class _DriverScreenState extends State<DriverScreen>
     RoutePersistenceService.clear();
     _resetJourneyNumberPrefetch();
     _rerouteStatusClearTimer?.cancel();
+    _cancelRouteAdminKeysResolve();
     setState(() {
       if (_routeOriginLatLng != null && _routeDestLatLng != null) {
         _lastRouteOriginLatLng = _routeOriginLatLng;
@@ -3294,6 +4087,7 @@ class _DriverScreenState extends State<DriverScreen>
       _isDriverWorking = false;
       _routePolyline = null;
       _routeSteps = [];
+      _activeRouteTrafficSegments = [];
       _currentStepIndex = -1;
       _tbtRemainingMeters = null;
       _tbtNextStepRemainingMeters = null;
@@ -3305,6 +4099,7 @@ class _DriverScreenState extends State<DriverScreen>
       _routeDestLatLng = null;
       _routeOriginText = '';
       _routeDestText = '';
+      _resetRouteAdminKeysFields();
       _routeDistanceText = '';
       _currentScheduleId = null;
       _routeDurationText = '';
@@ -3671,6 +4466,7 @@ class _DriverScreenState extends State<DriverScreen>
       return;
     }
     _resetJourneyNumberPrefetch();
+    _cancelRouteAdminKeysResolve();
     setState(() {
       _pendingJadwalRouteLoad = false;
       _isStartRouteLoading = false;
@@ -3678,6 +4474,7 @@ class _DriverScreenState extends State<DriverScreen>
       _alternativeRoutes = [];
       _selectedRouteIndex = -1;
       _routePolyline = null;
+      _activeRouteTrafficSegments = [];
       _routeDistanceText = '';
       _routeDurationText = '';
       _currentDistanceText = '';
@@ -3690,6 +4487,7 @@ class _DriverScreenState extends State<DriverScreen>
       _routeDestLatLng = null;
       _routeOriginText = '';
       _routeDestText = '';
+      _resetRouteAdminKeysFields();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _checkScheduledOrdersThenShowRouteSheet();
@@ -4495,6 +5293,7 @@ class _DriverScreenState extends State<DriverScreen>
         _routePolyline = smooth.points;
         _routeDistanceText = smooth.distanceText;
         _routeDurationText = smooth.durationText;
+        _activeRouteTrafficSegments = [];
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _fitAlternativeRoutesBounds();
@@ -4651,6 +5450,7 @@ class _DriverScreenState extends State<DriverScreen>
         _routePolyline = selRoute?.points;
         _routeDistanceText = selRoute?.distanceText ?? '';
         _routeDurationText = selRoute?.durationText ?? '';
+        _activeRouteTrafficSegments = [];
         _activeRouteFromJadwal = true;
         _currentScheduleId = scheduleId;
         _currentRouteCategory = routeCategory;
@@ -4806,6 +5606,7 @@ class _DriverScreenState extends State<DriverScreen>
           _selectedRouteIndex = -1;
           _routeSelected = false;
           _routePolyline = null;
+          _activeRouteTrafficSegments = [];
           _routeDistanceText = '';
           _routeDurationText = '';
           _routeJourneyNumber = null;
@@ -4904,7 +5705,10 @@ class _DriverScreenState extends State<DriverScreen>
         initialOrigin: initialOrigin,
         mapController: _mapController,
         formDestPreviewNotifier: _formDestPreviewNotifier,
+        formOriginPreviewNotifier: _formOriginPreviewNotifier,
         routeScopeSubtitle: routeScopeSubtitle,
+        onPickDestinationOnMap: () => _pickDestinationOnMapFromSheet(ctx),
+        onPickOriginOnMap: () => _pickOriginOnMapFromSheet(ctx),
         onRouteRequest:
             (
               originLat,
@@ -4956,6 +5760,7 @@ class _DriverScreenState extends State<DriverScreen>
                     _selectedRouteIndex = -1;
                     _routeSelected = false;
                     _routePolyline = null;
+                    _activeRouteTrafficSegments = [];
                     _routeDistanceText = '';
                     _routeDurationText = '';
                     _routeJourneyNumber = null;
@@ -5169,8 +5974,13 @@ class _DriverScreenState extends State<DriverScreen>
   /// Load icon mobil merah & hijau sekali (tanpa rotasi). Rotasi pakai Marker.rotation.
   /// Asset: mobil menghadap ke bawah (selatan). rotation = (bearing + 180) % 360.
   Future<void> _loadCarIconsOnce() async {
-    if (_carIconRed != null && _carIconGreen != null) return;
     if (!mounted) return;
+    await TrakaPinBitmapService.ensureLoaded(context);
+    if (!mounted) return;
+    if (_carIconRed != null && _carIconGreen != null) {
+      setState(() {});
+      return;
+    }
     try {
       final result = await CarIconService.loadCarIcons(
         context: context,
@@ -5296,8 +6106,21 @@ class _DriverScreenState extends State<DriverScreen>
           LatLng(_currentPosition!.latitude, _currentPosition!.longitude);
 
       if (chaseCamActive) {
-        // Marker mobil: dot (idle) + panah (bergerak); bearing di-smooth mengikuti rute.
+        // Marker mobil saat jalan; berhenti → pin akhir Traka (bukan ikon mobil).
         final isMoving = _isMovingStable;
+        if (!isMoving) {
+          final pinStop = TrakaPinBitmapService.mapAhir ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
+          markers.add(
+            Marker(
+              markerId: const MarkerId('current_location'),
+              position: displayLatLng,
+              icon: pinStop,
+              anchor: const Offset(0.5, 1.0),
+              zIndexInt: 4,
+            ),
+          );
+        } else {
         final speedKmh = _currentSpeedMps * 3.6;
         final tier = MarkerAssets.speedTier(speedKmh);
         final cacheKey =
@@ -5326,16 +6149,21 @@ class _DriverScreenState extends State<DriverScreen>
           ),
         );
         }
+        }
       } else {
         // Beranda non-aktif: titik biru saat pelan; panah biru + arah saat sedang bergerak (bukan cone).
         final speedKmh = _currentSpeedMps * 3.6;
         final showHeading = speedKmh >= _homeBrowsingHeadingMinKmh;
         final arrow = _homeBrowsingArrowIcon;
         final useArrow = showHeading && arrow != null;
+        final pinAwalLoc = TrakaPinBitmapService.mapAwal;
         final icon = useArrow
             ? arrow
-            : (_blueDotIcon ??
+            : (pinAwalLoc ??
+                _blueDotIcon ??
                 BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure));
+        final anchorUser =
+            Offset(0.5, useArrow ? 0.33 : (pinAwalLoc != null ? 1.0 : 0.5));
         markers.add(
           Marker(
             markerId: const MarkerId('current_location'),
@@ -5343,8 +6171,7 @@ class _DriverScreenState extends State<DriverScreen>
             icon: icon,
             rotation: useArrow ? _bearingForHomeBrowsingMarker() : 0.0,
             flat: useArrow,
-            // Selaraskan dengan marker cone/arrow mode aktif: ujung panah ~posisi GPS.
-            anchor: Offset(0.5, useArrow ? 0.33 : 0.5),
+            anchor: anchorUser,
             zIndexInt: 4,
           ),
         );
@@ -5364,12 +6191,33 @@ class _DriverScreenState extends State<DriverScreen>
         !_isDriverWorking &&
         _navigatingToOrderId == null &&
         !originNearDriver) {
+      final pinO = TrakaPinBitmapService.mapAwal ??
+          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
       markers.add(
         Marker(
           markerId: const MarkerId('origin'),
           position: _routeOriginLatLng!,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueGreen,
+          icon: pinO,
+          anchor: const Offset(0.5, 1.0),
+        ),
+      );
+    }
+    // Preview titik awal dari form (pilih di peta), sebelum rute disubmit.
+    final formOriPreview = _formOriginPreviewNotifier.value;
+    if (formOriPreview != null &&
+        _routeOriginLatLng == null &&
+        !_isDriverWorking &&
+        _navigatingToOrderId == null) {
+      final pinFo = TrakaPinBitmapService.mapAwal ??
+          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
+      markers.add(
+        Marker(
+          markerId: const MarkerId('form_origin_preview'),
+          position: formOriPreview,
+          icon: pinFo,
+          anchor: const Offset(0.5, 1.0),
+          infoWindow: InfoWindow(
+            title: TrakaL10n.of(context).mapFormOriginPreviewTitle,
           ),
         ),
       );
@@ -5378,11 +6226,14 @@ class _DriverScreenState extends State<DriverScreen>
     // Jangan tampilkan jika rute sudah punya destination—hindari 2 pin di tujuan.
     final formPreview = _formDestPreviewNotifier.value;
     if (formPreview != null && _routeDestLatLng == null) {
+      final pinP = TrakaPinBitmapService.mapAhir ??
+          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
       markers.add(
         Marker(
           markerId: const MarkerId('form_dest_preview'),
           position: formPreview,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          icon: pinP,
+          anchor: const Offset(0.5, 1.0),
         ),
       );
     }
@@ -5395,11 +6246,13 @@ class _DriverScreenState extends State<DriverScreen>
     final visiblePassengerOrderIds = visibleOrders.map((o) => o.id).toSet();
 
     if (_routeDestLatLng != null) {
+      final pinD = TrakaPinBitmapService.mapAhir ??
+          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
       markers.add(
         Marker(
           markerId: const MarkerId('destination'),
           position: _routeDestLatLng!,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          icon: pinD,
           anchor: const Offset(0.5, 1.0),
           infoWindow: InfoWindow(
             title: 'Tujuan rute',
@@ -6043,6 +6896,8 @@ class _DriverScreenState extends State<DriverScreen>
 
   static (double?, double?) _getOrderDestinationLatLng(OrderModel order) {
     if (order.isKirimBarang) {
+      final live = order.coordsForDriverDropoffProximity;
+      if (live != null) return (live.$1, live.$2);
       return (
         order.receiverLat ?? order.destLat,
         order.receiverLng ?? order.destLng,
@@ -6438,8 +7293,10 @@ class _DriverScreenState extends State<DriverScreen>
         _routeDurationText = withSteps.result.durationText;
         _routeEstimatedDurationSeconds = withSteps.result.durationSeconds;
         _routeSteps = withSteps.steps;
+        _activeRouteTrafficSegments = withSteps.trafficSegments;
         _currentStepIndex = withSteps.steps.isNotEmpty ? 0 : -1;
       });
+      _persistOfflineWorkRouteFromSteps(withSteps);
       var spokeFromStepChange = false;
       if (_currentPosition != null) {
         spokeFromStepChange = _updateCurrentStepFromPosition(_currentPosition!);
@@ -6578,6 +7435,7 @@ class _DriverScreenState extends State<DriverScreen>
           _routeDurationText = withSteps.result.durationText;
           _routeEstimatedDurationSeconds = withSteps.result.durationSeconds;
           _routeSteps = withSteps.steps;
+          _activeRouteTrafficSegments = withSteps.trafficSegments;
           _currentStepIndex = withSteps.steps.isNotEmpty ? 0 : -1;
           _lastReroutePosition = currentPos;
           _lastRerouteAt = now;
@@ -6604,6 +7462,7 @@ class _DriverScreenState extends State<DriverScreen>
             ),
           );
         }
+        _persistOfflineWorkRouteFromSteps(withSteps);
         _syncCameraAfterRouteRecalculated();
         return true;
       }
@@ -6680,6 +7539,7 @@ class _DriverScreenState extends State<DriverScreen>
         setState(() {
           _polylineToPassenger = result.points;
           _routeSteps = withSteps.steps;
+          _activeRouteTrafficSegments = withSteps.trafficSegments;
           _currentStepIndex = _routeSteps.isNotEmpty ? 0 : -1;
           _routeToPassengerDistanceText = result.distanceText;
           _routeToPassengerDurationText = result.durationText;
@@ -6706,6 +7566,13 @@ class _DriverScreenState extends State<DriverScreen>
           _scheduleQuietRerouteBanner();
           _syncCameraAfterRouteRecalculated();
         }
+        _persistOfflineOrderNavFromSteps(
+          order: order,
+          withSteps: withSteps,
+          destLat: destLat,
+          destLng: destLng,
+          navigatingToDestination: false,
+        );
         _startTrafficAlternativesCheck();
         // Fetch toll info (async, tidak blokir)
         RoutesTollService.getTollEstimate(
@@ -6733,6 +7600,7 @@ class _DriverScreenState extends State<DriverScreen>
             LatLng(order.passengerLat!, order.passengerLng!),
           ];
           _routeSteps = [];
+          _activeRouteTrafficSegments = [];
           _currentStepIndex = -1;
           _routeToPassengerDistanceText = distM < 1000
               ? '${distM.round()} m'
@@ -6794,6 +7662,7 @@ class _DriverScreenState extends State<DriverScreen>
         setState(() {
           _polylineToDestination = result.points;
           _routeSteps = withSteps.steps;
+          _activeRouteTrafficSegments = withSteps.trafficSegments;
           _currentStepIndex = _routeSteps.isNotEmpty ? 0 : -1;
           _routeToPassengerDistanceText = result.distanceText;
           _routeToPassengerDurationText = result.durationText;
@@ -6822,6 +7691,13 @@ class _DriverScreenState extends State<DriverScreen>
           _scheduleQuietRerouteBanner();
           _syncCameraAfterRouteRecalculated();
         }
+        _persistOfflineOrderNavFromSteps(
+          order: order,
+          withSteps: withSteps,
+          destLat: destLat,
+          destLng: destLng,
+          navigatingToDestination: true,
+        );
         _startTrafficAlternativesCheck();
         RoutesTollService.getTollEstimate(
           originLat: _currentPosition!.latitude,
@@ -6849,6 +7725,7 @@ class _DriverScreenState extends State<DriverScreen>
             LatLng(destLat, destLng),
           ];
           _routeSteps = [];
+          _activeRouteTrafficSegments = [];
           _currentStepIndex = -1;
           _routeToPassengerDistanceText = distM < 1000
               ? '${distM.round()} m'
@@ -7058,6 +7935,7 @@ class _DriverScreenState extends State<DriverScreen>
       _polylineToPassenger = null;
       _polylineToDestination = null;
       _routeSteps = [];
+      _activeRouteTrafficSegments = [];
       _currentStepIndex = -1;
       _routeToPassengerDistanceText = '';
       _routeToPassengerDurationText = '';
@@ -7247,6 +8125,7 @@ class _DriverScreenState extends State<DriverScreen>
         );
       }
       _routeSteps = chosen.steps;
+      _activeRouteTrafficSegments = chosen.trafficSegments;
       _currentStepIndex = _routeSteps.isNotEmpty ? 0 : -1;
       _routeToPassengerDistanceText = chosen.result.distanceText;
       _routeToPassengerDurationText = chosen.result.durationText;
@@ -7275,20 +8154,39 @@ class _DriverScreenState extends State<DriverScreen>
             : null);
     final steps = _routeSteps;
     if (poly == null || poly.isEmpty || steps.isEmpty) return false;
-    final pos = LatLng(position.latitude, position.longitude);
+    final rawPos = LatLng(position.latitude, position.longitude);
+    final navPos = _displayedPosition ?? rawPos;
+    final pos = Geolocator.distanceBetween(
+              navPos.latitude,
+              navPos.longitude,
+              rawPos.latitude,
+              rawPos.longitude,
+            ) <=
+            92
+        ? navPos
+        : rawPos;
     var (_, segmentIndex, ratio) = RouteUtils.projectPointOntoPolyline(
       pos,
       poly,
-      maxDistanceMeters: 250,
+      maxDistanceMeters: 300,
     );
     if (segmentIndex < 0) {
       final retry = RouteUtils.projectPointOntoPolyline(
         pos,
         poly,
-        maxDistanceMeters: 420,
+        maxDistanceMeters: 480,
       );
       segmentIndex = retry.$2;
       ratio = retry.$3;
+    }
+    if (segmentIndex < 0) {
+      final retry2 = RouteUtils.projectPointOntoPolyline(
+        rawPos,
+        poly,
+        maxDistanceMeters: 620,
+      );
+      segmentIndex = retry2.$2;
+      ratio = retry2.$3;
     }
     if (segmentIndex < 0) {
       final n = DateTime.now();
@@ -7318,6 +8216,7 @@ class _DriverScreenState extends State<DriverScreen>
       _bumpZoomForTurnStepIfNeeded(stepIdx);
       _speakCurrentStep();
       HapticFeedback.mediumImpact();
+      _persistOfflineNavSnapshotForStep(stepIdx);
       return true;
     }
     return false;
@@ -7454,6 +8353,152 @@ class _DriverScreenState extends State<DriverScreen>
   static const Color _polylinePenjemputanColor = Color(0xFF00B14F); // Grab green
   static const Color _polylinePengantaranColor = Color(0xFFE65100); // Oranye
 
+  Color _trafficTintForRatio(double trafficRatio, Color baseColor) {
+    if (trafficRatio <= 1.04) return baseColor;
+    if (trafficRatio <= 1.18) {
+      return Color.lerp(baseColor, const Color(0xFFFFC107), 0.5) ?? baseColor;
+    }
+    if (trafficRatio <= 1.38) {
+      return const Color(0xFFFFA000);
+    }
+    return const Color(0xFFE53935);
+  }
+
+  double? _distanceAlongRouteMetersForTraffic(List<LatLng> fullRoute) {
+    final pos = _displayedPosition ??
+        (_currentPosition != null
+            ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
+            : null);
+    if (pos == null || fullRoute.length < 2) return null;
+    for (final maxD in [260.0, 420.0, 640.0]) {
+      final p =
+          RouteUtils.projectPointOntoPolyline(pos, fullRoute, maxDistanceMeters: maxD);
+      if (p.$2 >= 0) {
+        return RouteUtils.distanceAlongPolyline(fullRoute, p.$2, p.$3);
+      }
+    }
+    return null;
+  }
+
+  /// Amber «lewat» + sisa maju; sisa dipecah warna lalu lintas bila [useTraffic].
+  void _addForwardPolylinesWithTraffic({
+    required Set<Polyline> polylines,
+    required List<LatLng> fullRoute,
+    required Color baseColor,
+    required int width,
+    required String idPrefix,
+    bool useTraffic = false,
+    bool consumeTapEvents = false,
+    VoidCallback? onTap,
+    Color? passedColorOverride,
+  }) {
+    if (fullRoute.length < 2) return;
+    final passedWidth = width >= 6 ? 6 : 5;
+    final passedColor = passedColorOverride ?? Colors.amber.shade300;
+    final (passed, remaining) = _splitPolylineAtDriver(fullRoute);
+    if (passed.length >= 2) {
+      polylines.add(
+        _styledDriverRoutePolyline(
+          polylineId: PolylineId('${idPrefix}_passed'),
+          points: passed,
+          color: passedColor,
+          width: passedWidth,
+        ),
+      );
+    }
+    if (remaining.length < 2) return;
+
+    final segOk = useTraffic && _activeRouteTrafficSegments.isNotEmpty;
+    if (!segOk) {
+      polylines.add(
+        _styledDriverRoutePolyline(
+          polylineId: PolylineId('${idPrefix}_rem'),
+          points: remaining,
+          color: baseColor,
+          width: width,
+          consumeTapEvents: consumeTapEvents,
+          onTap: onTap,
+        ),
+      );
+      return;
+    }
+
+    final driverDist = _distanceAlongRouteMetersForTraffic(fullRoute);
+    if (driverDist == null) {
+      polylines.add(
+        _styledDriverRoutePolyline(
+          polylineId: PolylineId('${idPrefix}_rem'),
+          points: remaining,
+          color: baseColor,
+          width: width,
+          consumeTapEvents: consumeTapEvents,
+          onTap: onTap,
+        ),
+      );
+      return;
+    }
+
+    var drawn = 0;
+    var maxEndAlong = driverDist;
+    var trafficIdx = 0;
+    for (final seg in _activeRouteTrafficSegments) {
+      if (seg.endDistanceMeters <= driverDist - 0.5) continue;
+      final sm = math.max(seg.startDistanceMeters, driverDist);
+      final em = seg.endDistanceMeters;
+      if (em <= sm + 0.5) continue;
+      final slice =
+          RouteUtils.slicePolylineByDistanceRange(fullRoute, sm, em);
+      if (slice.length < 2) continue;
+      final c = _trafficTintForRatio(seg.trafficRatio, baseColor);
+      polylines.add(
+        _styledDriverRoutePolyline(
+          polylineId: PolylineId('${idPrefix}_tf_$trafficIdx'),
+          points: slice,
+          color: c,
+          width: width,
+          consumeTapEvents: consumeTapEvents && drawn == 0,
+          onTap: drawn == 0 ? onTap : null,
+        ),
+      );
+      drawn++;
+      maxEndAlong = math.max(maxEndAlong, em);
+      trafficIdx++;
+    }
+
+    final totalGeo = RouteUtils.polylineLengthMeters(fullRoute);
+    final gapStart = math.max(driverDist, maxEndAlong - 1.5);
+    if (gapStart < totalGeo - 6) {
+      final tail =
+          RouteUtils.slicePolylineByDistanceRange(fullRoute, gapStart, totalGeo);
+      if (tail.length >= 2) {
+        polylines.add(
+          _styledDriverRoutePolyline(
+            polylineId: PolylineId('${idPrefix}_tail'),
+            points: tail,
+            color: baseColor,
+            width: width,
+            consumeTapEvents: consumeTapEvents && drawn == 0,
+            onTap: drawn == 0 ? onTap : null,
+          ),
+        );
+        drawn++;
+      }
+    }
+
+    if (drawn == 0) {
+      polylines.add(
+        _styledDriverRoutePolyline(
+          polylineId: PolylineId('${idPrefix}_rem_fb'),
+          points: remaining,
+          color: baseColor,
+          width: width,
+          consumeTapEvents: consumeTapEvents,
+          onTap: onTap,
+        ),
+      );
+    }
+  }
+
   Polyline _styledDriverRoutePolyline({
     required PolylineId polylineId,
     required List<LatLng> points,
@@ -7520,32 +8565,19 @@ class _DriverScreenState extends State<DriverScreen>
           );
         }
       }
-      // Rute ke penumpang/tujuan: sudah dilewati kuning, sisa hijau/oranye
-      final (passed, remaining) = _splitPolylineAtDriver(navPolyline);
-      if (passed.length >= 2) {
-        polylines.add(
-          _styledDriverRoutePolyline(
-            polylineId: const PolylineId('route_to_passenger_passed'),
-            points: passed,
-            color: Colors.amber.shade300,
-            width: 6,
-          ),
-        );
-      }
-      if (remaining.length >= 2) {
-        polylines.add(
-          _styledDriverRoutePolyline(
-            polylineId: const PolylineId('route_to_passenger'),
-            points: remaining,
-            color: routeColor,
-            width: 6,
-            consumeTapEvents: true,
-            onTap: () {
-              unawaited(_showAlternativeRoutesDuringNavigation());
-            },
-          ),
-        );
-      }
+      // Rute ke penumpang/tujuan: lewat + sisa (warna lalu lintas per segmen bila tersedia).
+      _addForwardPolylinesWithTraffic(
+        polylines: polylines,
+        fullRoute: navPolyline,
+        baseColor: routeColor,
+        width: 6,
+        idPrefix: 'route_to_passenger',
+        useTraffic: _activeRouteTrafficSegments.isNotEmpty,
+        consumeTapEvents: true,
+        onTap: () {
+          unawaited(_showAlternativeRoutesDuringNavigation());
+        },
+      );
       return polylines;
     }
 
@@ -7556,29 +8588,19 @@ class _DriverScreenState extends State<DriverScreen>
         final routeColor = routeColorForIndex(i);
         final isSelected = i == _selectedRouteIndex && _routeSelected;
         if (isSelected && _isDriverWorking) {
-          final (passed, remaining) = _splitPolylineAtDriver(route.points);
-          if (passed.length >= 2) {
-            polylines.add(
-              _styledDriverRoutePolyline(
-                polylineId: PolylineId('route_${i}_passed'),
-                points: passed,
-                color: routeColor.withValues(alpha: 0.5),
-                width: 5,
-                patterns: const [],
-              ),
-            );
-          }
-          if (remaining.length >= 2) {
-            polylines.add(
-              _styledDriverRoutePolyline(
-                polylineId: PolylineId('route_$i'),
-                points: remaining,
-                color: routeColor,
-                width: 9,
-                patterns: const [],
-              ),
-            );
-          }
+          final activePts = (_routePolyline != null && _routePolyline!.length >= 2)
+              ? _routePolyline!
+              : route.points;
+          _addForwardPolylinesWithTraffic(
+            polylines: polylines,
+            fullRoute: activePts,
+            baseColor: routeColor,
+            width: 9,
+            idPrefix: 'route_$i',
+            useTraffic: _navigatingToOrderId == null &&
+                _activeRouteTrafficSegments.isNotEmpty,
+            passedColorOverride: routeColor.withValues(alpha: 0.5),
+          );
         } else {
           final points = isSelected
               ? _trimPolylineFromDriver(route.points)
@@ -7597,27 +8619,15 @@ class _DriverScreenState extends State<DriverScreen>
         }
       }
     } else if (_routePolyline != null && _routePolyline!.isNotEmpty) {
-      final (passed, remaining) = _splitPolylineAtDriver(_routePolyline!);
-      if (passed.length >= 2) {
-        polylines.add(
-          _styledDriverRoutePolyline(
-            polylineId: const PolylineId('route_passed'),
-            points: passed,
-            color: Colors.amber.shade300,
-            width: 5,
-          ),
-        );
-      }
-      if (remaining.length >= 2) {
-        polylines.add(
-          _styledDriverRoutePolyline(
-            polylineId: const PolylineId('route'),
-            points: remaining,
-            color: Theme.of(context).colorScheme.primary,
-            width: 5,
-          ),
-        );
-      }
+      _addForwardPolylinesWithTraffic(
+        polylines: polylines,
+        fullRoute: _routePolyline!,
+        baseColor: Theme.of(context).colorScheme.primary,
+        width: 5,
+        idPrefix: 'route',
+        useTraffic: _navigatingToOrderId == null &&
+            _activeRouteTrafficSegments.isNotEmpty,
+      );
     }
 
     return polylines;
@@ -7691,6 +8701,7 @@ class _DriverScreenState extends State<DriverScreen>
       _routeDistanceText = selectedRoute.distanceText;
       _routeDurationText = selectedRoute.durationText;
       _routeEstimatedDurationSeconds = selectedRoute.durationSeconds;
+      _activeRouteTrafficSegments = [];
       _routeSelected = true;
       _routeJourneyNumber = journeyNumber;
       _routeStartedAt = startedAt;
@@ -7788,8 +8799,8 @@ class _DriverScreenState extends State<DriverScreen>
                 _routePolyline != null &&
                 _routePolyline!.length >= 2));
     if (showTbtPadding) {
-      // Selaras dengan [TurnByTurnBanner]: turun ~56px agar jalan tidak tertutup kartu petunjuk.
-      top = safeTop + (landscape ? 176 : 228);
+      // Selaras dengan [TurnByTurnBanner] (pill + jarak + kartu petunjuk).
+      top = safeTop + (landscape ? 186 : 238);
     } else if (_navigatingToOrderId == null &&
         _nextTargetForNavigation != null) {
       top = safeTop + (landscape ? 60 : 92);
@@ -7809,6 +8820,11 @@ class _DriverScreenState extends State<DriverScreen>
         _fasterAlternativeMinutesSaved! >= 2) {
       final altBottom = safeBottom + 268;
       if (altBottom > bottom) bottom = altBottom;
+    }
+    if (_isDriverWorking || _navigatingToOrderId != null) {
+      final navPremiumRail =
+          safeBottom + (landscape ? 118 : 158);
+      if (navPremiumRail > bottom) bottom = navPremiumRail;
     }
 
     double left = 8;
@@ -7872,10 +8888,22 @@ class _DriverScreenState extends State<DriverScreen>
                 _routePolyline != null &&
                 _routePolyline!.length >= 2));
     final mqMap = MediaQuery.of(context);
+    MapDeviceTiltService.instance.setOrientation(mqMap.orientation);
+    _syncFieldObservabilityIfChanged();
+    _syncDriverDrivingUxIfChanged();
     final gpsWeakBannerTop = mqMap.padding.top +
         (showDriverTbtBanner
-            ? (mqMap.orientation == Orientation.landscape ? 188.0 : 240.0)
+            ? (mqMap.orientation == Orientation.landscape ? 198.0 : 250.0)
             : 52.0);
+    final pickupShortcutTooltip = _waitingPassengerCount > 0
+        ? 'Penjemputan'
+        : 'Penjemputan — aktif setelah ada pemesan yang setuju';
+    final dropoffShortcutTooltip =
+        _pickedUpOrdersForDestination.isNotEmpty
+            ? 'Pengantaran'
+            : _waitingPassengerCount > 0
+                ? 'Pengantaran — selesaikan penjemputan dulu'
+                : 'Pengantaran — setelah penjemputan selesai';
 
     return Stack(
       children: [
@@ -8102,6 +9130,44 @@ class _DriverScreenState extends State<DriverScreen>
           hasActiveOrder: _hasActiveOrder,
           onTap: _onDriverWorkPillTap,
         ),
+        if (_isDriverWorking || _navigatingToOrderId != null)
+          Positioned(
+            right: 16,
+            bottom: MediaQuery.of(context).padding.bottom + 12,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                DriverMapStopShortcutsAbovePremium(
+                  show: _isDriverWorking,
+                  onPickupTap: _isDriverWorking
+                      ? () => unawaited(_onPickupStopShortcutTap())
+                      : null,
+                  onDropoffTap: _isDriverWorking
+                      ? () => unawaited(_onDropoffStopShortcutTap())
+                      : null,
+                  pickupEnabled: _waitingPassengerCount > 0,
+                  dropoffEnabled: _pickedUpOrdersForDestination.isNotEmpty,
+                  pickupTooltip: pickupShortcutTooltip,
+                  dropoffTooltip: dropoffShortcutTooltip,
+                ),
+                if (_isDriverWorking) const SizedBox(height: 12),
+                DriverNavPremiumMapChip(
+                  enabled: true,
+                  debtBlocked: _navPremiumOwedCache,
+                  dense: true,
+                  tooltip: _navPremiumOwedCache
+                      ? (l10nMap.locale == AppLocale.id
+                          ? 'Tunggakan nav premium — ketuk untuk info & pembayaran'
+                          : 'Premium nav owed — tap for info & payment')
+                      : (l10nMap.locale == AppLocale.id
+                          ? 'Ketuk untuk penjelasan navigasi premium'
+                          : 'Tap for premium navigation details'),
+                  onTap: _showDriverNavPremiumInfoSheet,
+                ),
+              ],
+            ),
+          ),
         DriverStartRouteButton(
           visible: _routeSelected && !_isDriverWorking,
           isLoading: _isStartRouteLoading,
@@ -8116,16 +9182,6 @@ class _DriverScreenState extends State<DriverScreen>
             final zoomTop = mq.orientation == Orientation.landscape
                 ? mq.padding.top + 4
                 : mq.padding.top + 44;
-            final showStopsShortcuts = _isDriverWorking;
-            final pickupShortcutTooltip = _waitingPassengerCount > 0
-                ? 'Penjemputan'
-                : 'Penjemputan — aktif setelah ada pemesan yang setuju';
-            final dropoffShortcutTooltip =
-                _pickedUpOrdersForDestination.isNotEmpty
-                ? 'Pengantaran'
-                : _waitingPassengerCount > 0
-                ? 'Pengantaran — selesaikan penjemputan dulu'
-                : 'Pengantaran — setelah penjemputan selesai';
             return MapTypeZoomControls(
               mapType: effectiveMapType,
               topOffset: zoomTop,
@@ -8143,13 +9199,9 @@ class _DriverScreenState extends State<DriverScreen>
                 }
               },
               onThemeToggle: () => ThemeService.toggle(),
-              showPickupDropoffShortcuts: showStopsShortcuts,
-              onPickupShortcutTap: showStopsShortcuts
-                  ? () => unawaited(_onPickupStopShortcutTap())
-                  : null,
-              onDropoffShortcutTap: showStopsShortcuts
-                  ? () => unawaited(_onDropoffStopShortcutTap())
-                  : null,
+              showPickupDropoffShortcuts: false,
+              onPickupShortcutTap: null,
+              onDropoffShortcutTap: null,
               pickupShortcutEnabled: _waitingPassengerCount > 0,
               dropoffShortcutEnabled:
                   _pickedUpOrdersForDestination.isNotEmpty,
@@ -8162,6 +9214,7 @@ class _DriverScreenState extends State<DriverScreen>
               onRouteInfoTap: _showRouteInfoBottomSheet,
               routeInfoOperBadge: _jumlahPenumpangPickedUp > 0,
               routeInfoTooltip: l10nMap.routeInfo,
+              onMapToolsTap: _showDriverMapToolsMenu,
             );
           },
         ),
@@ -9015,6 +10068,42 @@ class _AlternativeRoutesPickerSheetState
     extends State<_AlternativeRoutesPickerSheet> {
   GoogleMapController? _mapController;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_ensureRouteAltPins());
+    });
+  }
+
+  Future<void> _ensureRouteAltPins() async {
+    await TrakaPinBitmapService.ensureLoaded(context);
+    if (mounted) setState(() {});
+  }
+
+  Set<Marker> _buildAltEndpointMarkers() {
+    final o = TrakaPinBitmapService.mapAwal ??
+        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
+    final d = TrakaPinBitmapService.mapAhir ??
+        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
+    return {
+      Marker(
+        markerId: const MarkerId('alt_origin'),
+        position: widget.origin,
+        icon: o,
+        anchor: const Offset(0.5, 1.0),
+        infoWindow: const InfoWindow(title: 'Awal'),
+      ),
+      Marker(
+        markerId: const MarkerId('alt_dest'),
+        position: widget.destination,
+        icon: d,
+        anchor: const Offset(0.5, 1.0),
+        infoWindow: const InfoWindow(title: 'Tujuan akhir'),
+      ),
+    };
+  }
+
   static const List<Color> _routeColors = [
     Color(0xFFFFC107),
     Color(0xFF2196F3),
@@ -9165,18 +10254,7 @@ class _AlternativeRoutesPickerSheetState
                           style: style,
                           mapType: MapType.normal,
                           polylines: _buildPolylines(),
-                          markers: {
-                            Marker(
-                              markerId: const MarkerId('alt_origin'),
-                              position: widget.origin,
-                              infoWindow: const InfoWindow(title: 'Anda'),
-                            ),
-                            Marker(
-                              markerId: const MarkerId('alt_dest'),
-                              position: widget.destination,
-                              infoWindow: const InfoWindow(title: 'Tujuan'),
-                            ),
-                          },
+                          markers: _buildAltEndpointMarkers(),
                           onMapCreated: (controller) {
                             setState(() => _mapController = controller);
                             WidgetsBinding.instance.addPostFrameCallback((_) {

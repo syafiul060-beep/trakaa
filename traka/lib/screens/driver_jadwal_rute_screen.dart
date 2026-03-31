@@ -30,6 +30,9 @@ import '../services/app_analytics_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/shimmer_loading.dart';
 import '../widgets/traka_l10n_scope.dart';
+import '../widgets/lollipop_pin_widgets.dart';
+import '../widgets/map_destination_picker_screen.dart';
+import '../services/traka_pin_bitmap_service.dart';
 import 'package:geolocator/geolocator.dart';
 
 /// Batas waktu tunggu hapus jadwal dari sisi UI (batalkan tunggu, tutup overlay).
@@ -1953,6 +1956,9 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     final colorScheme = Theme.of(context).colorScheme;
     final statusBadge = _statusBadgeForItem(item);
     final timePassed = _isScheduleTimePassed(item);
+    final (scheduleId, legacyScheduleId) = _scheduleIdPairForItem(item);
+    const String kScheduleMutationBlockedHint =
+        'Tidak bisa mengubah atau menghapus: masih ada pesanan pada jadwal ini (menunggu persetujuan, sudah disepakati/kesepakatan, atau sedang berjalan). Selesaikan atau batalkan pesanan dulu.';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 20),
@@ -1961,106 +1967,111 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Baris 1: Jam menonjol + badge status + edit
-            Row(
+      child: FutureBuilder<
+          ({
+            int totalPenumpang,
+            int kirimBarangCount,
+            int kargoCount,
+            bool hasNonTerminalOrders,
+            int pendingTravelCount,
+            int pendingBarangCount,
+          })>(
+        future: OrderService.getScheduleSlotBookingSnapshot(
+          scheduleId,
+          legacyScheduleId: legacyScheduleId,
+        ),
+        builder: (context, snap) {
+          final booking = snap.data;
+          final locksSchedule = !snap.hasData ||
+              snap.hasError ||
+              (booking?.hasNonTerminalOrders ?? true);
+          return Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.schedule_rounded,
-                        size: 20,
-                        color: colorScheme.primary,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _formatTime(item.jam),
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.primary,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.schedule_rounded,
+                            size: 20,
+                            color: colorScheme.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _formatTime(item.jam),
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (statusBadge != null) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: timePassed
+                              ? colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.2)
+                              : statusBadge == 'Hari ini'
+                                  ? Colors.green.withValues(alpha: 0.15)
+                                  : statusBadge == 'Besok'
+                                      ? Colors.orange.withValues(alpha: 0.15)
+                                      : colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          statusBadge,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: timePassed
+                                ? colorScheme.onSurfaceVariant
+                                : statusBadge == 'Hari ini'
+                                    ? Colors.green.shade700
+                                    : statusBadge == 'Besok'
+                                        ? Colors.orange.shade700
+                                        : colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                     ],
-                  ),
-                ),
-                if (statusBadge != null) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: timePassed
-                          ? colorScheme.onSurfaceVariant.withValues(alpha: 0.2)
-                          : statusBadge == 'Hari ini'
-                              ? Colors.green.withValues(alpha: 0.15)
-                              : statusBadge == 'Besok'
-                                  ? Colors.orange.withValues(alpha: 0.15)
-                                  : colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      statusBadge,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: timePassed
-                            ? colorScheme.onSurfaceVariant
-                            : statusBadge == 'Hari ini'
-                                ? Colors.green.shade700
-                                : statusBadge == 'Besok'
-                                    ? Colors.orange.shade700
-                                    : colorScheme.onSurfaceVariant,
+                    const Spacer(),
+                    if (!timePassed)
+                      IconButton(
+                        icon: Icon(
+                          Icons.copy_outlined,
+                          size: 20,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        tooltip: 'Duplikat ke tanggal lain',
+                        onPressed: () => _onDuplikatJadwalTapped(item),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
                       ),
-                    ),
-                  ),
-                ],
-                const Spacer(),
-                if (!timePassed)
-                  IconButton(
-                    icon: Icon(
-                      Icons.copy_outlined,
-                      size: 20,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    tooltip: 'Duplikat ke tanggal lain',
-                    onPressed: () => _onDuplikatJadwalTapped(item),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
-                    ),
-                  ),
-                FutureBuilder<
-                    ({int totalPenumpang, int kirimBarangCount, int kargoCount})>(
-                  future: () {
-                    final (id, legacy) = _scheduleIdPairForItem(item);
-                    return OrderService.getScheduledBookingCounts(
-                      id,
-                      legacyScheduleId: legacy,
-                    );
-                  }(),
-                  builder: (context, snap) {
-                    final counts = snap.data;
-                    final hasBookings =
-                        ((counts?.totalPenumpang ?? 0) +
-                            (counts?.kirimBarangCount ?? 0)) >
-                        0;
-                    return Row(
+                    Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (!timePassed && !hasBookings)
+                        if (!timePassed && !locksSchedule)
                           IconButton(
                             icon: Icon(
                               Icons.delete_outline,
@@ -2068,7 +2079,8 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
                               color: colorScheme.error,
                             ),
                             tooltip: 'Hapus jadwal',
-                            onPressed: () => _onHapusJadwalFromCard(item, index),
+                            onPressed: () =>
+                                _onHapusJadwalFromCard(item, index),
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(
                               minWidth: 36,
@@ -2081,11 +2093,11 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
                             size: 20,
                             color: colorScheme.onSurfaceVariant,
                           ),
-                          tooltip: hasBookings
-                              ? 'Pada tanggal ini sudah ada yang pesan. Batalkan pesanan dulu untuk mengubah jadwal.'
+                          tooltip: locksSchedule
+                              ? kScheduleMutationBlockedHint
                               : 'Edit jadwal',
-                          onPressed: () =>
-                              _onEditJadwalTapped(item, index, hasBookings),
+                          onPressed: () => _onEditJadwalTapped(
+                              item, index, locksSchedule),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(
                             minWidth: 36,
@@ -2093,11 +2105,9 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
                           ),
                         ),
                       ],
-                    );
-                  },
+                    ),
+                  ],
                 ),
-              ],
-            ),
             const SizedBox(height: 4),
             Text(
               _formatDateWithDay(item.tanggal),
@@ -2229,16 +2239,30 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
                         disabledHint: ruteDisabledHint,
                       ),
                       const SizedBox(width: 8),
-                      _buildPemesanChip(item: item, timePassed: timePassed),
+                      _buildPemesanChip(
+                        scheduleId: scheduleId,
+                        legacyScheduleId: legacyScheduleId,
+                        timePassed: timePassed,
+                        totalPenumpang: booking?.totalPenumpang ?? 0,
+                        pendingTravelCount: booking?.pendingTravelCount ?? 0,
+                      ),
                       const SizedBox(width: 6),
-                      _buildBarangChip(item: item, timePassed: timePassed),
+                      _buildBarangChip(
+                        scheduleId: scheduleId,
+                        legacyScheduleId: legacyScheduleId,
+                        timePassed: timePassed,
+                        kirimBarangCount: booking?.kirimBarangCount ?? 0,
+                        pendingBarangCount: booking?.pendingBarangCount ?? 0,
+                      ),
                     ],
                   ),
                 );
               },
             ),
-          ],
-        ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -2323,55 +2347,44 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
   }
 
   Widget _buildPemesanChip({
-    required _JadwalItem item,
+    required String scheduleId,
+    required String? legacyScheduleId,
     required bool timePassed,
+    required int totalPenumpang,
+    required int pendingTravelCount,
   }) {
-    final (scheduleId, legacyScheduleId) = _scheduleIdPairForItem(item);
-    return FutureBuilder<
-        ({int totalPenumpang, int kirimBarangCount, int kargoCount})>(
-      future: OrderService.getScheduledBookingCounts(
-        scheduleId,
-        legacyScheduleId: legacyScheduleId,
-      ),
-      builder: (context, snap) {
-        final n = snap.data?.totalPenumpang ?? 0;
-        final hasBadge = n > 0;
-        return _buildBaris3Chip(
-          icon: Icons.people_outline_rounded,
-          label: 'Pemesan',
-          enabled: !timePassed,
-          onTap: () => _showPemesanSheet(
-                scheduleId,
-                legacyScheduleId: legacyScheduleId,
-              ),
-          badgeCount: hasBadge ? n : null,
-        );
-      },
+    final n = totalPenumpang + pendingTravelCount;
+    final hasBadge = n > 0;
+    return _buildBaris3Chip(
+      icon: Icons.people_outline_rounded,
+      label: 'Pemesan',
+      enabled: !timePassed,
+      onTap: () => _showPemesanSheet(
+            scheduleId,
+            legacyScheduleId: legacyScheduleId,
+          ),
+      badgeCount: hasBadge ? n : null,
     );
   }
 
   Widget _buildBarangChip({
-    required _JadwalItem item,
+    required String scheduleId,
+    required String? legacyScheduleId,
     required bool timePassed,
+    required int kirimBarangCount,
+    required int pendingBarangCount,
   }) {
-    final (scheduleId, legacyScheduleId) = _scheduleIdPairForItem(item);
-    return FutureBuilder<
-        ({int totalPenumpang, int kirimBarangCount, int kargoCount})>(
-      future: OrderService.getScheduledBookingCounts(
+    final n = kirimBarangCount + pendingBarangCount;
+    final hasBadge = n > 0;
+    return _buildBaris3Chip(
+      icon: Icons.inventory_2_outlined,
+      label: 'Barang',
+      enabled: !timePassed,
+      onTap: () => _showBarangSheet(
         scheduleId,
         legacyScheduleId: legacyScheduleId,
       ),
-      builder: (context, snap) {
-        final n = snap.data?.kirimBarangCount ?? 0;
-        final hasBadge = n > 0;
-        return _buildBaris3Chip(
-          icon: Icons.inventory_2_outlined,
-          label: 'Barang',
-          enabled: !timePassed,
-          onTap: () => _showBarangSheet(scheduleId),
-          badgeCount: hasBadge ? n : null,
-        );
-      },
+      badgeCount: hasBadge ? n : null,
     );
   }
 
@@ -2459,6 +2472,24 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     );
     try {
       final (sid, leg) = _scheduleIdPairForItem(item);
+      final lockSnap = await OrderService.getScheduleSlotBookingSnapshot(
+        sid,
+        legacyScheduleId: leg,
+      );
+      if (lockSnap.hasNonTerminalOrders) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Jadwal tidak bisa dihapus: masih ada pesanan aktif. Selesaikan, batalkan, atau pindahkan pesanan dulu.',
+              ),
+              backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
       final ok = await _deleteScheduleFromFirestore(
         firestore: _firestore,
         driverUid: user.uid,
@@ -2515,15 +2546,15 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     }
   }
 
-  void _onEditJadwalTapped(_JadwalItem item, int index, bool hasBookings) {
-    if (hasBookings) {
+  void _onEditJadwalTapped(_JadwalItem item, int index, bool scheduleLocked) {
+    if (scheduleLocked) {
       final (sid, leg) = _scheduleIdPairForItem(item);
       showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Tidak dapat mengubah jadwal'),
           content: const Text(
-            'Pada tanggal ini sudah ada yang pesan. Jika ingin mengubah jadwal, pesanan di tanggal tersebut dengan penumpang dibatalkan dulu.',
+            'Masih ada pesanan pada jadwal ini (menunggu persetujuan, sudah disepakati/kesepakatan, atau sedang berjalan). Ubah jadwal hanya setelah pesanan selesai, dibatalkan, atau dipindah ke slot lain.',
           ),
           actions: [
             TextButton(
@@ -2911,6 +2942,35 @@ class _JadwalRoutePreviewScreenState extends State<_JadwalRoutePreviewScreen> {
     _hitTestPoints = widget.alternatives
         .map((r) => _samplePolylineForJadwalPreview(r.points, maxPoints: 96))
         .toList();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_ensureTrakaMapPins());
+    });
+  }
+
+  Future<void> _ensureTrakaMapPins() async {
+    await TrakaPinBitmapService.ensureLoaded(context);
+    if (mounted) setState(() {});
+  }
+
+  Set<Marker> _buildEndpointMarkers(LatLng origin, LatLng dest) {
+    final o = TrakaPinBitmapService.mapAwal ??
+        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
+    final d = TrakaPinBitmapService.mapAhir ??
+        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
+    return {
+      Marker(
+        markerId: const MarkerId('origin'),
+        position: origin,
+        icon: o,
+        anchor: const Offset(0.5, 1.0),
+      ),
+      Marker(
+        markerId: const MarkerId('dest'),
+        position: dest,
+        icon: d,
+        anchor: const Offset(0.5, 1.0),
+      ),
+    };
   }
 
   void _scrollToSelectedRoute() {
@@ -3176,22 +3236,7 @@ class _JadwalRoutePreviewScreenState extends State<_JadwalRoutePreviewScreen> {
                       zoomControlsEnabled: false,
                       myLocationButtonEnabled: false,
                       polylines: _buildPolylines(),
-                      markers: {
-                        Marker(
-                          markerId: const MarkerId('origin'),
-                          position: origin,
-                          icon: BitmapDescriptor.defaultMarkerWithHue(
-                            BitmapDescriptor.hueGreen,
-                          ),
-                        ),
-                        Marker(
-                          markerId: const MarkerId('dest'),
-                          position: dest,
-                          icon: BitmapDescriptor.defaultMarkerWithHue(
-                            BitmapDescriptor.hueRed,
-                          ),
-                        ),
-                      },
+                      markers: _buildEndpointMarkers(origin, dest),
                     ),
                   ),
                 ),
@@ -3688,6 +3733,88 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
     }
   }
 
+  Future<void> _pickTujuanAwalOnMap() async {
+    final t = _originController.text.trim();
+    var initial = const LatLng(-6.2088, 106.8456);
+    if (t.length >= 3) {
+      try {
+        final locs = await GeocodingService.locationFromAddress(
+          '$t, Indonesia',
+          appendIndonesia: false,
+        );
+        if (locs.isNotEmpty) {
+          initial = LatLng(locs.first.latitude, locs.first.longitude);
+        }
+      } catch (_) {}
+    }
+    LatLng? device;
+    try {
+      final pos = await Geolocator.getCurrentPosition();
+      device = LatLng(pos.latitude, pos.longitude);
+    } catch (_) {}
+    if (!mounted) return;
+    final r = await Navigator.of(context).push<MapPickerResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => MapDestinationPickerScreen(
+          initialCameraTarget: initial,
+          deviceLocation: device,
+          title: TrakaL10n.of(context).pickOriginOnMapActionLabel,
+          pinVariant: LollipopPinVariant.origin,
+        ),
+      ),
+    );
+    if (r == null || !mounted) return;
+    setState(() {
+      _originController.text = r.label;
+      _originResults = [];
+      _showOrigin = false;
+    });
+    _invalidatePrefetch();
+    _schedulePrefetch();
+  }
+
+  Future<void> _pickTujuanAkhirOnMap() async {
+    final t = _destController.text.trim();
+    var initial = const LatLng(-6.2088, 106.8456);
+    if (t.length >= 3) {
+      try {
+        final locs = await GeocodingService.locationFromAddress(
+          '$t, Indonesia',
+          appendIndonesia: false,
+        );
+        if (locs.isNotEmpty) {
+          initial = LatLng(locs.first.latitude, locs.first.longitude);
+        }
+      } catch (_) {}
+    }
+    LatLng? device;
+    try {
+      final pos = await Geolocator.getCurrentPosition();
+      device = LatLng(pos.latitude, pos.longitude);
+    } catch (_) {}
+    if (!mounted) return;
+    final r = await Navigator.of(context).push<MapPickerResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => MapDestinationPickerScreen(
+          initialCameraTarget: initial,
+          deviceLocation: device,
+          title: TrakaL10n.of(context).pickOnMapActionLabel,
+          pinVariant: LollipopPinVariant.destination,
+        ),
+      ),
+    );
+    if (r == null || !mounted) return;
+    setState(() {
+      _destController.text = r.label;
+      _destResults = [];
+      _showDest = false;
+    });
+    _invalidatePrefetch();
+    _schedulePrefetch();
+  }
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<bool>(
@@ -3698,7 +3825,12 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
             bottom: MediaQuery.of(context).viewInsets.bottom,
           ),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.fromLTRB(
+              20,
+              20,
+              20,
+              20 + MediaQuery.viewPaddingOf(context).bottom,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3809,6 +3941,16 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                     hintText: 'Stasiun, Mall, Bandara, Rumah Sakit, Perumahan, Terminal, Pelabuhan, Alun-alun',
                     border: const OutlineInputBorder(),
                     isDense: true,
+                    prefixIcon: const Padding(
+                      padding: EdgeInsets.only(left: 8, right: 4),
+                      child: LollipopPinFormIcon(
+                        variant: LollipopPinVariant.origin,
+                      ),
+                    ),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 44,
+                      minHeight: 40,
+                    ),
                     suffixIcon: _loadingLocation
                         ? const Padding(
                             padding: EdgeInsets.all(12),
@@ -3841,6 +3983,16 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                     _invalidatePrefetch();
                     _schedulePrefetch();
                   },
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: saving ? null : _pickTujuanAwalOnMap,
+                    icon: const Icon(Icons.map_outlined, size: 20),
+                    label: Text(
+                      TrakaL10n.of(context).pickOriginOnMapActionLabel,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 // Tujuan akhir + autocomplete
@@ -3909,6 +4061,16 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                     hintText: 'Stasiun, Mall, Bandara, Rumah Sakit, Perumahan, Terminal, Pelabuhan, Alun-alun',
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
                     isDense: true,
+                    prefixIcon: const Padding(
+                      padding: EdgeInsets.only(left: 8, right: 4),
+                      child: LollipopPinFormIcon(
+                        variant: LollipopPinVariant.destination,
+                      ),
+                    ),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 44,
+                      minHeight: 40,
+                    ),
                   ),
                   onChanged: (value) {
                     _searchLocation(value, false);
@@ -3921,6 +4083,14 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                     _invalidatePrefetch();
                     _schedulePrefetch();
                   },
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: saving ? null : _pickTujuanAkhirOnMap,
+                    icon: const Icon(Icons.map_outlined, size: 20),
+                    label: Text(TrakaL10n.of(context).pickOnMapActionLabel),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
@@ -4329,6 +4499,25 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
           : sid.isNotEmpty
               ? (sid, ScheduleIdUtil.toLegacy(sid))
               : ScheduleIdUtil.build(user.uid, dateKey, depMs, origin, dest);
+      final lockSnap = await OrderService.getScheduleSlotBookingSnapshot(
+        effectiveSid,
+        legacyScheduleId: effectiveLeg,
+      );
+      if (lockSnap.hasNonTerminalOrders) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Jadwal tidak bisa dihapus: masih ada pesanan aktif. Selesaikan, batalkan, atau pindahkan pesanan dulu.',
+              ),
+              backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        widget.formSaving.value = false;
+        return;
+      }
       final ok = await _deleteScheduleFromFirestore(
         firestore: widget.firestore,
         driverUid: user.uid,
@@ -4551,6 +4740,32 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
     if (!mounted) return;
     final user = widget.auth.currentUser;
     if (user == null) return;
+    final isEditFlow =
+        widget.editScheduleIndex != null && widget.initialJam != null;
+    if (isEditFlow) {
+      final sid = widget.editScheduleId ?? '';
+      if (sid.isNotEmpty) {
+        final lock = await OrderService.getScheduleSlotBookingSnapshot(
+          sid,
+          legacyScheduleId: widget.editLegacyScheduleId,
+        );
+        if (lock.hasNonTerminalOrders) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Tidak bisa menyimpan perubahan: masih ada pesanan aktif pada jadwal ini. Selesaikan, batalkan, atau pindahkan pesanan dulu.',
+                ),
+                backgroundColor: Colors.red,
+                behavior: SnackBarBehavior.floating,
+                duration: Duration(seconds: 12),
+              ),
+            );
+          }
+          return;
+        }
+      }
+    }
     widget.formSaving.value = true;
     const readTimeout = Duration(seconds: 16);
     try {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart'
@@ -7,7 +8,6 @@ import 'package:flutter/material.dart';
 
 import '../config/app_constants.dart';
 import '../services/car_icon_service.dart';
-import '../services/order_service.dart';
 import '../services/map_style_service.dart';
 import '../services/driver_status_service.dart';
 import '../services/geocoding_service.dart';
@@ -43,6 +43,9 @@ class PassengerTrackMapWidget extends StatefulWidget {
     this.enableFerryDetection = false,
     this.showSOS = true,
     this.onSOS,
+    this.useDualPartyBoundsCamera = false,
+    this.dualPartyFocalLat = 0,
+    this.dualPartyFocalLng = 0,
   });
 
   final OrderModel order;
@@ -67,6 +70,12 @@ class PassengerTrackMapWidget extends StatefulWidget {
   final VoidCallback? onSOS;
   /// Jika true (Lacak Barang), deteksi otomatis driver di kapal laut.
   final bool enableFerryDetection;
+
+  /// Kamera mem-framing driver + titik pendamping (penumpang / pengirim / penerima), bukan chase cam mengarah depan mobil.
+  final bool useDualPartyBoundsCamera;
+  /// Koordinat titik kedua untuk framing (penumpang di travel; pengirim atau penerima di kirim barang sesuai fase).
+  final double dualPartyFocalLat;
+  final double dualPartyFocalLng;
 
   @override
   State<PassengerTrackMapWidget> createState() => _PassengerTrackMapWidgetState();
@@ -129,18 +138,87 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
   bool _cameraTrackingEnabled = true;
   /// Abaikan onCameraMoveStarted berikutnya (dari animateCamera programatik).
   bool _suppressNextCameraMoveStarted = false;
+  Timer? _dualPartyFitDebounce;
+  DateTime? _lastDualPartyFitAt;
 
   void _focusOnCar() {
     _cameraFollowEngine.resetThrottle();
     _lastCameraTarget = null;
     setState(() => _cameraTrackingEnabled = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _syncCameraFollow(force: true);
+      if (!mounted) return;
+      if (widget.useDualPartyBoundsCamera) {
+        _fitDualPartyBounds(force: true);
+      } else {
+        _syncCameraFollow(force: true);
+      }
     });
+  }
+
+  bool _dualPartyFocalValid() {
+    final lat = widget.dualPartyFocalLat;
+    final lng = widget.dualPartyFocalLng;
+    return (lat.abs() > 1e-7 || lng.abs() > 1e-7) &&
+        lat.isFinite &&
+        lng.isFinite;
+  }
+
+  void _scheduleDualPartyFit() {
+    if (!widget.useDualPartyBoundsCamera ||
+        !_cameraTrackingEnabled ||
+        !_dualPartyFocalValid()) {
+      return;
+    }
+    _dualPartyFitDebounce?.cancel();
+    _dualPartyFitDebounce = Timer(const Duration(milliseconds: 450), () {
+      if (mounted) _fitDualPartyBounds(force: false);
+    });
+  }
+
+  void _fitDualPartyBounds({required bool force}) {
+    if (!widget.useDualPartyBoundsCamera || !_dualPartyFocalValid()) return;
+    final c = _mapController;
+    if (c == null || !mounted || !_cameraTrackingEnabled) return;
+    final driver = _displayedPosition ?? _targetPosition;
+    if (driver == null) return;
+
+    if (!force &&
+        _lastDualPartyFitAt != null &&
+        DateTime.now().difference(_lastDualPartyFitAt!) <
+            const Duration(milliseconds: 350)) {
+      return;
+    }
+    _lastDualPartyFitAt = DateTime.now();
+
+    LatLng other = LatLng(widget.dualPartyFocalLat, widget.dualPartyFocalLng);
+    var minLat = math.min(driver.latitude, other.latitude);
+    var maxLat = math.max(driver.latitude, other.latitude);
+    var minLng = math.min(driver.longitude, other.longitude);
+    var maxLng = math.max(driver.longitude, other.longitude);
+    const pad = 0.00035;
+    if ((maxLat - minLat).abs() < pad) {
+      minLat -= pad;
+      maxLat += pad;
+    }
+    if ((maxLng - minLng).abs() < pad) {
+      minLng -= pad;
+      maxLng += pad;
+    }
+    final bounds = LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
+    _suppressNextCameraMoveStarted = true;
+    unawaited(() async {
+      try {
+        await c.animateCamera(CameraUpdate.newLatLngBounds(bounds, 88));
+      } catch (_) {}
+    }());
   }
 
   /// Chase cam: sama sumber dengan marker interpolasi — bukan dari [build] tiap frame.
   void _syncCameraFollow({bool force = false}) {
+    if (widget.useDualPartyBoundsCamera) return;
     if (!mounted || _mapController == null || !_cameraTrackingEnabled) return;
     final pos = _displayedPosition ?? _targetPosition;
     if (pos == null) return;
@@ -221,8 +299,44 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
     _driverSub?.cancel();
     _interpolationTimer?.cancel();
     _carIconZoomDebounce?.cancel();
+    _dualPartyFitDebounce?.cancel();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant PassengerTrackMapWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final destChanged =
+        oldWidget.destForDistanceLat != widget.destForDistanceLat ||
+            oldWidget.destForDistanceLng != widget.destForDistanceLng;
+    if (destChanged) {
+      setState(() {
+        _routePolyline = null;
+        _lastRouteFetchOrigin = null;
+        _lastRouteFetchAt = null;
+      });
+    }
+    final dualFocalChanged = widget.useDualPartyBoundsCamera &&
+        (oldWidget.dualPartyFocalLat != widget.dualPartyFocalLat ||
+            oldWidget.dualPartyFocalLng != widget.dualPartyFocalLng ||
+            oldWidget.useDualPartyBoundsCamera != widget.useDualPartyBoundsCamera);
+
+    if (destChanged || dualFocalChanged) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (destChanged) {
+          final pos = _displayedPosition ?? _targetPosition;
+          if (pos != null) {
+            unawaited(_fetchRouteFromDriver(pos.latitude, pos.longitude));
+          }
+        }
+        if (widget.useDualPartyBoundsCamera &&
+            (destChanged || dualFocalChanged)) {
+          _fitDualPartyBounds(force: true);
+        }
+      });
+    }
   }
 
   @override
@@ -299,7 +413,7 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
     if (mounted) setState(() {});
   }
 
-  /// Fetch rute dari posisi driver ke tujuan (Lacak Driver: ke penumpang, Lacak Barang: ke penerima).
+  /// Fetch rute dari posisi driver ke titik [destForDistance] (penumpang/pengirim/penerima sesuai layar & fase).
   Future<void> _fetchRouteFromDriver(double driverLat, double driverLng) async {
     final destLat = widget.destForDistanceLat;
     final destLng = widget.destForDistanceLng;
@@ -320,7 +434,11 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _cameraTrackingEnabled) {
           _cameraFollowEngine.resetThrottle();
-          _syncCameraFollow(force: true);
+          if (widget.useDualPartyBoundsCamera) {
+            _fitDualPartyBounds(force: true);
+          } else {
+            _syncCameraFollow(force: true);
+          }
         }
       });
     }
@@ -446,7 +564,13 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
         _smoothedBearing = _displayedBearing;
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _syncCameraFollow(force: true);
+        if (mounted) {
+          if (widget.useDualPartyBoundsCamera) {
+            _fitDualPartyBounds(force: true);
+          } else {
+            _syncCameraFollow(force: true);
+          }
+        }
       });
     } else {
       _targetPosition = rawLatLng;
@@ -467,7 +591,12 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
           : 1500;
       _startInterpolation(durationMs: durationMs);
     }
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      if (widget.useDualPartyBoundsCamera) {
+        _scheduleDualPartyFit();
+      }
+    }
   }
 
   bool _isDataStale() {
@@ -583,7 +712,11 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
       }
       if (mounted) {
         if (_cameraTrackingEnabled) {
-          _syncCameraFollow();
+          if (widget.useDualPartyBoundsCamera) {
+            _scheduleDualPartyFit();
+          } else {
+            _syncCameraFollow();
+          }
         }
         setState(() {});
       }
@@ -818,11 +951,9 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
       driverIcon = _shipIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan);
       driverSnippet = 'Sedang di kapal laut';
     } else {
-      final orderActive = widget.order.status == OrderService.statusAgreed ||
-          widget.order.status == OrderService.statusPickedUp;
       final premium = _premiumCarIcons;
       if (premium != null) {
-        driverIcon = orderActive ? premium.blue : premium.green;
+        driverIcon = isMoving ? premium.green : premium.red;
       } else {
         driverIcon = (isMoving ? _carIconGreen : _carIconRed) ??
             BitmapDescriptor.defaultMarkerWithHue(
@@ -872,6 +1003,11 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
               _mapController = c;
               _cameraFollowEngine.attach(c);
               unawaited(_syncCarIconsZoomFromMap());
+              if (widget.useDualPartyBoundsCamera) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _fitDualPartyBounds(force: true);
+                });
+              }
             },
             onCameraIdle: _syncCarIconsZoomFromMap,
             onCameraMoveStarted: () {

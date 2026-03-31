@@ -745,6 +745,74 @@ class RouteUtils {
       ),
     );
   }
+
+  /// Panjang total polyline sepanjang segmen (meter).
+  static double polylineLengthMeters(List<LatLng> pts) {
+    if (pts.length < 2) return 0;
+    var sum = 0.0;
+    for (var i = 1; i < pts.length; i++) {
+      sum += Geolocator.distanceBetween(
+        pts[i - 1].latitude,
+        pts[i - 1].longitude,
+        pts[i].latitude,
+        pts[i].longitude,
+      );
+    }
+    return sum;
+  }
+
+  /// Iris polyline dari jarak kumulatif [startM] hingga [endM] (meter dari titik awal).
+  static List<LatLng> slicePolylineByDistanceRange(
+    List<LatLng> pts,
+    double startM,
+    double endM,
+  ) {
+    if (pts.length < 2) return const [];
+    final total = polylineLengthMeters(pts);
+    if (total <= 0) return const [];
+    final sm = startM.clamp(0.0, total);
+    final em = endM.clamp(0.0, total);
+    if (em <= sm) return const [];
+
+    LatLng lerp(LatLng a, LatLng b, double t) => LatLng(
+          a.latitude + (b.latitude - a.latitude) * t,
+          a.longitude + (b.longitude - a.longitude) * t,
+        );
+
+    void append(LatLng p, List<LatLng> out) {
+      if (out.isEmpty ||
+          out.last.latitude != p.latitude ||
+          out.last.longitude != p.longitude) {
+        out.add(p);
+      }
+    }
+
+    final out = <LatLng>[];
+    var acc = 0.0;
+    for (var i = 0; i < pts.length - 1; i++) {
+      final p1 = pts[i];
+      final p2 = pts[i + 1];
+      final segLen = Geolocator.distanceBetween(
+        p1.latitude,
+        p1.longitude,
+        p2.latitude,
+        p2.longitude,
+      );
+      final a = acc;
+      final b = acc + segLen;
+      final lo = sm > a ? sm : a;
+      final hi = em < b ? em : b;
+      if (lo < hi && segLen > 0) {
+        final t0 = ((lo - a) / segLen).clamp(0.0, 1.0);
+        final t1 = ((hi - a) / segLen).clamp(0.0, 1.0);
+        append(lerp(p1, p2, t0), out);
+        append(lerp(p1, p2, t1), out);
+      }
+      acc = b;
+      if (acc >= em) break;
+    }
+    return out.length >= 2 ? out : const [];
+  }
 }
 
 /// Data untuk [findNearestRouteIndexIsolate] (harus bisa dikirim ke isolate).
