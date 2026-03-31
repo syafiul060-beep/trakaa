@@ -16,13 +16,17 @@ class DriverNavPremiumPaymentService {
     final result = await callable.call<Map<String, dynamic>>({
       'purchaseToken': purchaseToken,
       'packageName': AppConstants.packageName,
-      if (productId != null) 'productId': productId,
-      if (routeJourneyNumber != null && routeJourneyNumber.isNotEmpty)
-        'routeJourneyNumber': routeJourneyNumber,
-      if (navPremiumScope != null && navPremiumScope.isNotEmpty)
-        'navPremiumScope': navPremiumScope,
-      if (routeDistanceMeters != null && routeDistanceMeters > 0)
-        'routeDistanceMeters': routeDistanceMeters,
+      'productId':? productId,
+      'routeJourneyNumber':? (routeJourneyNumber != null &&
+              routeJourneyNumber.isNotEmpty
+          ? routeJourneyNumber
+          : null),
+      'navPremiumScope':? (navPremiumScope != null && navPremiumScope.isNotEmpty
+          ? navPremiumScope
+          : null),
+      'routeDistanceMeters':? (routeDistanceMeters != null && routeDistanceMeters > 0
+          ? routeDistanceMeters
+          : null),
     });
     return result.data;
   }

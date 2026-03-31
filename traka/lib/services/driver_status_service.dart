@@ -195,7 +195,7 @@ class DriverStatusService {
         'latitude': position.latitude,
         'longitude': position.longitude,
         'status': status,
-        if (currentPassengerCount != null) 'currentPassengerCount': currentPassengerCount,
+        'currentPassengerCount':? currentPassengerCount,
         if (city != null && city.isNotEmpty) 'city': city,
         if (maxPassengers != null && maxPassengers > 0) 'maxPassengers': maxPassengers,
       };

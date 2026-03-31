@@ -118,8 +118,8 @@ class DriverContributionService {
     final result = await callable.call<Map<String, dynamic>>({
       'purchaseToken': purchaseToken,
       'orderId': orderId,
-      if (productId != null) 'productId': productId,
-      if (packageName != null) 'packageName': packageName,
+      'productId':? productId,
+      'packageName':? packageName,
     });
     return result.data;
   }

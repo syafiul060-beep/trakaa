@@ -17,7 +17,7 @@ class LacakBarangPaymentService {
       'orderId': orderId,
       'payerType': payerType,
       'productId': productId,
-      if (packageName != null) 'packageName': packageName,
+      'packageName':? packageName,
     });
     return result.data;
   }

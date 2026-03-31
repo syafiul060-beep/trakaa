@@ -967,7 +967,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     _onDriverStatusUpdate(uid, {
       'latitude': lat,
       'longitude': lng,
-      if (tsMs != null) 'lastUpdated': tsMs,
+      'lastUpdated':? tsMs,
     });
   }
 

@@ -33,7 +33,7 @@ class AppAnalyticsService {
     _analytics.logEvent(
       name: 'login_success',
       parameters: {
-        if (method != null) 'method': method,
+        'method':? method,
       },
     );
   }
@@ -43,7 +43,7 @@ class AppAnalyticsService {
     _analytics.logEvent(
       name: 'login_failed',
       parameters: {
-        if (reason != null) 'reason': reason,
+        'reason':? reason,
       },
     );
   }
@@ -113,7 +113,7 @@ class AppAnalyticsService {
     _analytics.logEvent(
       name: 'register_success',
       parameters: {
-        if (role != null) 'role': role,
+        'role':? role,
       },
     );
   }
@@ -289,7 +289,7 @@ class AppAnalyticsService {
       name: 'driver_pickup_nearby_banner',
       parameters: {
         'action': action,
-        if (bucket != null) 'distance_bucket': bucket,
+        'distance_bucket':? bucket,
       },
     );
   }
@@ -362,8 +362,8 @@ class AppAnalyticsService {
       parameters: {
         'source': source,
         'result_count': resultCount.clamp(0, 500).toString(),
-        if (r != null) 'reason': r,
-        if (firestoreCapHit) 'fs_cap': '1',
+        'reason':? r,
+        'fs_cap':? (firestoreCapHit ? '1' : null),
       },
     );
   }
@@ -452,7 +452,7 @@ class AppAnalyticsService {
   static void logLacakHelpOpen({String? audience}) {
     _analytics.logEvent(
       name: 'lacak_help_open',
-      parameters: {if (audience != null) 'audience': audience},
+      parameters: {'audience':? audience},
     );
   }
 }

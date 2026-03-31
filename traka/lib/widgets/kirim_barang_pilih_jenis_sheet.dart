@@ -152,7 +152,7 @@ class _KirimBarangPilihJenisSheetState extends State<KirimBarangPilihJenisSheet>
         'barangPanjangCm': panjang,
         'barangLebarCm': lebar,
         'barangTinggiCm': tinggi > 0 ? tinggi : null,
-        if (barangFotoUrl != null) 'barangFotoUrl': barangFotoUrl,
+        'barangFotoUrl':? barangFotoUrl,
       });
     } else {
       widget.onSelected({'barangCategory': OrderModel.barangCategoryDokumen});

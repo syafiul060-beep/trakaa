@@ -14,7 +14,7 @@ class ViolationPaymentService {
     final result = await callable.call<Map<String, dynamic>>({
       'purchaseToken': purchaseToken,
       'productId': productId,
-      if (packageName != null) 'packageName': packageName,
+      'packageName':? packageName,
     });
     return result.data;
   }

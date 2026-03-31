@@ -56,7 +56,7 @@ class LollipopPinFormIcon extends StatelessWidget {
         width: 22,
         height: 22,
         fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) =>
+        errorBuilder: (_, _, _) =>
             Icon(Icons.location_on, color: c, size: 22),
       ),
     );
@@ -86,7 +86,7 @@ class LollipopPinMapCenter extends StatelessWidget {
             width: 56,
             height: 56,
             fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) =>
+            errorBuilder: (_, _, _) =>
                 Icon(Icons.location_on, color: c, size: 52),
           ),
         ),
