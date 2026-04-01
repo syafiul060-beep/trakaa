@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../models/user_role.dart';
 import 'admin_contact_config_service.dart';
 import 'fcm_service.dart';
+import 'permission_service.dart';
 import 'role_based_proximity_session.dart';
 import 'verification_service.dart';
 import 'voice_call_incoming_service.dart';
@@ -53,6 +56,15 @@ class AuthFlowService {
   }) async {
     final userRole = role.toUserRoleOrNull;
     if (userRole == null) return;
+
+    // Android 13+: POST_NOTIFICATIONS harus diminta saat Activity siap. Meminta dari
+    // FcmService.init() (background di awal startup) sering gagal diam-diam di OEM (Samsung).
+    if (!kIsWeb && Platform.isAndroid && context.mounted) {
+      try {
+        await PermissionService.requestNotificationPermission(context);
+      } catch (_) {}
+    }
+    if (!context.mounted) return;
 
     FcmService.saveTokenForUser(uid);
     unawaited(AdminContactConfigService.load(force: true));

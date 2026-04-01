@@ -164,7 +164,8 @@ class FcmService {
       sound: true,
     );
     await _setupLocalNotifications();
-    await RouteNotificationService.requestPermissionIfNeeded();
+    // Izin notifikasi Android 13+: jangan minta di sini — terlalu awal (belum ada Activity).
+    // Minta dari AuthFlowService.navigateToHome (setelah login / splash ke home).
     FirebaseMessaging.onMessage.listen(_onMessageForeground);
     // Tap notifikasi saat app di background
     FirebaseMessaging.onMessageOpenedApp.listen(_onNotificationOpenedApp);

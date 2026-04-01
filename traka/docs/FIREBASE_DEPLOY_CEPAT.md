@@ -30,6 +30,7 @@ firebase deploy --only hosting,functions,firestore,storage
 ### Notifikasi Android (ikon status bar / FCM)
 
 - **`FirebaseMessaging.onBackgroundMessage`** harus dipanggil di **`main.dart` sebelum `runApp()`**. Jika didaftarkan terlambat (mis. setelah UI jalan), pesan **data-only** di background/terminated sering **tidak** memicu notifikasi lokal.
+- **Android 13+ (`POST_NOTIFICATIONS`):** izin diminta saat **`AuthFlowService.navigateToHome`** (setelah login / masuk home dari splash), bukan dari init FCM di background — meminta terlalu awal sering **gagal tanpa dialog** di beberapa HP (mis. Samsung).
 - Saluran **`traka_fcm_default`** dibuat saat startup dan direferensikan oleh **`com.google.firebase.messaging.default_notification_channel_id`** di manifest agar pesan dengan payload **`notification`** tidak masuk channel default yang lemah (risiko tidak terlihat di beberapa OEM).
 - Ikon kecil di status bar memakai **`@drawable/ic_notification`**; meta **`com.google.firebase.messaging.default_notification_icon`** ada di `android/app/src/main/AndroidManifest.xml`.
 - Untuk mengganti gambar sambil menjaga jarak aman dari crop bundar: jalankan dari folder `traka/`:

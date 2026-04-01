@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -21,6 +22,7 @@ import '../services/account_deletion_service.dart';
 import '../services/app_analytics_service.dart';
 import '../services/device_security_service.dart';
 import '../services/fcm_service.dart';
+import '../services/permission_service.dart';
 import '../services/voice_call_incoming_service.dart';
 import '../theme/app_interaction_styles.dart';
 import '../theme/app_theme.dart';
@@ -724,6 +726,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
         await DeviceSecurityService.recordRegistration(uid, role);
         if (!mounted) return false;
         _setRegisterLoading(false);
+        if (!kIsWeb && Platform.isAndroid && mounted) {
+          try {
+            await PermissionService.requestNotificationPermission(context);
+          } catch (_) {}
+        }
+        if (!mounted) return false;
         FcmService.saveTokenForUser(uid);
         VoiceCallIncomingService.start(uid);
         if (role == UserRole.penumpang.firestoreValue) {
