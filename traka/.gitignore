@@ -75,3 +75,6 @@ lib/firebase_options.dart
 
 # Build output untuk hosting (build dari traka-admin)
 hosting/admin/
+
+# Firebase CLI (cache hosting / deploy; tidak perlu di-version)
+.firebase/

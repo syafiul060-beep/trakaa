@@ -27,6 +27,17 @@ firebase deploy
 firebase deploy --only hosting,functions,firestore,storage
 ```
 
+### Notifikasi Android (ikon status bar / FCM)
+
+- Ikon kecil di status bar memakai **`@drawable/ic_notification`**; meta **`com.google.firebase.messaging.default_notification_icon`** ada di `android/app/src/main/AndroidManifest.xml`.
+- Untuk mengganti gambar sambil menjaga jarak aman dari crop bundar: jalankan dari folder `traka/`:
+
+```bash
+python tool/generate_notification_icon.py path/ke/logo_sumber.png
+```
+
+- Jika backend mengirim FCM dengan field **`android.notification.icon`**, samakan dengan nama resource di atas agar tidak tertimpa ikon lain.
+
 ## Admin web — folder `traka-admin/`
 
 `traka-admin` memakai **`firebase.json` terpisah** (Hosting site **`traka-admin`**). Menjalankan `firebase deploy` dari **`traka/` tidak** mendeploy situs admin.
