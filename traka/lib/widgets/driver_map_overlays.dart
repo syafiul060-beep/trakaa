@@ -346,7 +346,6 @@ class DriverWorkToggleButton extends StatelessWidget {
     final blockedFinish = isDriverWorking && hasActiveOrder;
     final showFinish = isDriverWorking && !hasActiveOrder;
     final showRouteSelected = !isDriverWorking && routeSelected;
-    final showReady = !isDriverWorking && !routeSelected;
 
     late final List<Color> gradientColors;
     late final Color fg;
