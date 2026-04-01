@@ -9,7 +9,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_performance/firebase_performance.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart'
     show Listenable, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
@@ -49,6 +51,23 @@ import 'widgets/biometric_lock_overlay.dart';
 import 'config/traka_api_config.dart';
 import 'traka_feature_bootstrap.dart';
 
+/// Saluran untuk notifikasi yang ditampilkan **langsung oleh FCM** (payload `notification`).
+/// Harus ada di perangkat sebelum pesan pertama; importance tinggi mengurangi risiko "senyap" di OEM.
+Future<void> _ensureTrakaFcmDefaultChannel() async {
+  const channel = AndroidNotificationChannel(
+    'traka_fcm_default',
+    'Pesan Traka',
+    description: 'Notifikasi dari server (chat, pesanan, admin)',
+    importance: Importance.high,
+    playSound: true,
+    enableVibration: true,
+  );
+  final impl = FlutterLocalNotificationsPlugin()
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+  await impl?.createNotificationChannel(channel);
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -75,6 +94,18 @@ void main() async {
       debugPrint('$st');
       runApp(_ErrorApp(message: 'Gagal memuat Firebase: $e'));
       return;
+    }
+  }
+
+  // FCM: `onBackgroundMessage` wajib didaftarkan sebelum `runApp` (FlutterFire).
+  if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  }
+  if (!kIsWeb && Platform.isAndroid) {
+    try {
+      await _ensureTrakaFcmDefaultChannel();
+    } catch (e, st) {
+      logError('main._ensureTrakaFcmDefaultChannel', e, st);
     }
   }
 

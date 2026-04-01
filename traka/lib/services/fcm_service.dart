@@ -33,8 +33,9 @@ bool _isDuplicateAppError(Object e) {
   }
 }
 
+/// Top-level: didaftarkan dari [main] **sebelum** `runApp` (syarat FlutterFire).
 @pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -162,7 +163,6 @@ class FcmService {
       badge: true,
       sound: true,
     );
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     await _setupLocalNotifications();
     await RouteNotificationService.requestPermissionIfNeeded();
     FirebaseMessaging.onMessage.listen(_onMessageForeground);
