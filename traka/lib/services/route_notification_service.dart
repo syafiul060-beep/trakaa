@@ -5,7 +5,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 /// Notifikasi saat rute aktif dan aplikasi di background.
 class RouteNotificationService {
-  /// Icon notifikasi: siluet mobil (putih, monokrom) untuk status bar.
+  /// Icon notifikasi: siluet merek (putih + alpha, monokrom) untuk status bar Android.
   static const String _notificationIcon = '@drawable/ic_notification';
 
   static const int _routeActiveNotificationId = 1001;

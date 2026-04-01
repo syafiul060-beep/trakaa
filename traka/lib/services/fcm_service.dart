@@ -91,7 +91,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   }
 }
 
-/// Icon notifikasi: siluet mobil (putih, monokrom) untuk status bar.
+/// Icon notifikasi: siluet merek (putih + alpha, monokrom) untuk status bar Android.
 const String _notificationIcon = '@drawable/ic_notification';
 
 Future<void> _showBackgroundNotification(String title, String body) async {
