@@ -38,6 +38,15 @@ python tool/generate_notification_icon.py path/ke/logo_sumber.png
 
 - Jika backend mengirim FCM dengan field **`android.notification.icon`**, samakan dengan nama resource di atas agar tidak tertimpa ikon lain.
 
+**Checklist uji di HP (disarankan sebelum rilis):**
+
+| Langkah | Catatan |
+|--------|---------|
+| Build release / APK internal dan **install bersih** (uninstall app lama dulu) | Menghindari ikon/channel cache lama. |
+| Minimal **dua merek** (mis. Samsung atau Xiaomi + Pixel/stock) | OEM sering memotong atau menata ulang ikon status bar. |
+| Tes **notifikasi lokal** (chat/route di app) dan satu **FCM** dari server / Console | Pastikan keduanya memakai drawable yang sama. |
+| Cek ikon **tidak terpotong** dan bukan kotak hitam | Kalau hitam: drawable bukan putih+alpha atau resource salah. |
+
 ## Admin web — folder `traka-admin/`
 
 `traka-admin` memakai **`firebase.json` terpisah** (Hosting site **`traka-admin`**). Menjalankan `firebase deploy` dari **`traka/` tidak** mendeploy situs admin.
