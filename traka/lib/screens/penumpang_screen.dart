@@ -75,6 +75,7 @@ import 'chat_room_penumpang_screen.dart';
 import 'profile_penumpang_screen.dart';
 import 'login_screen.dart';
 import '../widgets/traka_main_bottom_navigation_bar.dart';
+import '../theme/traka_snackbar.dart';
 
 class PenumpangScreen extends StatefulWidget {
   final String? prefillOrigin;
@@ -1560,6 +1561,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      applyViewInsetsPadding: false,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -1632,6 +1634,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      applyViewInsetsPadding: false,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -2733,10 +2736,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(TrakaL10n.of(context).failedToCreateOrder),
-            backgroundColor: Colors.red,
-          ),
+          TrakaSnackBar.error(context, Text(TrakaL10n.of(context).failedToCreateOrder)),
         );
       }
     }
@@ -2871,7 +2871,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
         onError: (msg) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(msg), backgroundColor: Colors.red),
+              TrakaSnackBar.error(context, Text(msg)),
             );
           }
         },

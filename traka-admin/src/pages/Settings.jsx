@@ -4,6 +4,30 @@ import { db } from '../firebase'
 import { logAudit } from '../utils/auditLog'
 import { isValidEmail, isValidWhatsApp, isValidVersion, toE164, looksLikePhone } from '../utils/validation'
 
+/** Ikon chip hero login — selaras dengan whitelist di app Flutter. */
+const LOGIN_HERO_ICON_OPTIONS = [
+  { value: 'route', label: 'Rute / travel' },
+  { value: 'map', label: 'Peta / lacak' },
+  { value: 'inventory', label: 'Paket / inventory' },
+  { value: 'post', label: 'Kantor pos' },
+  { value: 'shipping', label: 'Pengiriman truk' },
+  { value: 'shield', label: 'Keamanan' },
+  { value: 'star', label: 'Bintang / promo' },
+  { value: 'bolt', label: 'Kilat / cepat' },
+  { value: 'taxi', label: 'Taksi' },
+  { value: 'gps', label: 'GPS / lokasi' },
+  { value: 'payment', label: 'Pembayaran' },
+  { value: 'groups', label: 'Komunitas' },
+  { value: 'favorite', label: 'Favorit' },
+]
+const LOGIN_HERO_ICON_KEYS = LOGIN_HERO_ICON_OPTIONS.map((o) => o.value)
+
+const DEFAULT_LOGIN_HERO_PILLS = [
+  { icon: 'route', labelId: '', labelEn: '' },
+  { icon: 'map', labelId: '', labelEn: '' },
+  { icon: 'post', labelId: '', labelEn: '' },
+]
+
 function SettingsCard({ title, icon, children }) {
   return (
     <div className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden hover:shadow-card-hover transition-shadow">
@@ -18,7 +42,7 @@ function SettingsCard({ title, icon, children }) {
   )
 }
 
-function InputField({ label, value, onChange, type = 'text', min, max, placeholder, hint }) {
+function InputField({ label, value, onChange, type = 'text', min, max, placeholder, hint, maxLength }) {
   return (
     <div className="mb-4 last:mb-0">
       <label className="block text-sm font-medium text-gray-700 mb-1.5">{label}</label>
@@ -26,10 +50,28 @@ function InputField({ label, value, onChange, type = 'text', min, max, placehold
         type={type}
         min={min}
         max={max}
+        maxLength={maxLength}
         value={value}
         onChange={onChange}
         placeholder={placeholder}
         className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 transition"
+      />
+      {hint && <p className="text-xs text-gray-500 mt-1">{hint}</p>}
+    </div>
+  )
+}
+
+function TextAreaField({ label, value, onChange, placeholder, hint, rows = 3, maxLength }) {
+  return (
+    <div className="mb-4 last:mb-0">
+      <label className="block text-sm font-medium text-gray-700 mb-1.5">{label}</label>
+      <textarea
+        rows={rows}
+        maxLength={maxLength}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 transition resize-y min-h-[4.5rem]"
       />
       {hint && <p className="text-xs text-gray-500 mt-1">{hint}</p>}
     </div>
@@ -72,6 +114,13 @@ export default function Settings() {
   const [navPremiumFeeNasional, setNavPremiumFeeNasional] = useState(100000)
   const [navPremiumExemptPhones, setNavPremiumExemptPhones] = useState([])
   const [newNavPremiumExemptPhone, setNewNavPremiumExemptPhone] = useState('')
+  const [loginSloganTitleId, setLoginSloganTitleId] = useState('')
+  const [loginSloganSubtitleId, setLoginSloganSubtitleId] = useState('')
+  const [loginSloganTitleEn, setLoginSloganTitleEn] = useState('')
+  const [loginSloganSubtitleEn, setLoginSloganSubtitleEn] = useState('')
+  const [loginHeroPills, setLoginHeroPills] = useState(() =>
+    DEFAULT_LOGIN_HERO_PILLS.map((p) => ({ ...p }))
+  )
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -118,6 +167,27 @@ export default function Settings() {
         if (d.driverNavPremiumFeeNasionalRupiah != null) setNavPremiumFeeNasional(Number(d.driverNavPremiumFeeNasionalRupiah))
         const npex = d.driverNavPremiumExemptPhones
         setNavPremiumExemptPhones(Array.isArray(npex) ? npex.map((p) => String(p).trim()).filter(Boolean) : [])
+        setLoginSloganTitleId(d.loginSloganTitleId != null ? String(d.loginSloganTitleId) : '')
+        setLoginSloganSubtitleId(d.loginSloganSubtitleId != null ? String(d.loginSloganSubtitleId) : '')
+        setLoginSloganTitleEn(d.loginSloganTitleEn != null ? String(d.loginSloganTitleEn) : '')
+        setLoginSloganSubtitleEn(d.loginSloganSubtitleEn != null ? String(d.loginSloganSubtitleEn) : '')
+        if (Array.isArray(d.loginHeroPills) && d.loginHeroPills.length > 0) {
+          const merged = DEFAULT_LOGIN_HERO_PILLS.map((def, i) => {
+            const p = d.loginHeroPills[i]
+            if (!p || typeof p !== 'object') return { ...def }
+            const icon = LOGIN_HERO_ICON_KEYS.includes(String(p.icon || ''))
+              ? String(p.icon)
+              : def.icon
+            return {
+              icon,
+              labelId: p.labelId != null ? String(p.labelId) : '',
+              labelEn: p.labelEn != null ? String(p.labelEn) : '',
+            }
+          })
+          setLoginHeroPills(merged)
+        } else {
+          setLoginHeroPills(DEFAULT_LOGIN_HERO_PILLS.map((p) => ({ ...p })))
+        }
       }
 
       if (contactSnap.exists() && contactSnap.data()) {
@@ -179,6 +249,25 @@ export default function Settings() {
       setMessageType('error')
       return
     }
+    const sloganMax = 400
+    const slogans = [
+      loginSloganTitleId,
+      loginSloganSubtitleId,
+      loginSloganTitleEn,
+      loginSloganSubtitleEn,
+    ]
+    if (slogans.some((s) => s.length > sloganMax)) {
+      setMessage(`Slogan login maksimal ${sloganMax} karakter per field.`)
+      setMessageType('error')
+      return
+    }
+    for (const p of loginHeroPills) {
+      if ((p.labelId || '').length > 32 || (p.labelEn || '').length > 32) {
+        setMessage('Label chip halaman login maksimal 32 karakter.')
+        setMessageType('error')
+        return
+      }
+    }
     setSaving(true)
     try {
       const v = Math.min(85, Math.max(70, Number(tarifPerKm)))
@@ -225,6 +314,18 @@ export default function Settings() {
           driverNavPremiumFeeAntarProvinsiRupiah: Math.max(3000, Number(navPremiumFeeAntar) || 75000),
           driverNavPremiumFeeNasionalRupiah: Math.max(3000, Number(navPremiumFeeNasional) || 100000),
           driverNavPremiumExemptPhones: navPremiumExemptPhones,
+          loginSloganTitleId: loginSloganTitleId.trim() || null,
+          loginSloganSubtitleId: loginSloganSubtitleId.trim() || null,
+          loginSloganTitleEn: loginSloganTitleEn.trim() || null,
+          loginSloganSubtitleEn: loginSloganSubtitleEn.trim() || null,
+          loginHeroPills: DEFAULT_LOGIN_HERO_PILLS.map((def, i) => {
+            const p = loginHeroPills[i] || def
+            return {
+              icon: LOGIN_HERO_ICON_KEYS.includes(p.icon) ? p.icon : def.icon,
+              labelId: (p.labelId || '').trim() || null,
+              labelEn: (p.labelEn || '').trim() || null,
+            }
+          }),
         },
         { merge: true }
       )
@@ -506,6 +607,102 @@ export default function Settings() {
           placeholder="1.0.5"
           hint="Kosongkan = tidak ada paksaan update"
         />
+      </SettingsCard>
+
+      <SettingsCard title="Slogan halaman login" icon="✨">
+        <p className="text-sm text-gray-600 mb-4">
+          Tampil di app (area hero di atas form login). Ganti kapan saja; kosongkan field untuk pakai teks bawaan aplikasi.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextAreaField
+            label="Judul (Bahasa Indonesia)"
+            rows={2}
+            maxLength={400}
+            value={loginSloganTitleId}
+            onChange={(e) => setLoginSloganTitleId(e.target.value)}
+            placeholder="Contoh: Travel & kirim barang, tanpa tebak harga."
+            hint="Ton sales, singkat & meyakinkan"
+          />
+          <TextAreaField
+            label="Judul (English)"
+            rows={2}
+            maxLength={400}
+            value={loginSloganTitleEn}
+            onChange={(e) => setLoginSloganTitleEn(e.target.value)}
+            placeholder="Example: Rides & delivery with clear, fair pricing."
+          />
+          <TextAreaField
+            label="Deskripsi (Bahasa Indonesia)"
+            rows={3}
+            maxLength={400}
+            value={loginSloganSubtitleId}
+            onChange={(e) => setLoginSloganSubtitleId(e.target.value)}
+            placeholder="Satu kalimat padat: keuntungan + ajakan."
+          />
+          <TextAreaField
+            label="Deskripsi (English)"
+            rows={3}
+            maxLength={400}
+            value={loginSloganSubtitleEn}
+            onChange={(e) => setLoginSloganSubtitleEn(e.target.value)}
+            placeholder="One tight line: benefits + call to action."
+          />
+        </div>
+        <div className="mt-6 pt-6 border-t border-slate-100">
+          <p className="text-sm font-medium text-slate-700 mb-1">Chip bergaya (3) — ikon + teks</p>
+          <p className="text-sm text-gray-600 mb-4">
+            Di bawah deskripsi di app. Teks kosong = pakai bawaan (Travel / Lacak / Barang atau EN). Ikon sesuai tema.
+          </p>
+          <div className="space-y-4">
+            {loginHeroPills.map((pill, i) => (
+              <div
+                key={i}
+                className="p-4 rounded-xl bg-slate-50 border border-slate-100 grid gap-3 sm:grid-cols-3"
+              >
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Ikon {i + 1}</label>
+                  <select
+                    value={pill.icon}
+                    onChange={(e) => {
+                      const next = [...loginHeroPills]
+                      next[i] = { ...next[i], icon: e.target.value }
+                      setLoginHeroPills(next)
+                    }}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                  >
+                    {LOGIN_HERO_ICON_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <InputField
+                  label={`Teks ID (chip ${i + 1})`}
+                  maxLength={32}
+                  value={pill.labelId}
+                  onChange={(e) => {
+                    const next = [...loginHeroPills]
+                    next[i] = { ...next[i], labelId: e.target.value }
+                    setLoginHeroPills(next)
+                  }}
+                  placeholder="Opsional"
+                />
+                <InputField
+                  label={`Teks EN (chip ${i + 1})`}
+                  maxLength={32}
+                  value={pill.labelEn}
+                  onChange={(e) => {
+                    const next = [...loginHeroPills]
+                    next[i] = { ...next[i], labelEn: e.target.value }
+                    setLoginHeroPills(next)
+                  }}
+                  placeholder="Optional"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
       </SettingsCard>
         </div>
       </div>

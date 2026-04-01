@@ -13,6 +13,7 @@ import 'payment_history_screen.dart';
 import '../services/route_session_service.dart';
 import '../services/route_notification_service.dart';
 import '../services/app_analytics_service.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Product ID untuk kontribusi gabungan. Harus sama dengan di Google Play Console.
 /// Tier kontribusi 5k–200k; ID harus sama dengan Play Console.
@@ -311,12 +312,8 @@ class _ContributionDriverScreenState extends State<ContributionDriverScreen> {
           body: l10n.contributionSuccessBody,
         );
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.contributionSuccessSnackBar),
-            backgroundColor: Colors.green,
-            action: SnackBarAction(
+          TrakaSnackBar.success(context, Text(l10n.contributionSuccessSnackBar), action: SnackBarAction(
               label: l10n.viewPaymentHistory,
-              textColor: Colors.white,
               onPressed: () {
                 navigator.push(
                   MaterialPageRoute(
@@ -324,8 +321,7 @@ class _ContributionDriverScreenState extends State<ContributionDriverScreen> {
                   ),
                 );
               },
-            ),
-          ),
+            )),
         );
         navigator.pop(true);
       }

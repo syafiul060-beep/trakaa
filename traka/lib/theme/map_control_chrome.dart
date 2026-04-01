@@ -96,6 +96,31 @@ abstract final class TrakaMapControlChrome {
     ];
   }
 
+  /// Di atas peta terang: bayangan lebih «beremas», tanpa ring abu-abu tegas di tepi kartu.
+  static List<BoxShadow> floatingShadowsMapHero(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (isDark) return floatingShadows(context);
+    return [
+      BoxShadow(
+        color: AppTheme.primary.withValues(alpha: 0.13),
+        blurRadius: 20,
+        offset: const Offset(0, 8),
+        spreadRadius: -4,
+      ),
+      BoxShadow(
+        color: Colors.black.withValues(alpha: 0.07),
+        blurRadius: 14,
+        offset: const Offset(0, 4),
+      ),
+    ];
+  }
+
+  /// Border kartu mengambang di peta (mode terang): amber halus, bukan outline abu-abu.
+  static Color fabBorderMapHero(ColorScheme cs) {
+    if (cs.brightness == Brightness.dark) return fabBorder(cs);
+    return AppTheme.primary.withValues(alpha: 0.34);
+  }
+
   static Color fabSurface(ColorScheme cs) {
     return cs.brightness == Brightness.dark
         ? cs.surfaceContainerHigh

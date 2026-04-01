@@ -42,6 +42,7 @@ import 'lacak_barang_payment_screen.dart';
 import 'lacak_driver_payment_screen.dart';
 import 'payment_history_screen.dart';
 import 'scan_barcode_penumpang_screen.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Halaman Data Order untuk penumpang dengan 3 menu:
 /// 1. Pesanan - pesanan yang sudah terjadi kesepakatan (agreed)
@@ -196,14 +197,10 @@ class _DataOrderScreenState extends State<DataOrderScreen>
           await RouteNotificationService.showAutoCompleteNotification();
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
+            TrakaSnackBar.success(context, Text(
                 'Pesanan selesai otomatis. Notifikasi telah dikirim.',
-              ),
-              backgroundColor: Colors.green,
-              behavior: SnackBarBehavior.floating,
-              duration: Duration(seconds: 4),
-            ),
+              ), behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 4)),
           );
           setState(() {});
         } else {
@@ -361,11 +358,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
       if (!context.mounted) return;
       if (position == null) {
         messenger.showSnackBar(
-          const SnackBar(
-            content: Text('Tidak dapat memperoleh lokasi. Pastikan izin lokasi diaktifkan.'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+          TrakaSnackBar.error(context, Text('Tidak dapat memperoleh lokasi. Pastikan izin lokasi diaktifkan.'), behavior: SnackBarBehavior.floating),
         );
         return;
       }
@@ -394,21 +387,13 @@ class _DataOrderScreenState extends State<DataOrderScreen>
       );
       if (context.mounted && ok) {
         messenger.showSnackBar(
-          const SnackBar(
-            content: Text('Anda setuju. Pesanan masuk ke driver.'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
+          TrakaSnackBar.success(context, Text('Anda setuju. Pesanan masuk ke driver.'), behavior: SnackBarBehavior.floating),
         );
       }
     } catch (e) {
       if (context.mounted) {
         messenger.showSnackBar(
-          SnackBar(
-            content: Text('Gagal: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+          TrakaSnackBar.error(context, Text('Gagal: $e'), behavior: SnackBarBehavior.floating),
         );
       }
     }
@@ -1616,9 +1601,9 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                 icon: const Icon(Icons.check_circle_outline, size: 18),
                 label: const Text('Minta konfirmasi dijemput'),
                 style: AppInteractionStyles.elevatedPrimary(
-                  backgroundColor: Colors.amber.shade700,
-                  foregroundColor: Colors.white,
-                  shadowTint: Colors.amber.shade700,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  shadowTint: Theme.of(context).colorScheme.primary,
                 ),
               ),
             ),
@@ -1701,9 +1686,9 @@ class _DataOrderScreenState extends State<DataOrderScreen>
               icon: const Icon(Icons.check_circle_outline, size: 18),
               label: const Text('Minta konfirmasi dijemput'),
               style: AppInteractionStyles.elevatedPrimary(
-                backgroundColor: Colors.amber.shade700,
-                foregroundColor: Colors.white,
-                shadowTint: Colors.amber.shade700,
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                shadowTint: Theme.of(context).colorScheme.primary,
               ),
             ),
           ),
@@ -1729,11 +1714,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
       logError('DataOrderScreen._sendConfirmRequest', e, st);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(TrakaL10n.of(context).failedToSendDetail(e)),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text(TrakaL10n.of(context).failedToSendDetail(e)), behavior: SnackBarBehavior.floating),
       );
     }
   }
@@ -1803,11 +1784,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                 Navigator.of(ctx).pop();
                 if (ok) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Terima kasih atas rating Anda!'),
-                      backgroundColor: Colors.green,
-                      behavior: SnackBarBehavior.floating,
-                    ),
+                    TrakaSnackBar.success(context, Text('Terima kasih atas rating Anda!'), behavior: SnackBarBehavior.floating),
                   );
                 }
               },
@@ -1852,13 +1829,9 @@ class _DataOrderScreenState extends State<DataOrderScreen>
               ? () {
                   if (!order.adminCancelled) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
+                      TrakaSnackBar.warning(context, Text(
                           'Tidak bisa dibatalkan saat dekat dengan driver (radius ${OrderService.radiusDekatMeter} m).',
-                        ),
-                        backgroundColor: Colors.orange,
-                        behavior: SnackBarBehavior.floating,
-                      ),
+                        ), behavior: SnackBarBehavior.floating),
                     );
                   }
                 }
@@ -1876,21 +1849,13 @@ class _DataOrderScreenState extends State<DataOrderScreen>
     if (!context.mounted) return;
     if (result == ScanBarcodePenumpangScreen.resultPickup) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
+        TrakaSnackBar.success(context, Text(
             'Penjemputan terkonfirmasi. Saat sampai tujuan, scan barcode selesai.',
-          ),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
+          ), behavior: SnackBarBehavior.floating),
       );
     } else if (result == ScanBarcodePenumpangScreen.resultReceiver) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Barang diterima. Terima kasih.'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.success(context, Text('Barang diterima. Terima kasih.'), behavior: SnackBarBehavior.floating),
       );
     } else if (result is String) {
       _showRatingDialog(context, result);
@@ -1935,31 +1900,19 @@ class _DataOrderScreenState extends State<DataOrderScreen>
     if (!context.mounted) return;
     if (result == ScanBarcodePenumpangScreen.resultPickup) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
+        TrakaSnackBar.success(context, Text(
             'Penjemputan terkonfirmasi. Saat sampai tujuan, scan barcode selesai.',
-          ),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
+          ), behavior: SnackBarBehavior.floating),
       );
     } else if (result == ScanBarcodePenumpangScreen.resultReceiver) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Barang diterima. Terima kasih.'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.success(context, Text('Barang diterima. Terima kasih.'), behavior: SnackBarBehavior.floating),
       );
     } else if (result is String) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
+        TrakaSnackBar.success(context, Text(
             'Perjalanan selesai. Pesanan pindah ke Riwayat.',
-          ),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
+          ), behavior: SnackBarBehavior.floating),
       );
       _showRatingDialog(context, result);
     }
@@ -2049,11 +2002,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(TrakaL10n.of(context).failedToCancel),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text(TrakaL10n.of(context).failedToCancel), behavior: SnackBarBehavior.floating),
       );
     }
   }
@@ -2196,10 +2145,10 @@ class _DataOrderScreenState extends State<DataOrderScreen>
       logError('DataOrderScreen._shareTrackLink', e, st);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceFirst('Exception: ', '')),
+          TrakaSnackBar.error(
+            context,
+            Text(e.toString().replaceFirst('Exception: ', '')),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.red,
           ),
         );
       }

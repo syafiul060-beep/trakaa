@@ -90,7 +90,7 @@ class PassengerReceiptPdfService {
     var titleLeft = margin;
     try {
       final logoBytes =
-          (await rootBundle.load('assets/images/traka_brand_logo.png')).buffer.asUint8List();
+          (await rootBundle.load('assets/images/traka_app_icon.png')).buffer.asUint8List();
       final logoBmp = PdfBitmap(logoBytes);
       g.drawImage(
         logoBmp,

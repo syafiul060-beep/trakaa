@@ -131,8 +131,8 @@ class _SplashScreenState extends State<SplashScreen>
                     scale: _logoScale,
                     child: Image.asset(
                       'assets/images/traka_brand_logo.png',
-                      width: 300,
-                      height: 300,
+                      width: 360,
+                      height: 360,
                       fit: BoxFit.contain,
                       filterQuality: FilterQuality.high,
                       gaplessPlayback: true,

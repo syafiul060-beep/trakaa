@@ -9,6 +9,7 @@ import '../services/location_service.dart';
 import '../services/order_service.dart';
 import '../utils/app_logger.dart' show log, logError;
 import '../widgets/traka_l10n_scope.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Layar scan barcode driver oleh penumpang.
 /// Scan 1 (PICKUP): konfirmasi jemput → pop(_kScanResultPickup).
@@ -141,11 +142,7 @@ class _ScanBarcodePenumpangScreenState
     if (_isRateLimited()) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(TrakaL10n.of(context).tooManyAttempts),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
-          ),
+          TrakaSnackBar.warning(context, Text(TrakaL10n.of(context).tooManyAttempts), behavior: SnackBarBehavior.floating),
         );
       }
       return;
@@ -262,11 +259,7 @@ class _ScanBarcodePenumpangScreenState
         msg = 'Perjalanan selesai. Terima kasih.';
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.success(context, Text(msg), behavior: SnackBarBehavior.floating),
       );
       // Pickup: pop(resultPickup). Receiver: pop(resultReceiver). Complete: pop(orderId) untuk rating.
       final result = isPickup
@@ -282,12 +275,8 @@ class _ScanBarcodePenumpangScreenState
       _failedAttemptTimes.add(DateTime.now());
       setState(() => _processing = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error ?? TrakaL10n.of(context).scanFailed),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 4),
-        ),
+        TrakaSnackBar.error(context, Text(error ?? TrakaL10n.of(context).scanFailed), behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4)),
       );
     }
   }

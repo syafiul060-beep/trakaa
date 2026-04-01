@@ -12,6 +12,7 @@ import '../services/vehicle_brand_service.dart';
 import '../services/vehicle_plat_service.dart';
 import '../utils/safe_navigation_utils.dart';
 import '../widgets/traka_l10n_scope.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Screen untuk mengisi data kendaraan driver
 class DataKendaraanScreen extends StatefulWidget {
@@ -194,11 +195,7 @@ class _DataKendaraanScreenState extends State<DataKendaraanScreen> {
 
       if (exists) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(TrakaL10n.of(context).vehiclePlatUsedByOther),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+          TrakaSnackBar.error(context, Text(TrakaL10n.of(context).vehiclePlatUsedByOther), behavior: SnackBarBehavior.floating),
         );
         _formKey.currentState?.validate();
       }
@@ -216,11 +213,7 @@ class _DataKendaraanScreenState extends State<DataKendaraanScreen> {
       if (VerificationService.isVehicleDataLockedForDriver(snap.data() ?? {})) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(TrakaL10n.of(context).vehicleDataLockedBody),
-              backgroundColor: Colors.orange,
-              behavior: SnackBarBehavior.floating,
-            ),
+            TrakaSnackBar.warning(context, Text(TrakaL10n.of(context).vehicleDataLockedBody), behavior: SnackBarBehavior.floating),
           );
         }
         return;
@@ -232,11 +225,7 @@ class _DataKendaraanScreenState extends State<DataKendaraanScreen> {
         _selectedType == null ||
         _jumlahPenumpang == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(TrakaL10n.of(context).completeVehicleData),
-          backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.warning(context, Text(TrakaL10n.of(context).completeVehicleData), behavior: SnackBarBehavior.floating),
       );
       return;
     }
@@ -248,11 +237,7 @@ class _DataKendaraanScreenState extends State<DataKendaraanScreen> {
     if (!mounted) return;
     if (platExists) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(TrakaL10n.of(context).vehiclePlatUsedByOther),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text(TrakaL10n.of(context).vehiclePlatUsedByOther), behavior: SnackBarBehavior.floating),
       );
       return;
     }
@@ -287,26 +272,18 @@ class _DataKendaraanScreenState extends State<DataKendaraanScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+          TrakaSnackBar.success(context, Text(
               _existingPlat != null
                   ? 'Data kendaraan berhasil diperbarui'
                   : 'Data kendaraan berhasil disimpan',
-            ),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
+            ), behavior: SnackBarBehavior.floating),
         );
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal menyimpan data: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+          TrakaSnackBar.error(context, Text('Gagal menyimpan data: $e'), behavior: SnackBarBehavior.floating),
         );
       }
     } finally {
@@ -798,11 +775,7 @@ class _DataKendaraanFormSheetState extends State<DataKendaraanFormSheet> {
       setState(() => _isCheckingPlat = false);
       if (exists) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(TrakaL10n.of(context).vehiclePlatUsedByOther),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+          TrakaSnackBar.error(context, Text(TrakaL10n.of(context).vehiclePlatUsedByOther), behavior: SnackBarBehavior.floating),
         );
         _formKey.currentState?.validate();
       }
@@ -820,11 +793,7 @@ class _DataKendaraanFormSheetState extends State<DataKendaraanFormSheet> {
       if (VerificationService.isVehicleDataLockedForDriver(snap.data() ?? {})) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(TrakaL10n.of(context).vehicleDataLockedBody),
-              backgroundColor: Colors.orange,
-              behavior: SnackBarBehavior.floating,
-            ),
+            TrakaSnackBar.warning(context, Text(TrakaL10n.of(context).vehicleDataLockedBody), behavior: SnackBarBehavior.floating),
           );
         }
         return;
@@ -836,11 +805,7 @@ class _DataKendaraanFormSheetState extends State<DataKendaraanFormSheet> {
         _selectedType == null ||
         _jumlahPenumpang == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(TrakaL10n.of(context).completeVehicleData),
-          backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.warning(context, Text(TrakaL10n.of(context).completeVehicleData), behavior: SnackBarBehavior.floating),
       );
       return;
     }
@@ -851,11 +816,7 @@ class _DataKendaraanFormSheetState extends State<DataKendaraanFormSheet> {
     if (!mounted) return;
     if (platExists) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(TrakaL10n.of(context).vehiclePlatUsedByOther),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text(TrakaL10n.of(context).vehiclePlatUsedByOther), behavior: SnackBarBehavior.floating),
       );
       return;
     }

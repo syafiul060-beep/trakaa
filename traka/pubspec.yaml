@@ -121,26 +121,28 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/traka_brand_logo.png"
+  image_path: "assets/images/traka_app_icon.png"
   min_sdk_android: 21
-  adaptive_icon_background: "#000000"
-  adaptive_icon_foreground: "assets/images/traka_brand_logo.png"
-  # Nilai lebih kecil = artwork adaptive icon terlihat lebih besar (default 16).
-  adaptive_icon_foreground_inset: 0
-  # PNG transparan: App Store tidak mengizinkan alpha pada ikon; isi putih di belakang.
+  # Latar putih: One UI / adaptive sering merender #00000000 jadi hitam pekat; putih selaras ikon bundar lain.
+  # File PNG foreground sebaiknya benar-benar transparan di luar logo (bukan hitam pekat).
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/images/traka_app_icon.png"
+  # Semakin besar = logo lebih kecil di mask squircle (hindari terpotong).
+  adaptive_icon_foreground_inset: 28
+  # iOS App Store: ikon tanpa alpha (lapisan putih di belakang otomatis).
   remove_alpha_ios: true
 
 # Native splash — tampil segera saat app dibuka (sebelum Flutter siap)
 flutter_native_splash:
-  color: "#000000"
-  image: "assets/images/traka_brand_logo.png"
+  color: "#050A14"
+  image: "assets/images/traka_app_icon.png"
   android_gravity: center
   ios_content_mode: scaleAspectFit
   fullscreen: true
   android_12:
-    color: "#000000"
-    image: "assets/images/traka_brand_logo.png"
-    icon_background_color: "#000000"
+    color: "#050A14"
+    image: "assets/images/traka_app_icon.png"
+    icon_background_color: "#050A14"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

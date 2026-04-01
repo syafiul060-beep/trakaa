@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/order_model.dart';
 import '../theme/app_theme.dart';
 import 'traka_l10n_scope.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Step 1: Pilih jenis barang (Dokumen / Kargo). Kargo: isi nama, berat, dimensi.
 class KirimBarangPilihJenisSheet extends StatefulWidget {
@@ -77,7 +78,7 @@ class _KirimBarangPilihJenisSheetState extends State<KirimBarangPilihJenisSheet>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal memilih foto: $e'), backgroundColor: Colors.red),
+          TrakaSnackBar.error(context, Text('Gagal memilih foto: $e')),
         );
       }
     }
@@ -93,33 +94,33 @@ class _KirimBarangPilihJenisSheetState extends State<KirimBarangPilihJenisSheet>
       final tinggi = double.tryParse(_tinggiController.text.replaceAll(',', '.')) ?? 0;
       if (nama.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(TrakaL10n.of(context).enterItemNameType), backgroundColor: Colors.red),
+          TrakaSnackBar.error(context, Text(TrakaL10n.of(context).enterItemNameType)),
         );
         return;
       }
       if (berat < 0.1 || berat > 100) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(TrakaL10n.of(context).weightRequired), backgroundColor: Colors.red),
+          TrakaSnackBar.error(context, Text(TrakaL10n.of(context).weightRequired)),
         );
         return;
       }
       if (panjang <= 0 || lebar <= 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(TrakaL10n.of(context).dimensionsRequired), backgroundColor: Colors.red),
+          TrakaSnackBar.error(context, Text(TrakaL10n.of(context).dimensionsRequired)),
         );
         return;
       }
       const maxDimensi = 300.0;
       if (panjang > maxDimensi || lebar > maxDimensi || (tinggi > 0 && tinggi > maxDimensi)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(TrakaL10n.of(context).maxDimensionSize), backgroundColor: Colors.red),
+          TrakaSnackBar.error(context, Text(TrakaL10n.of(context).maxDimensionSize)),
         );
         return;
       }
       final totalDimensi = panjang + lebar + (tinggi > 0 ? tinggi : 0);
       if (totalDimensi > 400) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(TrakaL10n.of(context).totalDimensionsMax), backgroundColor: Colors.red),
+          TrakaSnackBar.error(context, Text(TrakaL10n.of(context).totalDimensionsMax)),
         );
         return;
       }
@@ -140,7 +141,7 @@ class _KirimBarangPilihJenisSheetState extends State<KirimBarangPilihJenisSheet>
           if (mounted) {
             setState(() => _isUploading = false);
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Gagal upload foto: $e'), backgroundColor: Colors.red),
+              TrakaSnackBar.error(context, Text('Gagal upload foto: $e')),
             );
           }
           return;

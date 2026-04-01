@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/traka_snackbar.dart';
 import '../widgets/traka_empty_state.dart';
 import '../theme/app_interaction_styles.dart';
 import '../widgets/traka_l10n_scope.dart';
@@ -65,18 +66,16 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
     final results = await Future.wait(
       uidsToLoad.map((uid) async {
         try {
-          final info = await ChatService.getUserInfo(uid)
-              .timeout(const Duration(seconds: 5));
+          final info = await ChatService.getUserInfo(
+            uid,
+          ).timeout(const Duration(seconds: 5));
           return MapEntry(uid, info);
         } catch (_) {
-          return MapEntry(
-            uid,
-            <String, dynamic>{
-              'displayName': 'Driver',
-              'photoUrl': null,
-              'verified': false,
-            },
-          );
+          return MapEntry(uid, <String, dynamic>{
+            'displayName': 'Driver',
+            'photoUrl': null,
+            'verified': false,
+          });
         }
       }),
     );
@@ -236,21 +235,18 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
                 ? 'Berhasil $successCount. $failCount gagal.'
                 : 'Gagal menghapus. ${lastError ?? ""}')
           : 'Berhasil menghapus $successCount pesan.';
+      final duration = failCount > 0
+          ? const Duration(seconds: 5)
+          : const Duration(seconds: 2);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: failCount > 0 ? Colors.orange : Colors.green,
-          duration: failCount > 0
-              ? const Duration(seconds: 5)
-              : const Duration(seconds: 2),
-          action: failCount > 0
-              ? SnackBarAction(
-                  label: 'OK',
-                  textColor: Colors.white,
-                  onPressed: () {},
-                )
-              : null,
-        ),
+        failCount > 0
+            ? TrakaSnackBar.warning(
+                context,
+                Text(msg),
+                duration: duration,
+                action: SnackBarAction(label: 'OK', onPressed: () {}),
+              )
+            : TrakaSnackBar.success(context, Text(msg), duration: duration),
       );
     }
 
@@ -266,7 +262,9 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _isSelectionMode ? '${_selectedOrderIds.length} ${TrakaL10n.of(context).selected}' : TrakaL10n.of(context).messages,
+          _isSelectionMode
+              ? '${_selectedOrderIds.length} ${TrakaL10n.of(context).selected}'
+              : TrakaL10n.of(context).messages,
         ),
         elevation: 0,
         leading: _isSelectionMode
@@ -318,10 +316,12 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
             final travelAgreedDriverUids =
                 OrderService.travelAgreedDriverUidsFromOrders(snapshotOrders);
             final allOrders = snapshotOrders
-                .where((o) =>
-                    o.lastMessageAt != null &&
-                    !o.isCompleted &&
-                    o.status != OrderService.statusCancelled)
+                .where(
+                  (o) =>
+                      o.lastMessageAt != null &&
+                      !o.isCompleted &&
+                      o.status != OrderService.statusCancelled,
+                )
                 .toList();
             _latestAllOrders = allOrders;
 
@@ -418,9 +418,9 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
                   final isSelected = _selectedOrderIds.contains(order.id);
                   final locked =
                       OrderService.isPassengerTravelPendingLockedOtherDriver(
-                    order,
-                    travelAgreedDriverUids,
-                  );
+                        order,
+                        travelAgreedDriverUids,
+                      );
                   final canSelect = !isAgreed && !locked;
 
                   return Container(
@@ -429,8 +429,11 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
                       leading: _isSelectionMode && canSelect
                           ? Checkbox(
                               value: isSelected,
-                              onChanged: (value) =>
-                                  _toggleOrderSelection(order.id, isAgreed, locked),
+                              onChanged: (value) => _toggleOrderSelection(
+                                order.id,
+                                isAgreed,
+                                locked,
+                              ),
                             )
                           : CircleAvatar(
                               radius: 28,
@@ -504,13 +507,16 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
                                     if (value == 'sembunyikan') {
                                       final err =
                                           await OrderService.hideChatForPassenger(
-                                              order.id);
+                                            order.id,
+                                          );
                                       if (context.mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           SnackBar(
                                             content: Text(
-                                                err ?? 'Chat disembunyikan'),
+                                              err ?? 'Chat disembunyikan',
+                                            ),
                                             backgroundColor: err != null
                                                 ? Colors.orange
                                                 : null,
@@ -520,13 +526,16 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
                                     } else if (value == 'hapus') {
                                       final err =
                                           await OrderService.deleteOrderAndChat(
-                                              order.id);
+                                            order.id,
+                                          );
                                       if (context.mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           SnackBar(
-                                            content:
-                                                Text(err ?? 'Pesan dihapus'),
+                                            content: Text(
+                                              err ?? 'Pesan dihapus',
+                                            ),
                                             backgroundColor: err != null
                                                 ? Colors.orange
                                                 : null,
@@ -552,8 +561,10 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
                                         value: 'hapus',
                                         child: Row(
                                           children: [
-                                            const Icon(Icons.delete,
-                                                color: Colors.red),
+                                            const Icon(
+                                              Icons.delete,
+                                              color: Colors.red,
+                                            ),
                                             const SizedBox(width: 8),
                                             Text(TrakaL10n.of(context).delete),
                                           ],
@@ -564,8 +575,9 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
                               }
                               if (locked) {
                                 return Tooltip(
-                                  message: TrakaL10n.of(context)
-                                      .chatTravelLockedOtherDriver,
+                                  message: TrakaL10n.of(
+                                    context,
+                                  ).chatTravelLockedOtherDriver,
                                   child: Padding(
                                     padding: const EdgeInsets.only(left: 4),
                                     child: Icon(
@@ -582,7 +594,11 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
                         ],
                       ),
                       onTap: _isSelectionMode && canSelect
-                          ? () => _toggleOrderSelection(order.id, isAgreed, locked)
+                          ? () => _toggleOrderSelection(
+                              order.id,
+                              isAgreed,
+                              locked,
+                            )
                           : () => _openChat(order),
                       onLongPress: canSelect
                           ? () {

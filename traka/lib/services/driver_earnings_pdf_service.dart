@@ -86,14 +86,14 @@ class DriverEarningsPdfService {
     const logoSize = 130.0;
     const logoToNameGap = 4.0;
     try {
-      final data = await rootBundle.load('assets/images/pdf.png');
+      final data = await rootBundle.load('assets/images/traka_app_icon.png');
       final bytes = data.buffer.asUint8List();
       final image = PdfBitmap(bytes);
       currentGraphics.drawImage(image, Rect.fromLTWH(0, logoTop, logoSize, logoSize));
       y = logoTop + logoSize + logoToNameGap;
     } catch (_) {
       try {
-        final data = await rootBundle.load('assets/images/traka_brand_logo.png');
+        final data = await rootBundle.load('assets/images/pdf.png');
         final bytes = data.buffer.asUint8List();
         final image = PdfBitmap(bytes);
         currentGraphics.drawImage(image, Rect.fromLTWH(0, logoTop, logoSize, logoSize));

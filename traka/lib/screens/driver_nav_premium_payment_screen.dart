@@ -12,6 +12,7 @@ import '../services/route_notification_service.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../widgets/traka_loading_indicator.dart';
 import 'payment_history_screen.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Bayar navigasi premium per rute (setelah selesai kerja) via Google Play.
 class DriverNavPremiumPaymentScreen extends StatefulWidget {
@@ -157,12 +158,8 @@ class _DriverNavPremiumPaymentScreenState
           body: 'Pembayaran berhasil.',
         );
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Pembayaran navigasi premium berhasil.'),
-            backgroundColor: Colors.green,
-            action: SnackBarAction(
+          TrakaSnackBar.success(context, const Text('Pembayaran navigasi premium berhasil.'), action: SnackBarAction(
               label: TrakaL10n.of(context).viewPaymentHistory,
-              textColor: Colors.white,
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
@@ -170,8 +167,7 @@ class _DriverNavPremiumPaymentScreenState
                   ),
                 );
               },
-            ),
-          ),
+            )),
         );
         Navigator.of(context).pop(true);
       }
@@ -433,9 +429,9 @@ class _DriverNavPremiumPaymentScreenState
                               : 'Bayar via Google Play',
                     ),
                     style: AppInteractionStyles.elevatedPrimary(
-                      backgroundColor: Colors.amber.shade800,
-                      foregroundColor: Colors.white,
-                      shadowTint: Colors.amber.shade800,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      shadowTint: Theme.of(context).colorScheme.primary,
                     ).copyWith(
                       padding: WidgetStateProperty.all(
                         const EdgeInsets.symmetric(vertical: 16),

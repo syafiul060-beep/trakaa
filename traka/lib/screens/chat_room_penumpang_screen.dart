@@ -29,6 +29,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'cek_lokasi_driver_screen.dart';
 import 'voice_call_screen.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Halaman ruang chat penumpang dengan satu driver (seperti satu percakapan WhatsApp).
 /// AppBar: foto + nama driver (dengan ikon verifikasi jika driver terverifikasi), icon Telp.
@@ -466,10 +467,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     if (orderId.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(TrakaL10n.of(context).invalidOrderData),
-            backgroundColor: Colors.red,
-          ),
+          TrakaSnackBar.error(context, Text(TrakaL10n.of(context).invalidOrderData)),
         );
       }
       return;
@@ -481,14 +479,10 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     if (!ok) {
       _textController.text = text;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             ChatService.lastBlockedReason ??
                 TrakaL10n.of(context).failedToSendMessage,
-          ),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
+          ), duration: const Duration(seconds: 4)),
       );
       return;
     }
@@ -506,12 +500,9 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     if (path == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
+          TrakaSnackBar.error(context, Text(
               'Tidak dapat mengakses mikrofon. Periksa izin aplikasi.',
-            ),
-            backgroundColor: Colors.red,
-          ),
+            )),
         );
       }
       return;
@@ -568,10 +559,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     if (!await result.file.exists()) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('File audio tidak ditemukan. Coba rekam lagi.'),
-            backgroundColor: Colors.red,
-          ),
+          TrakaSnackBar.error(context, Text('File audio tidak ditemukan. Coba rekam lagi.')),
         );
       }
       return;
@@ -581,10 +569,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     if (result.duration < 1) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Durasi rekaman terlalu pendek. Minimal 1 detik.'),
-            backgroundColor: Colors.red,
-          ),
+          TrakaSnackBar.error(context, Text('Durasi rekaman terlalu pendek. Minimal 1 detik.')),
         );
       }
       // Hapus file yang terlalu pendek
@@ -633,14 +618,10 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
 
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             ChatService.lastBlockedReason ??
                 TrakaL10n.of(context).failedToSendVoice,
-          ),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
+          ), duration: const Duration(seconds: 4)),
       );
     } else {
       _scrollToBottom();
@@ -759,14 +740,10 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     if (!mounted) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             ChatService.lastBlockedReason ??
                 TrakaL10n.of(context).failedToSendImage,
-          ),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
+          ), duration: const Duration(seconds: 4)),
       );
     } else {
       _scrollToBottom();
@@ -786,10 +763,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     if (!mounted) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(TrakaL10n.of(context).failedToSendVideo),
-          backgroundColor: Colors.red,
-        ),
+        TrakaSnackBar.error(context, Text(TrakaL10n.of(context).failedToSendVideo)),
       );
     } else {
       _scrollToBottom();
@@ -1457,7 +1431,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                     Navigator.of(context).pop();
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(err), backgroundColor: Colors.red),
+                      TrakaSnackBar.error(context, Text(err)),
                     );
                   }
                 }
@@ -1490,12 +1464,9 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                 if (!context.mounted) return;
                 if (!canUse) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
+                    TrakaSnackBar.warning(context, Text(
                         '$reason Gunakan chat atau telepon jika nomor tersedia di profil.',
-                      ),
-                      backgroundColor: Colors.orange,
-                    ),
+                      )),
                   );
                   return;
                 }
@@ -1522,10 +1493,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                 if (!context.mounted) return;
                 if (phone == null || phone.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Driver belum menambahkan nomor telepon di profil.'),
-                      backgroundColor: Colors.orange,
-                    ),
+                    TrakaSnackBar.warning(context, Text('Driver belum menambahkan nomor telepon di profil.')),
                   );
                   return;
                 }
@@ -1579,7 +1547,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
         child: Container(
           decoration: BoxDecoration(
             image: DecorationImage(
-              image: AssetImage('assets/images/traka_brand_logo.png'),
+              image: AssetImage('assets/images/traka_app_icon.png'),
               fit: BoxFit.contain,
               opacity:
                   0.05, // Logo semi-transparent agar tidak mengganggu pembacaan pesan

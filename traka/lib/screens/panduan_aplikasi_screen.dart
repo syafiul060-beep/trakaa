@@ -108,8 +108,12 @@ class _PanduanAplikasiScreenState extends State<PanduanAplikasiScreen> {
               margin: const EdgeInsets.only(bottom: 12),
               child: ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: Colors.orange.withValues(alpha: 0.2),
-                  child: const Icon(Icons.notifications_off_outlined, color: Colors.orange),
+                  backgroundColor:
+                      theme.colorScheme.primary.withValues(alpha: 0.2),
+                  child: Icon(
+                    Icons.notifications_off_outlined,
+                    color: theme.colorScheme.primary,
+                  ),
                 ),
                 title: Text(
                   TrakaL10n.of(context).panduanNotifikasiTitle,

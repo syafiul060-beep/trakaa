@@ -37,6 +37,7 @@ import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../theme/responsive.dart';
 import '../utils/phone_utils.dart';
+import '../utils/phone_verification_snackbar.dart';
 import '../utils/safe_navigation_utils.dart';
 import '../widgets/admin_contact_widget.dart';
 import '../widgets/document_capture_guide_dialog.dart';
@@ -61,6 +62,7 @@ import 'notification_settings_screen.dart';
 import 'panduan_aplikasi_screen.dart';
 import 'promo_list_screen.dart';
 import 'saran_ke_admin_screen.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Halaman profil penumpang: tampilan & menu sama seperti driver.
 /// Menu: 1. Verifikasi data (KTP), 2. Email & No.Telp, 3. Ubah password.
@@ -110,9 +112,14 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
     final user = _auth.currentUser;
     if (user == null) return;
     try {
-      final doc = await _firestore.collection('users').doc(user.uid).get(
-        forceFromServer ? const GetOptions(source: Source.server) : const GetOptions(),
-      );
+      final doc = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .get(
+            forceFromServer
+                ? const GetOptions(source: Source.server)
+                : const GetOptions(),
+          );
       if (mounted) {
         setState(() {
           _userDoc = doc;
@@ -131,9 +138,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
   Map<String, dynamic> get _userData => _userDoc?.data() ?? <String, dynamic>{};
 
   /// Centang verifikasi: kuning jika admin masih punya permintaan terbuka (sinkron field Firestore / panel admin).
-  Color get _verificationCheckColor => VerificationService.hasOpenAdminVerificationRequest(
-        _userData,
-      )
+  Color get _verificationCheckColor =>
+      VerificationService.hasOpenAdminVerificationRequest(_userData)
       ? Colors.amber.shade800
       : Colors.green.shade700;
 
@@ -215,17 +221,22 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
         ),
       );
     }
-    final validationResult = await FaceValidationService.validateFacePhoto(file.path);
+    final validationResult = await FaceValidationService.validateFacePhoto(
+      file.path,
+    );
     if (!mounted) return;
     Navigator.of(context).pop();
     if (!validationResult.isValid) {
       final action = await ProfileFaceValidationDialog.show(
         context,
-        message: validationResult.errorMessage ??
+        message:
+            validationResult.errorMessage ??
             TrakaL10n.of(context).photoDoesNotMeetRequirements,
         isBlurError: validationResult.isBlurError,
       );
-      if (action == FaceValidationDialogAction.retry && mounted) return _pickAndVerifyPhoto();
+      if (action == FaceValidationDialogAction.retry && mounted) {
+        return _pickAndVerifyPhoto();
+      }
       if (action == FaceValidationDialogAction.useAnyway && mounted) {
         if (mounted) {
           showDialog<void>(
@@ -242,7 +253,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
             ),
           );
         }
-        final skipBlurResult = await FaceValidationService.validateFacePhotoSkipBlur(file.path);
+        final skipBlurResult =
+            await FaceValidationService.validateFacePhotoSkipBlur(file.path);
         if (!mounted) return;
         if (mounted) Navigator.of(context).pop();
         if (!skipBlurResult.isValid) {
@@ -253,7 +265,9 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                 'Foto harus wajah asli, bukan dari gambar atau layar. Silakan ambil foto ulang.',
             isBlurError: false,
           );
-          if (retry == FaceValidationDialogAction.retry && mounted) return _pickAndVerifyPhoto();
+          if (retry == FaceValidationDialogAction.retry && mounted) {
+            return _pickAndVerifyPhoto();
+          }
           return;
         }
         setState(() => _photoFile = file);
@@ -297,7 +311,10 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
       if (mounted) Navigator.of(context).pop();
       if (dup) {
         if (mounted) {
-          _showSnackBar(TrakaL10n.of(context).duplicateFaceDetected, isError: true);
+          _showSnackBar(
+            TrakaL10n.of(context).duplicateFaceDetected,
+            isError: true,
+          );
         }
         return;
       }
@@ -316,7 +333,9 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
           ),
         );
       }
-      final compressedPath = await ImageCompressionService.compressForUpload(file.path);
+      final compressedPath = await ImageCompressionService.compressForUpload(
+        file.path,
+      );
       final fileToUpload = File(compressedPath);
       final photoRef = FirebaseStorage.instance.ref().child(
         'users/${user.uid}/photo.jpg',
@@ -366,7 +385,9 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
       );
       return;
     }
-    final hasFace = (_userData['faceVerificationUrl'] as String?)?.trim().isNotEmpty ?? false;
+    final hasFace =
+        (_userData['faceVerificationUrl'] as String?)?.trim().isNotEmpty ??
+        false;
     if (!hasFace) {
       showDialog<void>(
         context: context,
@@ -401,10 +422,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
           'Foto KTP tidak disimpan. Nama akan dibaca untuk dikoreksi lalu disimpan ke profil.',
         ),
         actions: [
-          TextButton(
-            onPressed: () => safePop(ctx),
-            child: const Text('Batal'),
-          ),
+          TextButton(onPressed: () => safePop(ctx), child: const Text('Batal')),
           FilledButton(
             onPressed: () async {
               await safePopAndComplete(ctx);
@@ -439,7 +457,10 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
     // Validasi file foto ada dan terbaca (hindari error OCR)
     final photoFile = File(image.path);
     if (!photoFile.existsSync() || photoFile.lengthSync() == 0) {
-      _showSnackBar('Foto tidak ditemukan atau rusak. Silakan ambil foto ulang.', isError: true);
+      _showSnackBar(
+        'Foto tidak ditemukan atau rusak. Silakan ambil foto ulang.',
+        isError: true,
+      );
       return;
     }
 
@@ -489,11 +510,16 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
         extracted = {'nik': parts[0], 'nama': parts[1]};
       }
 
-      if (extracted == null || extracted['nik'] == null || extracted['nama'] == null) {
+      if (extracted == null ||
+          extracted['nik'] == null ||
+          extracted['nama'] == null) {
         if (mounted) {
           setState(() => _isOcrLoading = false);
           AuthRedirectState.setInVerificationFlow(false);
-          AppAnalyticsService.logOcrFailed(documentType: 'ktp', reason: 'extraction_failed');
+          AppAnalyticsService.logOcrFailed(
+            documentType: 'ktp',
+            reason: 'extraction_failed',
+          );
           _showSnackBarWithRetry(
             'Gagal membaca data KTP. Pastikan foto KTP jelas dan NIK/NAMA terbaca.',
             onRetry: _scanKTP,
@@ -548,7 +574,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
             content: SingleChildScrollView(
               child: isSaved
                   ? Text(
-                      saveError ?? 'Verifikasi data berhasil. Nama profil mengikuti nama KTP.',
+                      saveError ??
+                          'Verifikasi data berhasil. Nama profil mengikuti nama KTP.',
                       style: TextStyle(
                         fontSize: 14,
                         color: saveError != null
@@ -562,7 +589,12 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                       children: [
                         Text(
                           'Periksa dan koreksi jika perlu. NIK disimpan dalam bentuk terenkripsi (hash).',
-                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
                         ),
                         const SizedBox(height: 16),
                         TextField(
@@ -571,7 +603,11 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                           enableSuggestions: false,
                           decoration: InputDecoration(
                             labelText: 'NIK',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusSm,
+                              ),
+                            ),
                             hintText: '16 digit nomor NIK KTP',
                           ),
                           keyboardType: TextInputType.number,
@@ -581,7 +617,12 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                         const SizedBox(height: 4),
                         Text(
                           'NIK harus sesuai identitas.',
-                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
                         ),
                         const SizedBox(height: 16),
                         TextField(
@@ -590,20 +631,32 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                           enableSuggestions: false,
                           decoration: InputDecoration(
                             labelText: 'Nama sesuai KTP',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusSm,
+                              ),
+                            ),
                           ),
                           onChanged: (_) => setDialogState(() {}),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'Nama harus sesuai identitas.',
-                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
                         ),
                         const SizedBox(height: 16),
                         CheckboxListTile(
                           value: setuju,
-                          onChanged: isSaving ? null : (value) =>
-                              setDialogState(() => setuju = value ?? false),
+                          onChanged: isSaving
+                              ? null
+                              : (value) => setDialogState(
+                                  () => setuju = value ?? false,
+                                ),
                           title: const Text(
                             'Data sudah sesuai dan saya setuju',
                             style: TextStyle(fontSize: 14),
@@ -676,12 +729,16 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
     final nikClean = nik.replaceAll(RegExp(r'\D'), '');
     if (nama.isEmpty) {
       onError?.call('Nama wajib diisi.');
-      if (onError == null && mounted) _showSnackBar('Nama wajib diisi.', isError: true);
+      if (onError == null && mounted) {
+        _showSnackBar('Nama wajib diisi.', isError: true);
+      }
       return;
     }
     if (nikClean.length != 16) {
       onError?.call('NIK harus 16 digit sesuai identitas.');
-      if (onError == null && mounted) _showSnackBar('NIK harus 16 digit sesuai identitas.', isError: true);
+      if (onError == null && mounted) {
+        _showSnackBar('NIK harus 16 digit sesuai identitas.', isError: true);
+      }
       return;
     }
     final user = _auth.currentUser;
@@ -698,7 +755,10 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
       if (dipakaiLain) {
         onError?.call('Nomor KTP sudah digunakan oleh penumpang lain.');
         if (onError == null && mounted) {
-          _showSnackBar('Nomor KTP sudah digunakan oleh penumpang lain.', isError: true);
+          _showSnackBar(
+            'Nomor KTP sudah digunakan oleh penumpang lain.',
+            isError: true,
+          );
         }
         return;
       }
@@ -714,7 +774,9 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
       }
       onSuccess?.call();
       if (onSuccess == null && mounted) {
-        _showSnackBar('Verifikasi data berhasil. Nama profil mengikuti nama KTP.');
+        _showSnackBar(
+          'Verifikasi data berhasil. Nama profil mengikuti nama KTP.',
+        );
       }
     } catch (e) {
       final msg = e.toString().replaceAll('Exception: ', '');
@@ -745,7 +807,9 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
           expand: false,
           builder: (_, scrollController) => SingleChildScrollView(
             controller: scrollController,
-            padding: EdgeInsets.all(context.responsive.spacing(AppTheme.spacingLg)),
+            padding: EdgeInsets.all(
+              context.responsive.spacing(AppTheme.spacingLg),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
@@ -771,7 +835,9 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                   icon: Icons.phone_outlined,
                   label: 'No. Telepon',
                   value: phone.isEmpty ? 'Belum ditambahkan' : phone,
-                  actionLabel: phone.isEmpty ? 'Tambah No. Telepon' : 'Ubah No. Telepon',
+                  actionLabel: phone.isEmpty
+                      ? 'Tambah No. Telepon'
+                      : 'Ubah No. Telepon',
                   onTap: () {
                     Navigator.pop(ctx);
                     _showTeleponVerifikasiDialog();
@@ -929,6 +995,119 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
     );
   }
 
+  bool _userHasPasswordProvider(User user) =>
+      user.providerData.any((p) => p.providerId == 'password');
+
+  Future<void> _showAddPasswordForLinkedGoogleAccount(User user) async {
+    final email = user.email!.trim();
+    final newC = TextEditingController();
+    final confirmC = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(TrakaL10n.of(context).addPasswordDialogTitle),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                TrakaL10n.of(context).addPasswordGoogleExplanation,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: newC,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: TrakaL10n.of(context).newPassword,
+                  border: const OutlineInputBorder(),
+                ),
+                obscureText: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmC,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: TrakaL10n.of(context).confirmNewPassword,
+                  border: const OutlineInputBorder(),
+                ),
+                obscureText: true,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(TrakaL10n.of(context).cancel),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final newP = newC.text;
+              final confirm = confirmC.text;
+              if (newP.length < 8) {
+                _showSnackBar(
+                  TrakaL10n.of(context).passwordMin8Chars,
+                  isError: true,
+                );
+                return;
+              }
+              if (newP != confirm) {
+                _showSnackBar(
+                  TrakaL10n.of(context).confirmPasswordMismatch,
+                  isError: true,
+                );
+                return;
+              }
+              Navigator.pop(ctx);
+              final current = _auth.currentUser;
+              if (current == null) return;
+              try {
+                final cred = EmailAuthProvider.credential(
+                  email: email,
+                  password: newP,
+                );
+                await current.linkWithCredential(cred);
+                await BiometricLoginService.clearCredentials();
+                if (mounted) {
+                  setState(() {});
+                  _showSnackBar(
+                    TrakaL10n.of(
+                      context,
+                    ).passwordAddedProfileWithBiometricClear,
+                  );
+                }
+              } on FirebaseAuthException catch (e) {
+                if (!mounted) return;
+                if (e.code == 'requires-recent-login') {
+                  _showSnackBar(
+                    TrakaL10n.of(context).addPasswordRequiresRecentLogin,
+                    isError: true,
+                  );
+                } else if (e.code == 'weak-password') {
+                  _showSnackBar(
+                    TrakaL10n.of(context).passwordMin8Chars,
+                    isError: true,
+                  );
+                } else {
+                  _showSnackBar(e.message ?? e.code, isError: true);
+                }
+              }
+            },
+            child: Text(TrakaL10n.of(context).save),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showChangePasswordDialog() async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -956,6 +1135,10 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
           if (mounted) _showTambahEmailDialog();
         });
       }
+      return;
+    }
+    if (!_userHasPasswordProvider(user)) {
+      await _showAddPasswordForLinkedGoogleAccount(user);
       return;
     }
     final oldC = TextEditingController();
@@ -1007,7 +1190,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal'),
+            child: Text(TrakaL10n.of(context).cancel),
           ),
           FilledButton(
             onPressed: () async {
@@ -1016,13 +1199,16 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
               final confirm = confirmC.text;
               if (newP.length < 8) {
                 _showSnackBar(
-                  'Password baru minimal 8 karakter.',
+                  TrakaL10n.of(context).passwordMin8Chars,
                   isError: true,
                 );
                 return;
               }
               if (newP != confirm) {
-                _showSnackBar('Password tidak sama.', isError: true);
+                _showSnackBar(
+                  TrakaL10n.of(context).confirmPasswordMismatch,
+                  isError: true,
+                );
                 return;
               }
               Navigator.pop(ctx);
@@ -1038,19 +1224,27 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                 await BiometricLoginService.clearCredentials();
                 if (mounted) {
                   _showSnackBar(
-                    TrakaL10n.of(context).passwordChangedProfileWithBiometricClear,
+                    TrakaL10n.of(
+                      context,
+                    ).passwordChangedProfileWithBiometricClear,
                   );
                 }
               } on FirebaseAuthException catch (e) {
+                if (!mounted) return;
                 if (e.code == 'wrong-password' ||
                     e.code == 'invalid-credential') {
-                  _showSnackBar('Password lama salah.', isError: true);
+                  _showSnackBar(
+                    TrakaL10n.of(context).locale == AppLocale.id
+                        ? 'Sandi lama salah.'
+                        : 'Current password is wrong.',
+                    isError: true,
+                  );
                 } else {
                   _showSnackBar('Gagal: ${e.message}', isError: true);
                 }
               }
             },
-            child: const Text('Simpan'),
+            child: Text(TrakaL10n.of(context).save),
           ),
         ],
       ),
@@ -1082,7 +1276,10 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
     final user = _auth.currentUser;
     if (user == null) return;
     try {
-      await AccountDeletionService.scheduleAccountDeletion(user.uid, 'penumpang');
+      await AccountDeletionService.scheduleAccountDeletion(
+        user.uid,
+        'penumpang',
+      );
       PassengerProximityNotificationService.stop();
       ReceiverProximityNotificationService.stop();
       await DriverStatusService.removeDriverStatus();
@@ -1093,7 +1290,11 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
         (route) => false,
       );
     } catch (e) {
-      if (mounted) _showSnackBar('${TrakaL10n.of(context).deleteAccountFailed}: $e', isError: true);
+      if (!mounted) return;
+      _showSnackBar(
+        '${TrakaL10n.of(context).deleteAccountFailed}: $e',
+        isError: true,
+      );
     }
   }
 
@@ -1129,9 +1330,9 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                 TrakaL10n.of(context).locale == AppLocale.id
                     ? 'Kunci dengan sidik jari/wajah'
                     : 'Lock with fingerprint/face',
-                style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  ctx,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Text(
@@ -1139,8 +1340,8 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                     ? 'Minta verifikasi saat buka app dari background'
                     : 'Require verification when opening app from background',
                 style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 24),
               const BiometricToggleWidget(),
@@ -1154,24 +1355,23 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
   }
 
   void _showSnackBar(String msg, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: isError ? Colors.red : null,
-      ),
-    );
+    if (isError) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(TrakaSnackBar.error(context, Text(msg)));
+    } else {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(TrakaSnackBar.info(context, Text(msg)));
+    }
   }
 
   void _showSnackBarWithRetry(String msg, {required VoidCallback onRetry}) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: Colors.red,
-        action: SnackBarAction(
-          label: 'Coba lagi',
-          textColor: Colors.white,
-          onPressed: onRetry,
-        ),
+      TrakaSnackBar.error(
+        context,
+        Text(msg),
+        action: SnackBarAction(label: 'Coba lagi', onPressed: onRetry),
       ),
     );
   }
@@ -1203,7 +1403,10 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
           Semantics(
             label: TrakaL10n.of(context).logout,
             button: true,
-            child: IconButton(icon: const Icon(Icons.logout), onPressed: _onLogout),
+            child: IconButton(
+              icon: const Icon(Icons.logout),
+              onPressed: _onLogout,
+            ),
           ),
         ],
       ),
@@ -1224,394 +1427,433 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                 ),
               ),
               child: SingleChildScrollView(
-                  padding: EdgeInsets.only(
-                    left: context.responsive.spacing(AppTheme.spacingLg),
-                    right: context.responsive.spacing(AppTheme.spacingLg),
-                    top: context.responsive.spacing(AppTheme.spacingLg),
-                    bottom: context.responsive.spacing(AppTheme.spacingLg) +
-                        MediaQuery.paddingOf(context).bottom +
-                        96,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (_userData['adminVerificationPendingAt'] != null)
-                        AdminVerificationBanner(
-                          userData: _userData,
-                          onSubmitted: () => _loadUser(),
-                        ),
-                      if (!VerificationService.isPenumpangVerified(_userData)) ...[
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primaryContainer
-                                .withValues(alpha: 0.6),
-                            borderRadius:
-                                BorderRadius.circular(AppTheme.radiusSm),
-                            border: Border.all(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .primary
-                                  .withValues(alpha: 0.3),
-                            ),
+                padding: EdgeInsets.only(
+                  left: context.responsive.spacing(AppTheme.spacingLg),
+                  right: context.responsive.spacing(AppTheme.spacingLg),
+                  top: context.responsive.spacing(AppTheme.spacingLg),
+                  bottom:
+                      context.responsive.spacing(AppTheme.spacingLg) +
+                      MediaQuery.paddingOf(context).bottom +
+                      96,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_userData['adminVerificationPendingAt'] != null)
+                      AdminVerificationBanner(
+                        userData: _userData,
+                        onSubmitted: () => _loadUser(),
+                      ),
+                    if (!VerificationService.isPenumpangVerified(
+                      _userData,
+                    )) ...[
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primaryContainer.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(
+                            AppTheme.radiusSm,
                           ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                Icons.info_outline,
-                                size: 22,
-                                color: Theme.of(context).colorScheme.primary,
+                          border: Border.all(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 22,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                TrakaL10n.of(context).completeDataHint,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                ),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  TrakaL10n.of(context).completeDataHint,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                    if (_verificationCompleteCount < 3) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        TrakaL10n.of(context).verificationCompleteCount(
+                          _verificationCompleteCount,
+                          3,
+                        ),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        GestureDetector(
+                          onTap: _isCheckingFace
+                              ? null
+                              : () {
+                                  if (_canChangePhoto()) {
+                                    _pickAndVerifyPhoto();
+                                  } else {
+                                    final d = _daysUntilPhotoChange();
+                                    if (d != null && mounted) {
+                                      _showSnackBar(
+                                        TrakaL10n.of(
+                                          context,
+                                        ).photoLockedForDays(d),
+                                      );
+                                    }
+                                  }
+                                },
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              CircleAvatar(
+                                radius: 40,
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
+                                backgroundImage:
+                                    (photoUrl != null && photoUrl.isNotEmpty)
+                                    ? CachedNetworkImageProvider(photoUrl)
+                                    : null,
+                                child: (photoUrl == null || photoUrl.isEmpty)
+                                    ? Icon(
+                                        Icons.camera_alt,
+                                        size: 32,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      )
+                                    : null,
+                              ),
+                              if (_isCheckingFace)
+                                const CircularProgressIndicator(),
+                              if (!_canChangePhoto() && !_isCheckingFace)
+                                Positioned(
+                                  bottom: 0,
+                                  right: 0,
+                                  child: Icon(
+                                    Icons.lock,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    size: 20,
                                   ),
                                 ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Wrap(
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        Text(
+                                          _nameController.text.isNotEmpty
+                                              ? _nameController.text
+                                              : 'Nama Penumpang',
+                                          style: TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                          ),
+                                        ),
+                                        if (_isPassengerKTPVerified) ...[
+                                          const SizedBox(width: 4),
+                                          Icon(
+                                            Icons.verified,
+                                            size: 20,
+                                            color: _verificationCheckColor,
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  FutureBuilder<int>(
+                                    future: _passengerCompletedCountFuture,
+                                    builder: (context, snap) {
+                                      final count = snap.data ?? 0;
+                                      final tier =
+                                          PassengerTierService.getPassengerTierLabel(
+                                            count,
+                                          );
+                                      Color tierColor;
+                                      switch (tier) {
+                                        case 'Platinum':
+                                          tierColor = Colors.deepPurple;
+                                          break;
+                                        case 'Gold':
+                                          tierColor = Colors.amber.shade700;
+                                          break;
+                                        default:
+                                          tierColor = Colors.grey.shade600;
+                                      }
+                                      return Padding(
+                                        padding: const EdgeInsets.only(left: 8),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: tierColor,
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            tier,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              FutureBuilder<int>(
+                                future: _passengerCompletedCountFuture,
+                                builder: (context, snap) {
+                                  final count = snap.data ?? 0;
+                                  return Text(
+                                    '$count pesanan selesai',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  );
+                                },
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 20),
                       ],
-                      if (_verificationCompleteCount < 3) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          TrakaL10n.of(context).verificationCompleteCount(_verificationCompleteCount, 3),
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                    ),
+                    if (daysPhoto != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'Foto profil dapat diubah setelah $daysPhoto hari lagi.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
-                        const SizedBox(height: 8),
-                      ],
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          GestureDetector(
-                            onTap: _isCheckingFace
-                                ? null
-                                : () {
-                                    if (_canChangePhoto()) {
-                                      _pickAndVerifyPhoto();
-                                    } else {
-                                      final d = _daysUntilPhotoChange();
-                                      if (d != null && mounted) {
-                                        _showSnackBar(
-                                          TrakaL10n.of(context).photoLockedForDays(d),
-                                        );
-                                      }
-                                    }
-                                  },
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                CircleAvatar(
-                                  radius: 40,
-                                  backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                  backgroundImage:
-                                      (photoUrl != null && photoUrl.isNotEmpty)
-                                      ? CachedNetworkImageProvider(photoUrl)
-                                      : null,
-                                  child: (photoUrl == null || photoUrl.isEmpty)
-                                      ? Icon(Icons.camera_alt, size: 32, color: Theme.of(context).colorScheme.onSurfaceVariant)
-                                      : null,
-                                ),
-                                if (_isCheckingFace)
-                                  const CircularProgressIndicator(),
-                                if (!_canChangePhoto() && !_isCheckingFace)
-                                  Positioned(
-                                    bottom: 0,
-                                    right: 0,
-                                    child: Icon(
-                                      Icons.lock,
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      size: 20,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Wrap(
-                                        crossAxisAlignment:
-                                            WrapCrossAlignment.center,
-                                        children: [
-                                          Text(
-                                            _nameController.text.isNotEmpty
-                                                ? _nameController.text
-                                                : 'Nama Penumpang',
-                                            style: TextStyle(
-                                              fontSize: 20,
-                                              fontWeight: FontWeight.bold,
-                                              color: Theme.of(context).colorScheme.primary,
-                                            ),
-                                          ),
-                                          if (_isPassengerKTPVerified) ...[
-                                            const SizedBox(width: 4),
-                                            Icon(
-                                              Icons.verified,
-                                              size: 20,
-                                              color: _verificationCheckColor,
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                    FutureBuilder<int>(
-                                      future: _passengerCompletedCountFuture,
-                                      builder: (context, snap) {
-                                        final count = snap.data ?? 0;
-                                        final tier = PassengerTierService.getPassengerTierLabel(count);
-                                        Color tierColor;
-                                        switch (tier) {
-                                          case 'Platinum':
-                                            tierColor = Colors.deepPurple;
-                                            break;
-                                          case 'Gold':
-                                            tierColor = Colors.amber.shade700;
-                                            break;
-                                          default:
-                                            tierColor = Colors.grey.shade600;
-                                        }
-                                        return Padding(
-                                          padding: const EdgeInsets.only(left: 8),
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: tierColor,
-                                              borderRadius: BorderRadius.circular(12),
-                                            ),
-                                            child: Text(
-                                              tier,
-                                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                FutureBuilder<int>(
-                                  future: _passengerCompletedCountFuture,
-                                  builder: (context, snap) {
-                                    final count = snap.data ?? 0;
-                                    return Text(
-                                      '$count pesanan selesai',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
                       ),
-                      if (daysPhoto != null) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          'Foto profil dapat diubah setelah $daysPhoto hari lagi.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                    ] else if (_canChangePhoto()) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        TrakaL10n.of(context).profileTapPhotoToChangeHint,
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.35,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
-                      ] else if (_canChangePhoto()) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          TrakaL10n.of(context).profileTapPhotoToChangeHint,
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.35,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 32),
-                      // Section: Verifikasi
-                      _buildSectionHeader(TrakaL10n.of(context).verification),
-                      const SizedBox(height: 8),
-                      GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: 2,
-                        mainAxisSpacing: context.responsive.spacing(12),
-                        crossAxisSpacing: context.responsive.spacing(12),
-                        childAspectRatio:
-                            _profileGridAspectRatio(context, 0.92),
-                        children: [
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).verifyFacePhoto,
-                            icon: Icons.face_retouching_natural_outlined,
-                            verified: _hasFaceVerification,
-                            verifiedIconColor: _verificationCheckColor,
-                            onTap: _onFacePhotoFromMenu,
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).verifyData,
-                            icon: Icons.badge_outlined,
-                            verified: _isPassengerKTPVerified,
-                            verifiedIconColor: _verificationCheckColor,
-                            onTap: _showVerifikasiKTPDialog,
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).emailAndPhone,
-                            icon: Icons.contact_phone,
-                            verified: _hasVerifiedPhone,
-                            verifiedIconColor: _verificationCheckColor,
-                            onTap: _showEmailDanTelpSheet,
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: context.responsive.spacing(16)),
-                      _buildSectionHeader(TrakaL10n.of(context).settings),
-                      const SizedBox(height: 8),
-                      GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: 2,
-                        mainAxisSpacing: context.responsive.spacing(12),
-                        crossAxisSpacing: context.responsive.spacing(12),
-                        childAspectRatio:
-                            _profileGridAspectRatio(context, 0.92),
-                        children: [
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).changePassword,
-                            icon: Icons.lock_outline,
-                            onTap: _showChangePasswordDialog,
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).paymentHistory,
-                            icon: Icons.receipt_long,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => const PaymentHistoryScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).language,
-                            icon: Icons.language,
-                            onTap: _showLanguageSelector,
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: context.responsive.spacing(16)),
-                      _buildSectionHeader(TrakaL10n.of(context).help),
-                      const SizedBox(height: 8),
-                      GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: 3,
-                        mainAxisSpacing: context.responsive.spacing(12),
-                        crossAxisSpacing: context.responsive.spacing(12),
-                        childAspectRatio:
-                            _profileGridAspectRatio(context, 0.92),
-                        children: [
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).infoAndPromo,
-                            icon: Icons.campaign_outlined,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => const PromoListScreen(role: 'penumpang'),
-                                ),
-                              );
-                            },
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).guide,
-                            icon: Icons.help_outline,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => const PanduanAplikasiScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).suggestionToAdmin,
-                            icon: Icons.feedback_outlined,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => const SaranKeAdminScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: context.responsive.spacing(12)),
-                      _buildMenuCard(
-                        title: TrakaL10n.of(context).notificationSettingsTitle,
-                        icon: Icons.notifications_outlined,
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const NotificationSettingsScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      SizedBox(height: context.responsive.spacing(16)),
-                      _buildSectionHeader(TrakaL10n.of(context).other),
-                      const SizedBox(height: 8),
-                      _buildMenuCard(
-                        title: TrakaL10n.of(context).locale == AppLocale.id
-                            ? 'Kunci dengan sidik jari/wajah'
-                            : 'Lock with fingerprint/face',
-                        icon: Icons.fingerprint,
-                        onTap: _showBiometricSheet,
-                      ),
-                      SizedBox(height: context.responsive.spacing(10)),
-                      _buildLiteModeTile(),
-                      SizedBox(height: context.responsive.spacing(10)),
-                      _buildMenuCard(
-                        title: TrakaL10n.of(context).showLowRamWarning,
-                        icon: Icons.memory_outlined,
-                        onTap: () async {
-                          await LowRamWarningService.resetWarningFlag();
-                          if (context.mounted) {
-                            await LowRamWarningService.showWarningIfLowRam(context);
-                          }
-                        },
-                      ),
-                      SizedBox(height: context.responsive.spacing(10)),
-                      _buildMenuCard(
-                        title: TrakaL10n.of(context).deleteAccount,
-                        icon: Icons.delete_outline,
-                        onTap: _showHapusAkunDialog,
-                        isDanger: true,
                       ),
                     ],
-                  ),
+                    const SizedBox(height: 24),
+                    _buildSectionCard(
+                      icon: Icons.verified_user_outlined,
+                      title: TrakaL10n.of(context).verification,
+                      children: [
+                        GridView.count(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          crossAxisCount: 3,
+                          mainAxisSpacing: context.responsive.spacing(12),
+                          crossAxisSpacing: context.responsive.spacing(12),
+                          childAspectRatio: _profileGridAspectRatio(
+                            context,
+                            0.92,
+                          ),
+                          children: [
+                            _buildMenuCard(
+                              title: TrakaL10n.of(context).verifyFacePhoto,
+                              icon: Icons.face_retouching_natural_outlined,
+                              verified: _hasFaceVerification,
+                              verifiedIconColor: _verificationCheckColor,
+                              onTap: _onFacePhotoFromMenu,
+                            ),
+                            _buildMenuCard(
+                              title: TrakaL10n.of(context).verifyData,
+                              icon: Icons.badge_outlined,
+                              verified: _isPassengerKTPVerified,
+                              verifiedIconColor: _verificationCheckColor,
+                              onTap: _showVerifikasiKTPDialog,
+                            ),
+                            _buildMenuCard(
+                              title: TrakaL10n.of(context).emailAndPhone,
+                              icon: Icons.contact_phone,
+                              verified: _hasVerifiedPhone,
+                              verifiedIconColor: _verificationCheckColor,
+                              onTap: _showEmailDanTelpSheet,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    _buildSectionCard(
+                      icon: Icons.tune_rounded,
+                      title: TrakaL10n.of(context).settings,
+                      children: [
+                        _buildProfileListTile(
+                          icon: Icons.lock_outline_rounded,
+                          title:
+                              (_auth.currentUser != null &&
+                                  _userHasPasswordProvider(_auth.currentUser!))
+                              ? TrakaL10n.of(context).changePassword
+                              : TrakaL10n.of(context).addPasswordMenu,
+                          onTap: _showChangePasswordDialog,
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.language_rounded,
+                          title: TrakaL10n.of(context).language,
+                          onTap: _showLanguageSelector,
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.notifications_outlined,
+                          title: TrakaL10n.of(
+                            context,
+                          ).notificationSettingsTitle,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    const NotificationSettingsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.receipt_long_rounded,
+                          title: TrakaL10n.of(context).paymentHistory,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const PaymentHistoryScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        SizedBox(height: context.responsive.spacing(12)),
+                        _buildLiteModeTile(),
+                      ],
+                    ),
+                    _buildSectionCard(
+                      icon: Icons.help_outline_rounded,
+                      title: TrakaL10n.of(context).help,
+                      children: [
+                        _buildProfileListTile(
+                          icon: Icons.campaign_outlined,
+                          title: TrakaL10n.of(context).infoAndPromo,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const PromoListScreen(role: 'penumpang'),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.menu_book_outlined,
+                          title: TrakaL10n.of(context).guide,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const PanduanAplikasiScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.feedback_outlined,
+                          title: TrakaL10n.of(context).suggestionToAdmin,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const SaranKeAdminScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    _buildSectionCard(
+                      icon: Icons.more_horiz_rounded,
+                      title: TrakaL10n.of(context).other,
+                      children: [
+                        _buildProfileListTile(
+                          icon: Icons.fingerprint_rounded,
+                          title: TrakaL10n.of(context).locale == AppLocale.id
+                              ? 'Kunci dengan sidik jari/wajah'
+                              : 'Lock with fingerprint/face',
+                          onTap: _showBiometricSheet,
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.memory_outlined,
+                          title: TrakaL10n.of(context).showLowRamWarning,
+                          onTap: () async {
+                            await LowRamWarningService.resetWarningFlag();
+                            if (context.mounted) {
+                              await LowRamWarningService.showWarningIfLowRam(
+                                context,
+                              );
+                            }
+                          },
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.delete_outline_rounded,
+                          title: TrakaL10n.of(context).deleteAccount,
+                          onTap: _showHapusAkunDialog,
+                          isDanger: true,
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
+              ),
             ),
           ),
           // Toggle tema (kiri) + kontak admin (kanan): di atas inset sistem & nav bar.
@@ -1624,10 +1866,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
               minimum: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  ThemeToggleWidget(),
-                  AdminContactWidget(),
-                ],
+                children: const [ThemeToggleWidget(), AdminContactWidget()],
               ),
             ),
           ),
@@ -1646,27 +1885,35 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
+                        CircularProgressIndicator(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                         const SizedBox(height: 16),
                         Text(
                           'Membaca KTP...',
-                          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           'Proses mungkin 30–60 detik. Mohon tunggu.',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
                         ),
                         if (_isLowRamDevice) ...[
                           const SizedBox(height: 8),
                           Text(
                             'Perangkat RAM rendah terdeteksi — proses dioptimalkan.',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontSize: 12,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontSize: 12,
+                                ),
                           ),
                         ],
                       ],
@@ -1688,15 +1935,113 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
     return (base / ratio).clamp(0.68, base);
   }
 
-  Widget _buildSectionHeader(String label) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: context.responsive.fontSize(14),
-          fontWeight: FontWeight.w600,
-          color: Theme.of(context).colorScheme.primary,
+  Widget _buildSectionCard({
+    required IconData icon,
+    required String title,
+    required List<Widget> children,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Card(
+        elevation: 0,
+        color: cs.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.45)),
+        ),
+        margin: EdgeInsets.zero,
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 22, color: cs.primary),
+                  SizedBox(width: context.responsive.spacing(10)),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: context.responsive.fontSize(15),
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.2,
+                        color: cs.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              ...children,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileMenuDivider() {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Divider(
+        height: 1,
+        thickness: 1,
+        color: cs.outlineVariant.withValues(alpha: 0.45),
+      ),
+    );
+  }
+
+  Widget _buildProfileListTile({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    bool isDanger = false,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    final accent = isDanger ? cs.error : cs.primary;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            vertical: context.responsive.spacing(10),
+            horizontal: 2,
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, size: 22, color: accent),
+              ),
+              SizedBox(width: context.responsive.spacing(14)),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: context.responsive.fontSize(15),
+                    height: 1.25,
+                    color: isDanger ? cs.error : cs.onSurface,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.85),
+                size: 22,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1712,13 +2057,19 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
             color: Theme.of(context).colorScheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+              color: Theme.of(
+                context,
+              ).colorScheme.outline.withValues(alpha: 0.5),
               width: 1,
             ),
           ),
           child: Row(
             children: [
-              Icon(Icons.speed, color: Theme.of(context).colorScheme.primary, size: 24),
+              Icon(
+                Icons.speed,
+                color: Theme.of(context).colorScheme.primary,
+                size: 24,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -1727,7 +2078,10 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                   children: [
                     Text(
                       TrakaL10n.of(context).modeLite,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -1771,20 +2125,26 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.08),
               blurRadius: 8,
               offset: const Offset(0, 4),
               spreadRadius: 0,
             ),
             BoxShadow(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.04),
               blurRadius: 4,
               offset: const Offset(0, 2),
               spreadRadius: 0,
             ),
           ],
           border: Border.all(
-            color: isDanger ? Colors.red.withValues(alpha: 0.5) : Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+            color: isDanger
+                ? Colors.red.withValues(alpha: 0.5)
+                : Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
             width: 1,
           ),
         ),
@@ -1823,7 +2183,9 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                   style: TextStyle(
                     fontSize: fontSize,
                     fontWeight: FontWeight.w600,
-                    color: isDanger ? Colors.red : Theme.of(context).colorScheme.onSurface,
+                    color: isDanger
+                        ? Colors.red
+                        : Theme.of(context).colorScheme.onSurface,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -1835,7 +2197,6 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
       ),
     );
   }
-
 }
 
 /// Dialog verifikasi no. telepon dengan Firebase OTP (SMS).
@@ -1928,8 +2289,15 @@ class _TeleponVerifikasiDialogState extends State<_TeleponVerifikasiDialog> {
         if (!mounted) return;
         setState(() {
           _loading = false;
-          _error = e.message ?? 'Verifikasi gagal. Coba lagi.';
+          _error = null;
         });
+        final l10n = AppLocalizations(locale: LocaleService.current);
+        showPhoneVerificationFailedSnackBar(
+          context,
+          exception: e,
+          analyticsSource: 'profile_penumpang_phone',
+          l10n: l10n,
+        );
       },
       codeSent: (String verificationId, int? resendToken) {
         if (!mounted) return;
@@ -2031,14 +2399,19 @@ class _TeleponVerifikasiDialogState extends State<_TeleponVerifikasiDialog> {
             ] else ...[
               Text(
                 'Kode dikirim ke $_phoneE164',
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _otpController,
                 decoration: InputDecoration(
                   labelText: 'Kode verifikasi (6 digit)',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                  ),
                 ),
                 keyboardType: TextInputType.number,
                 maxLength: 6,
@@ -2189,10 +2562,11 @@ class _TambahEmailOtpDialogState extends State<_TambahEmailOtpDialog> {
         password: password,
       );
       await user.linkWithCredential(credential);
-      await user.reload(); // Refresh token setelah link agar tidak trigger logout
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-        'email': email,
-      });
+      await user
+          .reload(); // Refresh token setelah link agar tidak trigger logout
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update(
+        {'email': email},
+      );
       if (!mounted) return;
       widget.onSuccess();
     } on FirebaseAuthException catch (e) {
@@ -2244,12 +2618,16 @@ class _TambahEmailOtpDialogState extends State<_TambahEmailOtpDialog> {
                   controller: _emailController,
                   decoration: InputDecoration(
                     labelText: 'Email',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                     hintText: 'contoh@email.com',
                   ),
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Email wajib diisi';
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Email wajib diisi';
+                    }
                     if (!RegExp(r'^[\w.-]+@[\w.-]+\.\w+$').hasMatch(v.trim())) {
                       return 'Format email tidak valid';
                     }
@@ -2261,7 +2639,9 @@ class _TambahEmailOtpDialogState extends State<_TambahEmailOtpDialog> {
                   controller: _passwordController,
                   decoration: InputDecoration(
                     labelText: 'Password baru',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                     hintText: 'Min. 8 karakter, ada angka',
                   ),
                   obscureText: true,
@@ -2277,11 +2657,15 @@ class _TambahEmailOtpDialogState extends State<_TambahEmailOtpDialog> {
                   controller: _confirmController,
                   decoration: InputDecoration(
                     labelText: 'Konfirmasi password',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                   ),
                   obscureText: true,
                   validator: (v) {
-                    if (v != _passwordController.text) return 'Password tidak sama';
+                    if (v != _passwordController.text) {
+                      return 'Password tidak sama';
+                    }
                     return null;
                   },
                 ),
@@ -2298,7 +2682,9 @@ class _TambahEmailOtpDialogState extends State<_TambahEmailOtpDialog> {
                   controller: _otpController,
                   decoration: InputDecoration(
                     labelText: 'Kode verifikasi (6 digit)',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                   ),
                   keyboardType: TextInputType.number,
                   maxLength: 6,
@@ -2315,9 +2701,7 @@ class _TambahEmailOtpDialogState extends State<_TambahEmailOtpDialog> {
           child: const Text('Batal'),
         ),
         FilledButton(
-          onPressed: _loading
-              ? null
-              : (_stepOtp ? _verifyAndLink : _sendOtp),
+          onPressed: _loading ? null : (_stepOtp ? _verifyAndLink : _sendOtp),
           child: _loading
               ? const SizedBox(
                   width: 20,
@@ -2470,7 +2854,9 @@ class _UbahEmailOtpDialogState extends State<_UbahEmailOtpDialog> {
                   ),
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Email wajib diisi';
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Email wajib diisi';
+                    }
                     if (!RegExp(r'^[\w.-]+@[\w.-]+\.\w+$').hasMatch(v.trim())) {
                       return 'Format email tidak valid';
                     }
@@ -2490,7 +2876,9 @@ class _UbahEmailOtpDialogState extends State<_UbahEmailOtpDialog> {
                   controller: _otpController,
                   decoration: InputDecoration(
                     labelText: 'Kode verifikasi (6 digit)',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                   ),
                   keyboardType: TextInputType.number,
                   maxLength: 6,
@@ -2507,9 +2895,7 @@ class _UbahEmailOtpDialogState extends State<_UbahEmailOtpDialog> {
           child: const Text('Batal'),
         ),
         FilledButton(
-          onPressed: _loading
-              ? null
-              : (_stepOtp ? _verifyAndUpdate : _sendOtp),
+          onPressed: _loading ? null : (_stepOtp ? _verifyAndUpdate : _sendOtp),
           child: _loading
               ? const SizedBox(
                   width: 20,

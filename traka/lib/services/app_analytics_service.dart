@@ -118,6 +118,23 @@ class AppAnalyticsService {
     );
   }
 
+  /// Log saat [FirebaseAuth.verifyPhoneNumber] gagal (reCAPTCHA / Play Integrity / abuse).
+  /// [source] mengidentifikasi layar: `login`, `register`, `profile_penumpang_phone`,
+  /// `profile_driver_phone`, `forgot_password_phone` (tanpa PII).
+  static void logPhoneVerificationFailed({
+    required String code,
+    String? source,
+  }) {
+    final safeCode = code.length > 48 ? code.substring(0, 48) : code;
+    _analytics.logEvent(
+      name: 'phone_verification_failed',
+      parameters: {
+        'code': safeCode,
+        if (source != null && source.isNotEmpty) 'source': source,
+      },
+    );
+  }
+
   /// Log saat penumpang mencari driver: via "Driver sekitar" atau "Cari dengan rute".
   static void logPassengerSearchDriver({required String mode}) {
     _analytics.logEvent(

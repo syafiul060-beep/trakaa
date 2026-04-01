@@ -96,6 +96,7 @@ import 'data_order_driver_screen.dart';
 import 'driver_jadwal_rute_screen.dart';
 import 'login_screen.dart';
 import 'profile_driver_screen.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Tipe rute: dalam provinsi, antar provinsi, dalam negara.
 enum RouteType { dalamProvinsi, antarProvinsi, dalamNegara }
@@ -4768,21 +4769,16 @@ class _DriverScreenState extends State<DriverScreen>
 
   void _showSessionInvalidSnackBar() {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text(
+      TrakaSnackBar.error(context, const Text(
           'Sesi tidak valid. Silakan login ulang untuk melanjutkan.',
-        ),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 5),
+        ), duration: const Duration(seconds: 5),
         action: SnackBarAction(
           label: 'Ke Profil',
-          textColor: Colors.white,
           onPressed: () => setState(() {
             _registerTabVisit(4);
             _currentIndex = 4;
           }),
-        ),
-      ),
+        )),
     );
   }
 
@@ -4835,28 +4831,20 @@ class _DriverScreenState extends State<DriverScreen>
           ? 'Sesi tidak valid. Silakan login ulang untuk melanjutkan.'
           : 'Gagal generate nomor rute: ${e.message}';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: Colors.red,
-          action: e.code == 'unauthenticated'
+        TrakaSnackBar.error(context, Text(msg), action: e.code == 'unauthenticated'
               ? SnackBarAction(
                   label: 'Ke Profil',
-                  textColor: Colors.white,
                   onPressed: () => setState(() {
                     _registerTabVisit(4);
                     _currentIndex = 4;
                   }),
                 )
-              : null,
-        ),
+              : null),
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal generate nomor rute: $e'),
-            backgroundColor: Colors.red,
-          ),
+          TrakaSnackBar.error(context, Text('Gagal generate nomor rute: $e')),
         );
       }
     }
@@ -4925,30 +4913,22 @@ class _DriverScreenState extends State<DriverScreen>
               ? 'Sesi tidak valid. Silakan login ulang untuk melanjutkan.'
               : 'Gagal mempersiapkan rute: ${e.message}';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(msg),
-              backgroundColor: Colors.red,
-              action: e.code == 'unauthenticated'
+            TrakaSnackBar.error(context, Text(msg), action: e.code == 'unauthenticated'
                   ? SnackBarAction(
                       label: 'Ke Profil',
-                      textColor: Colors.white,
                       onPressed: () => setState(() {
                         _registerTabVisit(4);
                         _currentIndex = 4;
                       }),
                     )
-                  : null,
-            ),
+                  : null),
           );
         }
         return;
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Gagal mempersiapkan rute: $e'),
-              backgroundColor: Colors.red,
-            ),
+            TrakaSnackBar.error(context, Text('Gagal mempersiapkan rute: $e')),
           );
         }
         return;
@@ -5580,10 +5560,7 @@ class _DriverScreenState extends State<DriverScreen>
         if (mounted) {
           setState(() => _pendingJadwalRouteLoad = false);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Lokasi awal atau tujuan tidak ditemukan.'),
-              backgroundColor: Colors.orange,
-            ),
+            TrakaSnackBar.warning(context, Text('Lokasi awal atau tujuan tidak ditemukan.')),
           );
         }
         return;
@@ -5673,10 +5650,7 @@ class _DriverScreenState extends State<DriverScreen>
       if (alternatives.isEmpty) {
         setState(() => _pendingJadwalRouteLoad = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(TrakaL10n.of(context).failedToLoadRoute),
-            backgroundColor: Colors.orange,
-          ),
+          TrakaSnackBar.warning(context, Text(TrakaL10n.of(context).failedToLoadRoute)),
         );
         return;
       }
@@ -5767,10 +5741,7 @@ class _DriverScreenState extends State<DriverScreen>
       if (mounted) {
         setState(() => _pendingJadwalRouteLoad = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${TrakaL10n.of(context).failedToLoadRoute} $e'),
-            backgroundColor: Colors.red,
-          ),
+          TrakaSnackBar.error(context, Text('${TrakaL10n.of(context).failedToLoadRoute} $e')),
         );
       }
     } finally {
@@ -5887,15 +5858,11 @@ class _DriverScreenState extends State<DriverScreen>
     } else {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.warning(context, Text(
             TrakaL10n.of(context).failedToLoadRouteDirections,
             style: const TextStyle(fontWeight: FontWeight.w500),
-          ),
-          backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 5),
-        ),
+          ), behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5)),
       );
     }
   }
@@ -6051,30 +6018,26 @@ class _DriverScreenState extends State<DriverScreen>
                 } else {
                   if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
+                    TrakaSnackBar.warning(context, Text(
                         TrakaL10n.of(context).failedToLoadRouteDirections,
                         style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      backgroundColor: Colors.orange,
-                      behavior: SnackBarBehavior.floating,
-                      duration: const Duration(seconds: 5),
-                    ),
+                      ), behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 5)),
                   );
                 }
               } catch (e, st) {
                 logError('onRouteRequest', e, st);
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
+                  TrakaSnackBar.error(
+                    context,
+                    Text(
                       kDebugMode
                           ? 'Gagal memproses rute: $e'
                           : 'Gagal memproses rute. Tutup aplikasi dari recent lalu buka lagi.',
                     ),
                     behavior: SnackBarBehavior.floating,
                     duration: const Duration(seconds: 6),
-                    backgroundColor: Colors.red.shade800,
                   ),
                 );
               }
@@ -8928,13 +8891,13 @@ class _DriverScreenState extends State<DriverScreen>
     } else if (_alternativeRoutes.isNotEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+          TrakaSnackBar.warning(
+            context,
+            Text(
               'Tap pada area garis kuning untuk memilih. Jarak terdekat: ${(minDistance / 1000).toStringAsFixed(1)}km',
             ),
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 2),
-            backgroundColor: Colors.orange,
           ),
         );
       }
@@ -10447,13 +10410,13 @@ class _AlternativeRoutesPickerSheetState
       Navigator.of(context).pop(best);
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.warning(
+          context,
+          Text(
             'Tap pada garis rute. Jarak terdekat: ${(minD / 1000).toStringAsFixed(1)} km',
           ),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),
-          backgroundColor: Colors.orange.shade800,
         ),
       );
     }

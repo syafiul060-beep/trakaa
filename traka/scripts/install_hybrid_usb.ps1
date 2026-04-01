@@ -26,6 +26,7 @@ param(
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent $scriptDir
 Set-Location $projectRoot
+& (Join-Path $scriptDir "ensure_pub_cache_same_drive.ps1") -ProjectRoot $projectRoot
 
 $adb = Get-Command adb -ErrorAction SilentlyContinue
 if (-not $adb) {

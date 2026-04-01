@@ -28,6 +28,7 @@ import '../theme/app_theme.dart';
 import '../theme/app_interaction_styles.dart';
 import 'contribution_driver_screen.dart';
 import 'voice_call_screen.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Halaman chat driver dengan penumpang.
 /// Dipakai dari: tab Chat di driver_screen, atau saat driver buka pesanan.
@@ -171,11 +172,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
         });
         // Tampilkan error jika perlu (opsional)
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal memuat pesanan: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
+          TrakaSnackBar.error(context, Text('Gagal memuat pesanan: ${e.toString()}'), duration: const Duration(seconds: 3)),
         );
       }
     }
@@ -191,14 +188,10 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
     if (!ok) {
       _textController.text = text;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             ChatService.lastBlockedReason ??
                 TrakaL10n.of(context).failedToSendMessage,
-          ),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
+          ), duration: const Duration(seconds: 4)),
       );
       return;
     }
@@ -522,11 +515,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                           _loadOrder();
                         } else {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(TrakaL10n.of(context).failedToSendPrice),
-                              backgroundColor: Colors.red,
-                              behavior: SnackBarBehavior.floating,
-                            ),
+                            TrakaSnackBar.error(context, Text(TrakaL10n.of(context).failedToSendPrice), behavior: SnackBarBehavior.floating),
                           );
                         }
                       } finally {
@@ -553,12 +542,9 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
     if (path == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
+          TrakaSnackBar.error(context, Text(
               'Tidak dapat mengakses mikrofon. Periksa izin aplikasi.',
-            ),
-            backgroundColor: Colors.red,
-          ),
+            )),
         );
       }
       return;
@@ -614,10 +600,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
     if (!await result.file.exists()) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('File audio tidak ditemukan. Coba rekam lagi.'),
-            backgroundColor: Colors.red,
-          ),
+          TrakaSnackBar.error(context, Text('File audio tidak ditemukan. Coba rekam lagi.')),
         );
       }
       return;
@@ -627,10 +610,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
     if (result.duration < 1) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Durasi rekaman terlalu pendek. Minimal 1 detik.'),
-            backgroundColor: Colors.red,
-          ),
+          TrakaSnackBar.error(context, Text('Durasi rekaman terlalu pendek. Minimal 1 detik.')),
         );
       }
       // Hapus file yang terlalu pendek
@@ -679,14 +659,10 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
 
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             ChatService.lastBlockedReason ??
                 TrakaL10n.of(context).failedToSendVoice,
-          ),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
+          ), duration: const Duration(seconds: 4)),
       );
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -822,14 +798,10 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             ChatService.lastBlockedReason ??
                 TrakaL10n.of(context).failedToSendImage,
-          ),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
+          ), duration: const Duration(seconds: 4)),
       );
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -856,10 +828,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
     if (!mounted) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(TrakaL10n.of(context).failedToSendVideo),
-          backgroundColor: Colors.red,
-        ),
+        TrakaSnackBar.error(context, Text(TrakaL10n.of(context).failedToSendVideo)),
       );
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1106,12 +1075,9 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                   if (!mounted) return;
                   if (!canUse) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
+                      TrakaSnackBar.warning(context, Text(
                           '$reason Gunakan chat atau telepon jika nomor tersedia di profil.',
-                        ),
-                        backgroundColor: Colors.orange,
-                      ),
+                        )),
                     );
                     return;
                   }
@@ -1136,10 +1102,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                   if (!context.mounted) return;
                   if (phone == null || phone.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Penumpang belum menambahkan nomor telepon di profil.'),
-                        backgroundColor: Colors.orange,
-                      ),
+                      TrakaSnackBar.warning(context, Text('Penumpang belum menambahkan nomor telepon di profil.')),
                     );
                     return;
                   }
@@ -1217,7 +1180,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                     Navigator.of(context).pop();
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(err), backgroundColor: Colors.red),
+                      TrakaSnackBar.error(context, Text(err)),
                     );
                   }
                 }
@@ -1229,7 +1192,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
         child: Container(
           decoration: const BoxDecoration(
             image: DecorationImage(
-              image: AssetImage('assets/images/traka_brand_logo.png'),
+              image: AssetImage('assets/images/traka_app_icon.png'),
               fit: BoxFit.contain,
               opacity:
                   0.05, // Logo semi-transparent agar tidak mengganggu pembacaan pesan
@@ -1474,9 +1437,9 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                           icon: const Icon(Icons.handshake, size: 20),
                           label: const Text('Kesepakatan dan harga travel'),
                           style: AppInteractionStyles.elevatedPrimary(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                            shadowTint: Colors.green,
+                            backgroundColor: Theme.of(context).colorScheme.secondary,
+                            foregroundColor: Theme.of(context).colorScheme.onSecondary,
+                            shadowTint: Theme.of(context).colorScheme.secondary,
                           ).copyWith(
                             padding: WidgetStateProperty.all(
                               const EdgeInsets.symmetric(vertical: 12),

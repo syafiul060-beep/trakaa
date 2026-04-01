@@ -44,6 +44,7 @@ import '../widgets/traka_pin_widgets.dart';
 import '../widgets/map_destination_picker_screen.dart';
 import 'chat_room_penumpang_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Format alamat singkat: hanya kecamatan dan kabupaten.
 String _formatAlamatKecamatanKabupaten(String alamat) {
@@ -1965,11 +1966,7 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
         },
         onError: (msg) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(msg),
-              backgroundColor: Colors.red,
-              behavior: SnackBarBehavior.floating,
-            ),
+            TrakaSnackBar.error(context, Text(msg), behavior: SnackBarBehavior.floating),
           );
         },
       ),
@@ -2015,20 +2012,14 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
     }
     if (sisaKursi < 1) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tidak ada kursi tersisa. Pilih "Pesan travel sendiri" atau tunggu.'),
-          backgroundColor: Colors.orange,
-        ),
+        TrakaSnackBar.warning(context, Text('Tidak ada kursi tersisa. Pilih "Pesan travel sendiri" atau tunggu.')),
       );
       return;
     }
     final maxKerabat = (sisaKursi - 1).clamp(0, 9);
     if (maxKerabat < 1) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Sisa kursi hanya 1. Silakan pilih "Pesan travel sendiri".'),
-          backgroundColor: Colors.orange,
-        ),
+        TrakaSnackBar.warning(context, Text('Sisa kursi hanya 1. Silakan pilih "Pesan travel sendiri".')),
       );
       return;
     }
@@ -2094,12 +2085,9 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
               onPressed: () {
                 if (jumlah > maxKerabat) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
+                    TrakaSnackBar.error(context, Text(
                         'Maksimal $maxKerabat orang (sisa kursi $sisaKursi).',
-                      ),
-                      backgroundColor: Colors.red,
-                    ),
+                      )),
                   );
                   return;
                 }

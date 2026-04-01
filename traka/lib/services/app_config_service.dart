@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show immutable;
+import 'package:flutter/material.dart' show IconData, Icons;
 
 import 'driver_nav_premium_pricing.dart';
 import '../utils/app_logger.dart' show logError;
@@ -322,6 +324,171 @@ class AppConfigService {
       scope: navPremiumScope,
       distanceMeters: routeDistanceMeters?.toDouble(),
       settings: null,
+    );
+  }
+
+  /// Stream teks marketing halaman login dari [settings]. Update real-time saat admin mengubah Firestore.
+  static Stream<LoginSloganConfig> watchLoginSloganConfig() {
+    return FirebaseFirestore.instance
+        .collection(_collection)
+        .doc('settings')
+        .snapshots()
+        .map(LoginSloganConfig.fromSnapshot);
+  }
+}
+
+/// Satu chip marketing di bawah slogan login (ikon + teks ID/EN opsional).
+@immutable
+class LoginHeroPillConfig {
+  const LoginHeroPillConfig({this.iconKey, this.labelId, this.labelEn});
+
+  /// Kunci aman — dipetakan di [loginHeroIconFromKey].
+  final String? iconKey;
+  final String? labelId;
+  final String? labelEn;
+}
+
+/// Ikon chip login dari kunci admin (whitelist).
+IconData? loginHeroIconFromKey(String? key) {
+  switch (key) {
+    case 'route':
+      return Icons.route_rounded;
+    case 'map':
+      return Icons.map_rounded;
+    case 'inventory':
+      return Icons.inventory_2_outlined;
+    case 'post':
+      return Icons.local_post_office_outlined;
+    case 'shipping':
+      return Icons.local_shipping_outlined;
+    case 'shield':
+      return Icons.shield_outlined;
+    case 'star':
+      return Icons.star_rounded;
+    case 'bolt':
+      return Icons.bolt_rounded;
+    case 'taxi':
+      return Icons.local_taxi_rounded;
+    case 'gps':
+      return Icons.my_location_rounded;
+    case 'payment':
+      return Icons.payments_outlined;
+    case 'groups':
+      return Icons.groups_outlined;
+    case 'favorite':
+      return Icons.favorite_rounded;
+    default:
+      return null;
+  }
+}
+
+bool _loginHeroIconKeyValid(String? key) =>
+    key != null && loginHeroIconFromKey(key) != null;
+
+/// Field opsional di `app_config/settings`: loginSlogan*, loginHeroPills[].
+@immutable
+class LoginSloganConfig {
+  const LoginSloganConfig({
+    this.titleId,
+    this.subtitleId,
+    this.titleEn,
+    this.subtitleEn,
+    this.heroPills = const [],
+  });
+
+  final String? titleId;
+  final String? subtitleId;
+  final String? titleEn;
+  final String? subtitleEn;
+  final List<LoginHeroPillConfig> heroPills;
+
+  /// Salinan sales bawaan aplikasi jika admin mengosongkan field.
+  static const String defaultTitleId =
+      'Travel & kirim barang, tanpa tebak harga.';
+  static const String defaultSubtitleId =
+      'Driver terpercaya, lacak live, penawaran untuk Anda — pasang Traka & jalan tenang.';
+  static const String defaultTitleEn =
+      'Rides & delivery with clear, fair pricing.';
+  static const String defaultSubtitleEn =
+      'Trusted drivers, live tracking, perks for you — install Traka and ride easy.';
+
+  static LoginSloganConfig fromSnapshot(DocumentSnapshot<Object?> snap) {
+    final d = snap.data() as Map<String, dynamic>?;
+    String? pick(dynamic v) {
+      if (v == null) return null;
+      final t = v.toString().trim();
+      return t.isEmpty ? null : t;
+    }
+
+    final pills = _parseHeroPills(d?['loginHeroPills']);
+
+    return LoginSloganConfig(
+      titleId: pick(d?['loginSloganTitleId']),
+      subtitleId: pick(d?['loginSloganSubtitleId']),
+      titleEn: pick(d?['loginSloganTitleEn']),
+      subtitleEn: pick(d?['loginSloganSubtitleEn']),
+      heroPills: pills,
+    );
+  }
+
+  static List<LoginHeroPillConfig> _parseHeroPills(dynamic raw) {
+    if (raw is! List) return const [];
+    final out = <LoginHeroPillConfig>[];
+    String? pick(dynamic v) {
+      if (v == null) return null;
+      final t = v.toString().trim();
+      return t.isEmpty ? null : t;
+    }
+
+    for (final item in raw.take(3)) {
+      if (item is! Map) continue;
+      final m = Map<String, dynamic>.from(item);
+      final iconRaw = pick(m['icon']);
+      final iconKey = _loginHeroIconKeyValid(iconRaw) ? iconRaw : null;
+      out.add(LoginHeroPillConfig(
+        iconKey: iconKey,
+        labelId: pick(m['labelId']),
+        labelEn: pick(m['labelEn']),
+      ));
+    }
+    return out;
+  }
+
+  static const _pillIconDefaults = ['route', 'map', 'post'];
+  static const _pillLabelIdDefaults = ['Travel', 'Lacak', 'Barang'];
+  static const _pillLabelEnDefaults = ['Rides', 'Track', 'Parcel'];
+
+  /// Tiga chip untuk hero login; warna diatur di widget dari tema.
+  List<({IconData icon, String label})> resolveHeroPills(bool isIndonesian) {
+    final result = <({IconData icon, String label})>[];
+    for (var i = 0; i < 3; i++) {
+      final defIcon = _pillIconDefaults[i];
+      final cfg = i < heroPills.length ? heroPills[i] : null;
+      final iconKey = _loginHeroIconKeyValid(cfg?.iconKey) ? cfg!.iconKey! : defIcon;
+      final icon = loginHeroIconFromKey(iconKey) ?? Icons.auto_awesome_rounded;
+      final label = isIndonesian
+          ? (cfg?.labelId != null && cfg!.labelId!.isNotEmpty
+              ? cfg.labelId!
+              : _pillLabelIdDefaults[i])
+          : (cfg?.labelEn != null && cfg!.labelEn!.isNotEmpty
+              ? cfg.labelEn!
+              : _pillLabelEnDefaults[i]);
+      result.add((icon: icon, label: label));
+    }
+    return result;
+  }
+
+  /// Teks untuk locale aktif (fallback ke default bawaan app).
+  ({String title, String subtitle}) resolve(bool isIndonesian) {
+    if (isIndonesian) {
+      return (
+        title: titleId ?? defaultTitleId,
+        subtitle: subtitleId ?? defaultSubtitleId,
+      );
+    }
+    return (
+      title: titleEn ?? defaultTitleEn,
+      subtitle: subtitleEn ?? defaultSubtitleEn,
     );
   }
 }

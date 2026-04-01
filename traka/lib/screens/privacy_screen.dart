@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/privacy_terms_export_service.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Halaman Kebijakan Privasi – sesuai UU PDP dan praktik aman.
 class PrivacyScreen extends StatelessWidget {
@@ -20,7 +21,7 @@ class PrivacyScreen extends StatelessWidget {
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Gagal membagikan file.'), backgroundColor: Colors.red),
+          TrakaSnackBar.error(context, Text('Gagal membagikan file.')),
         );
       }
     }

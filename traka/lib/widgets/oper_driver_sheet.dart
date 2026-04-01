@@ -10,6 +10,7 @@ import 'traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import 'driver_contact_picker.dart';
 import 'traka_loading_indicator.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Sheet untuk Oper Driver: pilih order (multi), input driver kedua, validasi kapasitas.
 /// Kirim barang tidak bisa dioper. Bisa dipakai dari Beranda atau Jadwal.
@@ -116,12 +117,9 @@ class _OperDriverSheetState extends State<_OperDriverSheet> {
     }
     if (!_capacityOk) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             'Kapasitas mobil driver kedua ($_driverCapacity orang) tidak cukup untuk $_totalPenumpang penumpang.',
-          ),
-          backgroundColor: Colors.red,
-        ),
+          )),
       );
       return;
     }
@@ -142,7 +140,7 @@ class _OperDriverSheetState extends State<_OperDriverSheet> {
       if (error != null) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error), backgroundColor: Colors.red),
+          TrakaSnackBar.error(context, Text(error)),
         );
         return;
       }

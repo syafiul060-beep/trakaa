@@ -37,6 +37,7 @@ import '../widgets/traka_pin_widgets.dart';
 import '../widgets/map_destination_picker_screen.dart';
 import '../services/traka_pin_bitmap_service.dart';
 import 'package:geolocator/geolocator.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Batas waktu tunggu hapus jadwal dari sisi UI (batalkan tunggu, tutup overlay).
 const Duration _kDeleteScheduleOverallTimeout = Duration(seconds: 60);
@@ -664,14 +665,13 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
           final messenger = ScaffoldMessenger.of(context);
           messenger.clearSnackBars();
           messenger.showSnackBar(
-            SnackBar(
-              content: Text(msg),
-              backgroundColor: Colors.orange.shade800,
+            TrakaSnackBar.warning(
+              context,
+              Text(msg),
               behavior: SnackBarBehavior.floating,
               duration: const Duration(seconds: 10),
               action: SnackBarAction(
                 label: 'Coba lagi',
-                textColor: Colors.white,
                 onPressed: () => _loadJadwal(),
               ),
             ),
@@ -870,12 +870,8 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
           ? 'Jaringan timeout — jadwal tidak tersimpan. Cek koneksi lalu tambah/ubah lagi.'
           : 'Gagal simpan ke server: ${e.toString().replaceAll(RegExp(r'^Exception:?\s*'), '')}';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 12),
-        ),
+        TrakaSnackBar.error(context, Text(msg), behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 12)),
       );
     } finally {
       if (mounted) {
@@ -1201,22 +1197,16 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     if (!DriverScheduleService.isScheduleDateInBookingWindow(date)) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
+        TrakaSnackBar.warning(context, Text(
             'Jadwal hanya untuk 7 hari ke depan dari hari ini (zona waktu WIB).',
-          ),
-          backgroundColor: Colors.orange,
-        ),
+          )),
       );
       return;
     }
     final count = _scheduleCountForDate(date);
     if (count >= _maxSchedulesPerDate) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Maksimal 4 jadwal per tanggal. Gunakan icon pensil untuk edit.'),
-          backgroundColor: Colors.orange,
-        ),
+        TrakaSnackBar.warning(context, Text('Maksimal 4 jadwal per tanggal. Gunakan icon pensil untuk edit.')),
       );
       return;
     }
@@ -1249,22 +1239,16 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     if (!DriverScheduleService.isScheduleDateInBookingWindow(date)) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
+        TrakaSnackBar.warning(context, Text(
             'Tanggal duplikat harus dalam 7 hari ke depan (WIB).',
-          ),
-          backgroundColor: Colors.orange,
-        ),
+          )),
       );
       return;
     }
     final count = _scheduleCountForDate(date);
     if (count >= _maxSchedulesPerDate) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Maksimal 4 jadwal per tanggal.'),
-          backgroundColor: Colors.orange,
-        ),
+        TrakaSnackBar.warning(context, Text('Maksimal 4 jadwal per tanggal.')),
       );
       return;
     }
@@ -1330,11 +1314,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
             if (mounted) setState(() {});
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Jadwal dihapus'),
-                  backgroundColor: Colors.green,
-                  duration: Duration(seconds: 3),
-                ),
+                TrakaSnackBar.success(context, Text('Jadwal dihapus'), duration: Duration(seconds: 3)),
               );
             }
           }
@@ -1621,10 +1601,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
                                       await _loadJadwal();
                                       if (!context.mounted) return;
                                       ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Jadwal lewat telah dibersihkan'),
-                                            backgroundColor: Colors.green,
-                                          ),
+                                          TrakaSnackBar.success(context, Text('Jadwal lewat telah dibersihkan')),
                                         );
                                     },
                                     icon: const Icon(Icons.cleaning_services_outlined, size: 18),
@@ -2279,12 +2256,9 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
           }
           if (disableByHomeRoute) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
+              TrakaSnackBar.warning(context, Text(
                   'Rute aktif berasal dari Beranda. Selesaikan rute tersebut terlebih dahulu.',
-                ),
-                backgroundColor: Colors.orange,
-              ),
+                )),
             );
             return;
           }
@@ -2442,14 +2416,10 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
         if (!_firestoreCardBusy) return;
         setState(() => _firestoreCardBusy = false);
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(
-            content: Text(
+          TrakaSnackBar.warning(context, Text(
               'Hapus jadwal terlalu lama — overlay ditutup. Cek jaringan lalu coba lagi.',
-            ),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 5),
-          ),
+            ), behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 5)),
         );
       },
     );
@@ -2462,13 +2432,9 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
       if (lockSnap.hasNonTerminalOrders) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
+            TrakaSnackBar.warning(context, Text(
                 'Jadwal tidak bisa dihapus: masih ada pesanan aktif. Selesaikan, batalkan, atau pindahkan pesanan dulu.',
-              ),
-              backgroundColor: Colors.orange,
-              behavior: SnackBarBehavior.floating,
-            ),
+              ), behavior: SnackBarBehavior.floating),
           );
         }
         return;
@@ -2496,21 +2462,14 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
         setState(() {});
         final scaffoldMessenger = ScaffoldMessenger.of(context);
         scaffoldMessenger.showSnackBar(
-          const SnackBar(
-            content: Text('Jadwal dihapus'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
+          TrakaSnackBar.success(context, Text('Jadwal dihapus'), duration: Duration(seconds: 3)),
         );
         _scheduleDebouncedJadwalServerSync(mergeIfMissing: null);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
+          TrakaSnackBar.warning(context, Text(
               'Jadwal tidak ditemukan di server. Tarik ke bawah untuk muat ulang lalu coba lagi.',
-            ),
-            backgroundColor: Colors.orange,
-          ),
+            )),
         );
       }
     } catch (e) {
@@ -2519,7 +2478,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
             ? 'Hapus jadwal habis waktu. Coba lagi atau muat ulang daftar.'
             : 'Gagal hapus: $e';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+          TrakaSnackBar.error(context, Text(msg)),
         );
       }
     } finally {
@@ -4241,10 +4200,7 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
     final dest = _destController.text.trim();
     if (origin.isEmpty || dest.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Isi tujuan awal dan tujuan akhir terlebih dahulu.'),
-          backgroundColor: Colors.orange,
-        ),
+        TrakaSnackBar.warning(context, Text('Isi tujuan awal dan tujuan akhir terlebih dahulu.')),
       );
       return;
     }
@@ -4285,17 +4241,12 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
       if (originLocs.isEmpty || destLocs.isEmpty) {
         setState(() => _loadingRoutes = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Lokasi tidak ditemukan. Periksa alamat.'),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
+          TrakaSnackBar.warning(context, const Text('Lokasi tidak ditemukan. Periksa alamat.'), behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 10),
             action: SnackBarAction(
               label: 'Coba lagi',
-              textColor: Colors.white,
               onPressed: () => _showRoutePickerSheet(),
-            ),
-          ),
+            )),
         );
         return;
       }
@@ -4309,17 +4260,12 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
       if (alternatives.isEmpty) {
         setState(() => _loadingRoutes = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Rute tidak ditemukan.'),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
+          TrakaSnackBar.warning(context, const Text('Rute tidak ditemukan.'), behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 10),
             action: SnackBarAction(
               label: 'Coba lagi',
-              textColor: Colors.white,
               onPressed: () => _showRoutePickerSheet(),
-            ),
-          ),
+            )),
         );
         return;
       }
@@ -4327,19 +4273,14 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
       if (drawable.isEmpty) {
         setState(() => _loadingRoutes = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
+          TrakaSnackBar.warning(context, const Text(
               'Data rute tidak valid (tanpa garis di peta). Coba alamat lain atau lagi nanti.',
-            ),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
+            ), behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 10),
             action: SnackBarAction(
               label: 'Coba lagi',
-              textColor: Colors.white,
               onPressed: () => _showRoutePickerSheet(),
-            ),
-          ),
+            )),
         );
         return;
       }
@@ -4363,36 +4304,26 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
       if (mounted) {
         setState(() => _loadingRoutes = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
+          TrakaSnackBar.warning(context, const Text(
               'Memuat terlalu lama. Periksa koneksi dan coba lagi.',
-            ),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
+            ), behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 10),
             action: SnackBarAction(
               label: 'Coba lagi',
-              textColor: Colors.white,
               onPressed: () => _showRoutePickerSheet(),
-            ),
-          ),
+            )),
         );
       }
     } catch (e) {
       if (mounted) {
         setState(() => _loadingRoutes = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal memuat rute: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
+          TrakaSnackBar.error(context, Text('Gagal memuat rute: $e'), behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 10),
             action: SnackBarAction(
               label: 'Coba lagi',
-              textColor: Colors.white,
               onPressed: () => _showRoutePickerSheet(),
-            ),
-          ),
+            )),
         );
       }
     }
@@ -4468,10 +4399,7 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
       if (targetJam == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Tidak ada jam jadwal untuk dihapus.'),
-              backgroundColor: Colors.orange,
-            ),
+            TrakaSnackBar.warning(context, Text('Tidak ada jam jadwal untuk dihapus.')),
           );
         }
         return;
@@ -4497,13 +4425,9 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
       if (lockSnap.hasNonTerminalOrders) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
+            TrakaSnackBar.warning(context, Text(
                 'Jadwal tidak bisa dihapus: masih ada pesanan aktif. Selesaikan, batalkan, atau pindahkan pesanan dulu.',
-              ),
-              backgroundColor: Colors.orange,
-              behavior: SnackBarBehavior.floating,
-            ),
+              ), behavior: SnackBarBehavior.floating),
           );
         }
         widget.formSaving.value = false;
@@ -4535,12 +4459,9 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
+          TrakaSnackBar.warning(context, Text(
               'Jadwal tidak ditemukan di server. Tutup form dan muat ulang daftar.',
-            ),
-            backgroundColor: Colors.orange,
-          ),
+            )),
         );
       }
     } catch (e) {
@@ -4549,7 +4470,7 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
             ? 'Hapus jadwal habis waktu. Coba lagi.'
             : 'Gagal hapus: $e';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+          TrakaSnackBar.error(context, Text(msg)),
         );
       }
     } finally {
@@ -4600,19 +4521,13 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
     final dest = _destController.text.trim();
     if (origin.isEmpty || dest.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tujuan awal dan tujuan akhir wajib diisi.'),
-          backgroundColor: Colors.orange,
-        ),
+        TrakaSnackBar.warning(context, Text('Tujuan awal dan tujuan akhir wajib diisi.')),
       );
       return;
     }
     if (_selectedRoutePolyline == null || _selectedRoutePolyline!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pilih rute terlebih dahulu dengan tombol Lihat dan pilih rute.'),
-          backgroundColor: Colors.orange,
-        ),
+        TrakaSnackBar.warning(context, Text('Pilih rute terlebih dahulu dengan tombol Lihat dan pilih rute.')),
       );
       return;
     }
@@ -4621,21 +4536,15 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
     final isEdit = widget.editScheduleIndex != null && widget.initialJam != null;
     if (!isEdit && !DriverScheduleService.isScheduleDateInBookingWindow(scheduleDateStart)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
+        TrakaSnackBar.warning(context, Text(
             'Tanggal jadwal hanya boleh dalam 7 hari ke depan (WIB).',
-          ),
-          backgroundColor: Colors.orange,
-        ),
+          )),
       );
       return;
     }
     if (!isEdit && scheduleDateStart.isBefore(todayWib)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tidak bisa menambah jadwal untuk tanggal yang sudah lewat (WIB).'),
-          backgroundColor: Colors.orange,
-        ),
+        TrakaSnackBar.warning(context, Text('Tidak bisa menambah jadwal untuk tanggal yang sudah lewat (WIB).')),
       );
       return;
     }
@@ -4648,10 +4557,7 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
     );
     if (scheduleDateStart == todayWib && dt.isBefore(DateTime.now())) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Jam keberangkatan tidak boleh di masa lalu untuk tanggal hari ini.'),
-          backgroundColor: Colors.orange,
-        ),
+        TrakaSnackBar.warning(context, Text('Jam keberangkatan tidak boleh di masa lalu untuk tanggal hari ini.')),
       );
       return;
     }
@@ -4743,14 +4649,10 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
         if (lock.hasNonTerminalOrders) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
+              TrakaSnackBar.error(context, Text(
                   'Tidak bisa menyimpan perubahan: masih ada pesanan aktif pada jadwal ini. Selesaikan, batalkan, atau pindahkan pesanan dulu.',
-                ),
-                backgroundColor: Colors.red,
-                behavior: SnackBarBehavior.floating,
-                duration: Duration(seconds: 12),
-              ),
+                ), behavior: SnackBarBehavior.floating,
+                duration: Duration(seconds: 12)),
             );
           }
           return;
@@ -4829,15 +4731,11 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
       Navigator.of(context).pop();
       widget.formSaving.value = false;
       scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.success(context, Text(
             docIndex != null
                 ? 'Jadwal berhasil diubah.'
                 : 'Jadwal berhasil disimpan.',
-          ),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
+          ), behavior: SnackBarBehavior.floating),
       );
       try {
         await widget.onSaved(newItem, editIndex: editIdx, skipServerSync: true);
@@ -4856,17 +4754,12 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
           : 'Gagal simpan: ${e.toString().replaceAll(RegExp(r'^Exception:?\s*'), '')}';
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
+          TrakaSnackBar.error(context, Text(msg), behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 12),
             action: SnackBarAction(
               label: 'Coba lagi',
-              textColor: Colors.white,
               onPressed: () => _onSimpan(),
-            ),
-          ),
+            )),
         );
       }
     } finally {

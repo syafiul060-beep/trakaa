@@ -13,6 +13,7 @@ import '../services/payment_context_service.dart';
 import '../services/route_notification_service.dart';
 import 'cek_lokasi_driver_screen.dart';
 import 'payment_history_screen.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Product ID: traka_lacak_driver_3000 (Rp 3000) atau traka_lacak_driver_{amount} untuk nominal lain.
 /// Catatan: traka_lacak_driver tidak bisa dipakai jika pernah dihapus di Play Console.
@@ -130,12 +131,8 @@ class _LacakDriverPaymentScreenState extends State<LacakDriverPaymentScreen> {
           body: 'Pembayaran berhasil. Anda dapat melacak driver.',
         );
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(TrakaL10n.of(context).paymentSuccessTrackDriver),
-            backgroundColor: Colors.green,
-            action: SnackBarAction(
+          TrakaSnackBar.success(context, Text(TrakaL10n.of(context).paymentSuccessTrackDriver), action: SnackBarAction(
               label: TrakaL10n.of(context).viewPaymentHistory,
-              textColor: Colors.white,
               onPressed: () {
                 navigator.push(
                   MaterialPageRoute(
@@ -143,8 +140,7 @@ class _LacakDriverPaymentScreenState extends State<LacakDriverPaymentScreen> {
                   ),
                 );
               },
-            ),
-          ),
+            )),
         );
         navigator.pushReplacement(
           MaterialPageRoute<void>(
@@ -354,9 +350,9 @@ class _LacakDriverPaymentScreenState extends State<LacakDriverPaymentScreen> {
                               : 'Bayar via Google Play',
                     ),
                     style: AppInteractionStyles.elevatedPrimary(
-                      backgroundColor: Colors.green.shade700,
-                      foregroundColor: Colors.white,
-                      shadowTint: Colors.green.shade700,
+                      backgroundColor: Theme.of(context).colorScheme.secondary,
+                      foregroundColor: Theme.of(context).colorScheme.onSecondary,
+                      shadowTint: Theme.of(context).colorScheme.secondary,
                     ).copyWith(
                       padding: WidgetStateProperty.all(
                         const EdgeInsets.symmetric(vertical: 16),

@@ -197,9 +197,10 @@ class _AdminContactWidgetState extends State<AdminContactWidget> {
       onTap: _showContactDialog,
       child: Image.asset(
         'assets/images/admin.png',
-        width: 48,
-        height: 48,
+        width: 58,
+        height: 58,
         fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
       ),
     );
   }

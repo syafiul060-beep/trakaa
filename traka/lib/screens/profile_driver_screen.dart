@@ -28,7 +28,6 @@ import '../services/auth_redirect_state.dart';
 import '../services/image_compression_service.dart';
 import '../services/low_ram_warning_service.dart';
 import '../services/lite_mode_service.dart';
-import '../services/hybrid_foreground_recovery.dart';
 import '../services/driver_status_service.dart';
 import '../services/voice_call_incoming_service.dart';
 import '../theme/app_theme.dart';
@@ -39,6 +38,7 @@ import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../theme/responsive.dart';
 import '../utils/phone_utils.dart';
+import '../utils/phone_verification_snackbar.dart';
 import '../utils/safe_navigation_utils.dart';
 import '../services/stnk_scan_service.dart';
 import '../services/rating_service.dart';
@@ -65,6 +65,7 @@ import 'payment_history_screen.dart';
 import 'panduan_aplikasi_screen.dart';
 import 'promo_list_screen.dart';
 import 'saran_ke_admin_screen.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Halaman profil khusus driver (tanpa nomor telepon dan login sidik jari/wajah).
 class ProfileDriverScreen extends StatefulWidget {
@@ -78,11 +79,14 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
   DocumentSnapshot<Map<String, dynamic>>? _userDoc;
+
   /// Jangan gate seluruh body dengan shimmer — antre Firestore setelah simpan jadwal bisa membuat "layar putih" lama.
   bool _loading = false;
+
   /// True jika profil masih "Memuat" terlalu lama — tampilkan aksi coba lagi (hindari layar putih shimmer).
   bool _profileLoadIncomplete = false;
   Timer? _profileLoadSafetyTimer;
+
   /// Muat ulang dari banner: jangan set [_loading] (hindari seluruh body diganti shimmer / "layar putih").
   bool _profileRefreshing = false;
   Timer? _profileReloadSafetyTimer;
@@ -169,9 +173,11 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     // sering membuat layar "putih" saat antrean tulisan jadwal penuh. Segarkan dari server di latar.
     if (!forceFromServer) {
       try {
-        final quick = await _firestore.collection('users').doc(user.uid).get(
-          const GetOptions(source: Source.cache),
-        ).timeout(const Duration(seconds: 3));
+        final quick = await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .get(const GetOptions(source: Source.cache))
+            .timeout(const Duration(seconds: 3));
         if (!mounted) return;
         if (quick.exists) {
           final d = quick.data();
@@ -199,17 +205,23 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     try {
       DocumentSnapshot<Map<String, dynamic>> doc;
       try {
-        doc = await _firestore.collection('users').doc(user.uid).get(
-          forceFromServer
-              ? const GetOptions(source: Source.server)
-              : const GetOptions(source: Source.serverAndCache),
-        ).timeout(primaryTimeout);
+        doc = await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .get(
+              forceFromServer
+                  ? const GetOptions(source: Source.server)
+                  : const GetOptions(source: Source.serverAndCache),
+            )
+            .timeout(primaryTimeout);
       } on TimeoutException {
         // Firestore bisa mengantre panjang setelah operasi berat — jangan biarkan "Memuat" abadi.
         try {
-          doc = await _firestore.collection('users').doc(user.uid).get(
-            const GetOptions(source: Source.cache),
-          ).timeout(cacheTimeout);
+          doc = await _firestore
+              .collection('users')
+              .doc(user.uid)
+              .get(const GetOptions(source: Source.cache))
+              .timeout(cacheTimeout);
         } on TimeoutException {
           if (mounted) {
             setState(() {
@@ -251,9 +263,11 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     if (!mounted) return;
     if (_auth.currentUser?.uid != uid) return;
     try {
-      final doc = await _firestore.collection('users').doc(uid).get(
-            const GetOptions(source: Source.serverAndCache),
-          ).timeout(const Duration(seconds: 22));
+      final doc = await _firestore
+          .collection('users')
+          .doc(uid)
+          .get(const GetOptions(source: Source.serverAndCache))
+          .timeout(const Duration(seconds: 22));
       if (!mounted || _auth.currentUser?.uid != uid) return;
       if (!doc.exists) return;
       setState(() {
@@ -288,9 +302,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
   }
 
   /// Centang verifikasi: kuning jika admin masih punya permintaan terbuka (sinkron field Firestore / panel admin).
-  Color get _verificationCheckColor => VerificationService.hasOpenAdminVerificationRequest(
-        _userData,
-      )
+  Color get _verificationCheckColor =>
+      VerificationService.hasOpenAdminVerificationRequest(_userData)
       ? Colors.amber.shade800
       : Colors.green.shade700;
 
@@ -382,17 +395,22 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
         ),
       );
     }
-    final validationResult = await FaceValidationService.validateFacePhoto(file.path);
+    final validationResult = await FaceValidationService.validateFacePhoto(
+      file.path,
+    );
     if (!mounted) return;
     Navigator.of(context).pop();
     if (!validationResult.isValid) {
       final action = await ProfileFaceValidationDialog.show(
         context,
-        message: validationResult.errorMessage ??
+        message:
+            validationResult.errorMessage ??
             TrakaL10n.of(context).photoDoesNotMeetRequirements,
         isBlurError: validationResult.isBlurError,
       );
-      if (action == FaceValidationDialogAction.retry && mounted) return _pickAndVerifyPhoto();
+      if (action == FaceValidationDialogAction.retry && mounted) {
+        return _pickAndVerifyPhoto();
+      }
       if (action == FaceValidationDialogAction.useAnyway && mounted) {
         if (mounted) {
           showDialog<void>(
@@ -409,7 +427,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
             ),
           );
         }
-        final skipBlurResult = await FaceValidationService.validateFacePhotoSkipBlur(file.path);
+        final skipBlurResult =
+            await FaceValidationService.validateFacePhotoSkipBlur(file.path);
         if (!mounted) return;
         if (mounted) Navigator.of(context).pop();
         if (!skipBlurResult.isValid) {
@@ -420,7 +439,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                 'Foto harus wajah asli, bukan dari gambar atau layar. Silakan ambil foto ulang.',
             isBlurError: false,
           );
-          if (retry == FaceValidationDialogAction.retry && mounted) return _pickAndVerifyPhoto();
+          if (retry == FaceValidationDialogAction.retry && mounted) {
+            return _pickAndVerifyPhoto();
+          }
           return;
         }
         setState(() => _photoFile = file);
@@ -464,7 +485,10 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       if (mounted) Navigator.of(context).pop();
       if (dup) {
         if (mounted) {
-          _showSnackBar(TrakaL10n.of(context).duplicateFaceDetected, isError: true);
+          _showSnackBar(
+            TrakaL10n.of(context).duplicateFaceDetected,
+            isError: true,
+          );
         }
         return;
       }
@@ -483,7 +507,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
           ),
         );
       }
-      final compressedPath = await ImageCompressionService.compressForUpload(file.path);
+      final compressedPath = await ImageCompressionService.compressForUpload(
+        file.path,
+      );
       final fileToUpload = File(compressedPath);
       final photoRef = FirebaseStorage.instance.ref().child(
         'users/${user.uid}/photo.jpg',
@@ -562,6 +588,120 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     );
   }
 
+  bool _userHasPasswordProvider(User user) =>
+      user.providerData.any((p) => p.providerId == 'password');
+
+  /// Akun Google-only: tautkan provider email+password pertama kali.
+  Future<void> _showAddPasswordForLinkedGoogleAccount(User user) async {
+    final email = user.email!.trim();
+    final newC = TextEditingController();
+    final confirmC = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(TrakaL10n.of(context).addPasswordDialogTitle),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                TrakaL10n.of(context).addPasswordGoogleExplanation,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: newC,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: TrakaL10n.of(context).newPassword,
+                  border: const OutlineInputBorder(),
+                ),
+                obscureText: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmC,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: TrakaL10n.of(context).confirmNewPassword,
+                  border: const OutlineInputBorder(),
+                ),
+                obscureText: true,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(TrakaL10n.of(context).cancel),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final newP = newC.text;
+              final confirm = confirmC.text;
+              if (newP.length < 8) {
+                _showSnackBar(
+                  TrakaL10n.of(context).passwordMin8Chars,
+                  isError: true,
+                );
+                return;
+              }
+              if (newP != confirm) {
+                _showSnackBar(
+                  TrakaL10n.of(context).confirmPasswordMismatch,
+                  isError: true,
+                );
+                return;
+              }
+              Navigator.pop(ctx);
+              final current = _auth.currentUser;
+              if (current == null) return;
+              try {
+                final cred = EmailAuthProvider.credential(
+                  email: email,
+                  password: newP,
+                );
+                await current.linkWithCredential(cred);
+                await BiometricLoginService.clearCredentials();
+                if (mounted) {
+                  setState(() {});
+                  _showSnackBar(
+                    TrakaL10n.of(
+                      context,
+                    ).passwordAddedProfileWithBiometricClear,
+                  );
+                }
+              } on FirebaseAuthException catch (e) {
+                if (!mounted) return;
+                if (e.code == 'requires-recent-login') {
+                  _showSnackBar(
+                    TrakaL10n.of(context).addPasswordRequiresRecentLogin,
+                    isError: true,
+                  );
+                } else if (e.code == 'weak-password') {
+                  _showSnackBar(
+                    TrakaL10n.of(context).passwordMin8Chars,
+                    isError: true,
+                  );
+                } else {
+                  _showSnackBar(e.message ?? e.code, isError: true);
+                }
+              }
+            },
+            child: Text(TrakaL10n.of(context).save),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showChangePasswordDialog() async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -589,6 +729,10 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
           if (mounted) _showTambahEmailDialog();
         });
       }
+      return;
+    }
+    if (!_userHasPasswordProvider(user)) {
+      await _showAddPasswordForLinkedGoogleAccount(user);
       return;
     }
     final oldC = TextEditingController();
@@ -640,7 +784,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal'),
+            child: Text(TrakaL10n.of(context).cancel),
           ),
           FilledButton(
             onPressed: () async {
@@ -649,13 +793,16 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
               final confirm = confirmC.text;
               if (newP.length < 8) {
                 _showSnackBar(
-                  'Password baru minimal 8 karakter.',
+                  TrakaL10n.of(context).passwordMin8Chars,
                   isError: true,
                 );
                 return;
               }
               if (newP != confirm) {
-                _showSnackBar('Password tidak sama.', isError: true);
+                _showSnackBar(
+                  TrakaL10n.of(context).confirmPasswordMismatch,
+                  isError: true,
+                );
                 return;
               }
               Navigator.pop(ctx);
@@ -671,19 +818,27 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                 await BiometricLoginService.clearCredentials();
                 if (mounted) {
                   _showSnackBar(
-                    TrakaL10n.of(context).passwordChangedProfileWithBiometricClear,
+                    TrakaL10n.of(
+                      context,
+                    ).passwordChangedProfileWithBiometricClear,
                   );
                 }
               } on FirebaseAuthException catch (e) {
+                if (!mounted) return;
                 if (e.code == 'wrong-password' ||
                     e.code == 'invalid-credential') {
-                  _showSnackBar('Password lama salah.', isError: true);
+                  _showSnackBar(
+                    TrakaL10n.of(context).locale == AppLocale.id
+                        ? 'Sandi lama salah.'
+                        : 'Current password is wrong.',
+                    isError: true,
+                  );
                 } else {
                   _showSnackBar('Gagal: ${e.message}', isError: true);
                 }
               }
             },
-            child: const Text('Simpan'),
+            child: Text(TrakaL10n.of(context).save),
           ),
         ],
       ),
@@ -702,12 +857,17 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
             Expanded(
               child: Text(
                 TrakaL10n.of(context).driverVerificationCompleteDialogTitle,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
         ),
-        content: Text(TrakaL10n.of(context).driverVerificationCompleteDialogBody),
+        content: Text(
+          TrakaL10n.of(context).driverVerificationCompleteDialogBody,
+        ),
         actions: [
           FilledButton(
             onPressed: () => Navigator.pop(ctx),
@@ -742,7 +902,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
           expand: false,
           builder: (_, scrollController) => SingleChildScrollView(
             controller: scrollController,
-            padding: EdgeInsets.all(context.responsive.spacing(AppTheme.spacingLg)),
+            padding: EdgeInsets.all(
+              context.responsive.spacing(AppTheme.spacingLg),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
@@ -769,7 +931,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                   icon: Icons.phone_outlined,
                   label: 'No. Telepon',
                   value: phone.isEmpty ? 'Belum ditambahkan' : phone,
-                  actionLabel: phone.isEmpty ? 'Tambah No. Telepon' : 'Ubah No. Telepon',
+                  actionLabel: phone.isEmpty
+                      ? 'Tambah No. Telepon'
+                      : 'Ubah No. Telepon',
                   onTap: () {
                     Navigator.pop(ctx);
                     _showTeleponVerifikasiDialog();
@@ -879,7 +1043,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
 
   /// Verifikasi wajah di foto profil; SIM di kartu ini; data mobil di menu Data Kendaraan.
   Future<void> _showVerifikasiDriverDialog() async {
-    final hasFace = (_userData['faceVerificationUrl'] as String?)?.trim().isNotEmpty ?? false;
+    final hasFace =
+        (_userData['faceVerificationUrl'] as String?)?.trim().isNotEmpty ??
+        false;
     if (!hasFace) {
       await showDialog<void>(
         context: context,
@@ -911,10 +1077,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
         ),
         content: Text(TrakaL10n.of(context).driverSimVerificationExplain),
         actions: [
-          TextButton(
-            onPressed: () => safePop(ctx),
-            child: const Text('Batal'),
-          ),
+          TextButton(onPressed: () => safePop(ctx), child: const Text('Batal')),
           FilledButton(
             onPressed: () async {
               await safePopAndComplete(ctx);
@@ -949,7 +1112,10 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     // Validasi file foto ada dan terbaca (hindari error OCR)
     final photoFile = File(image.path);
     if (!photoFile.existsSync() || photoFile.lengthSync() == 0) {
-      _showSnackBar('Foto tidak ditemukan atau rusak. Silakan ambil foto ulang.', isError: true);
+      _showSnackBar(
+        'Foto tidak ditemukan atau rusak. Silakan ambil foto ulang.',
+        isError: true,
+      );
       return;
     }
 
@@ -985,7 +1151,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       final voteCount = <String, int>{};
       for (final text in ocrTexts) {
         final extractedData = SimOcrExtraction.extractNamaAndNomorSim(text);
-        if (extractedData['nama'] != null && extractedData['nomorSIM'] != null) {
+        if (extractedData['nama'] != null &&
+            extractedData['nomorSIM'] != null) {
           final key = '${extractedData['nama']}|${extractedData['nomorSIM']}';
           voteCount[key] = (voteCount[key] ?? 0) + 1;
         }
@@ -1005,7 +1172,10 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
         if (mounted) {
           setState(() => _isOcrLoading = false);
           AuthRedirectState.setInVerificationFlow(false);
-          AppAnalyticsService.logOcrFailed(documentType: 'sim', reason: 'extraction_failed');
+          AppAnalyticsService.logOcrFailed(
+            documentType: 'sim',
+            reason: 'extraction_failed',
+          );
           _showSnackBarWithRetry(
             'Gagal membaca data SIM. Pastikan foto SIM jelas dan lengkap.',
             onRetry: _scanSIM,
@@ -1064,7 +1234,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
             content: SingleChildScrollView(
               child: isSaved
                   ? Text(
-                      saveError ?? 'Data SIM berhasil disimpan. Nama profil telah diperbarui.',
+                      saveError ??
+                          'Data SIM berhasil disimpan. Nama profil telah diperbarui.',
                       style: TextStyle(
                         fontSize: 14,
                         color: saveError != null
@@ -1078,7 +1249,12 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                       children: [
                         Text(
                           'Periksa data di bawah. Anda dapat mengubah jika foto kabur/buram.',
-                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
                         ),
                         const SizedBox(height: 16),
                         TextField(
@@ -1087,7 +1263,11 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                           enableSuggestions: false,
                           decoration: InputDecoration(
                             labelText: 'Nama',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusSm,
+                              ),
+                            ),
                           ),
                           onChanged: (_) => setDialogState(() {}),
                         ),
@@ -1098,7 +1278,11 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                           enableSuggestions: false,
                           decoration: InputDecoration(
                             labelText: 'Nomor SIM',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusSm,
+                              ),
+                            ),
                           ),
                           keyboardType: TextInputType.number,
                           onChanged: (_) => setDialogState(() {}),
@@ -1106,8 +1290,11 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                         const SizedBox(height: 20),
                         CheckboxListTile(
                           value: dataSetuju,
-                          onChanged: isSaving ? null : (value) =>
-                              setDialogState(() => dataSetuju = value ?? false),
+                          onChanged: isSaving
+                              ? null
+                              : (value) => setDialogState(
+                                  () => dataSetuju = value ?? false,
+                                ),
                           title: const Text(
                             'Data sudah sesuai dan setuju',
                             style: TextStyle(fontSize: 14),
@@ -1178,7 +1365,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
   }) async {
     if (nama.isEmpty || nomorSIM.isEmpty) {
       onError?.call('Nama dan nomor SIM wajib diisi');
-      if (onError == null && mounted) _showSnackBar('Nama dan nomor SIM wajib diisi', isError: true);
+      if (onError == null && mounted) {
+        _showSnackBar('Nama dan nomor SIM wajib diisi', isError: true);
+      }
       return;
     }
 
@@ -1199,7 +1388,10 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       if (usedByOther) {
         onError?.call('Nomor sim sudah pernah dipakai di akun lain.');
         if (onError == null && mounted) {
-          _showSnackBar('Nomor sim sudah pernah dipakai di akun lain.', isError: true);
+          _showSnackBar(
+            'Nomor sim sudah pernah dipakai di akun lain.',
+            isError: true,
+          );
         }
         return;
       }
@@ -1217,7 +1409,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       }
       onSuccess?.call();
       if (onSuccess == null && mounted) {
-        _showSnackBar('Data SIM berhasil disimpan. Nama profil telah diperbarui.');
+        _showSnackBar(
+          'Data SIM berhasil disimpan. Nama profil telah diperbarui.',
+        );
       }
     } catch (e) {
       final msg = e.toString().replaceAll('Exception: ', '');
@@ -1240,7 +1434,10 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            Icon(Icons.directions_car, color: Theme.of(ctx).colorScheme.primary),
+            Icon(
+              Icons.directions_car,
+              color: Theme.of(ctx).colorScheme.primary,
+            ),
             const SizedBox(width: 8),
             const Text('Data Kendaraan'),
           ],
@@ -1284,17 +1481,19 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     if (!mounted || !okGuide) return;
 
     // Buka kamera untuk scan STNK otomatis
-    final scannedPlat = await StnkScanService.scanPlatFromCamera(context: context);
+    final scannedPlat = await StnkScanService.scanPlatFromCamera(
+      context: context,
+    );
     if (!mounted) return;
 
     // Jika tidak scan foto (batal atau tidak terbaca), jangan tampilkan form - untuk keamanan
     if (scannedPlat == null || scannedPlat.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
+        TrakaSnackBar.warning(
+          context,
+          Text(
             'Scan STNK diperlukan untuk mengisi data kendaraan. Silakan ambil foto STNK.',
           ),
-          backgroundColor: Colors.orange,
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -1306,11 +1505,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     if (!mounted) return;
     if (usedByOther) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Mobil milik Driver lain. Silakan scan STNK kendaraan Anda.',
-          ),
-          backgroundColor: Colors.red,
+        TrakaSnackBar.error(
+          context,
+          Text('Mobil milik Driver lain. Silakan scan STNK kendaraan Anda.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -1318,9 +1515,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Nomor plat terdeteksi: $scannedPlat'),
-        backgroundColor: Colors.green,
+      TrakaSnackBar.success(
+        context,
+        Text('Nomor plat terdeteksi: $scannedPlat'),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -1361,8 +1558,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       builder: (ctx) {
         final colorScheme = Theme.of(ctx).colorScheme;
         final l10n = TrakaL10n.of(context);
-        final pending =
-            VerificationService.hasPendingVehicleChangeRequest(_userData);
+        final pending = VerificationService.hasPendingVehicleChangeRequest(
+          _userData,
+        );
         return SafeArea(
           child: Padding(
             padding: EdgeInsets.only(
@@ -1412,7 +1610,10 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  _vehicleLockedRow('Plat', _displayStr(_userData['vehiclePlat'])),
+                  _vehicleLockedRow(
+                    'Plat',
+                    _displayStr(_userData['vehiclePlat']),
+                  ),
                   _vehicleLockedRow(
                     'Merek',
                     _displayStr(_userData['vehicleMerek']),
@@ -1548,17 +1749,16 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
           children: [
             const CircularProgressIndicator(),
             const SizedBox(width: 16),
-            Expanded(
-              child: Text(TrakaL10n.of(context).vehicleStnkUploading),
-            ),
+            Expanded(child: Text(TrakaL10n.of(context).vehicleStnkUploading)),
           ],
         ),
       ),
     );
 
     try {
-      final compressed =
-          await ImageCompressionService.compressForUpload(xfile.path);
+      final compressed = await ImageCompressionService.compressForUpload(
+        xfile.path,
+      );
       final file = File(compressed);
       final ref = FirebaseStorage.instance.ref().child(
         'users/${user.uid}/vehicle_change_stnk_${DateTime.now().millisecondsSinceEpoch}.jpg',
@@ -1592,9 +1792,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       if (mounted) Navigator.of(context).pop();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$e'),
-            backgroundColor: Colors.red,
+          TrakaSnackBar.error(
+            context,
+            Text('$e'),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -1657,7 +1857,11 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
         (route) => false,
       );
     } catch (e) {
-      if (mounted) _showSnackBar('${TrakaL10n.of(context).deleteAccountFailed}: $e', isError: true);
+      if (!mounted) return;
+      _showSnackBar(
+        '${TrakaL10n.of(context).deleteAccountFailed}: $e',
+        isError: true,
+      );
     }
   }
 
@@ -1696,9 +1900,9 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                 TrakaL10n.of(context).locale == AppLocale.id
                     ? 'Kunci dengan sidik jari/wajah'
                     : 'Lock with fingerprint/face',
-                style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  ctx,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Text(
@@ -1706,8 +1910,8 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                     ? 'Minta verifikasi saat buka app dari background'
                     : 'Require verification when opening app from background',
                 style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 24),
               const BiometricToggleWidget(),
@@ -1721,24 +1925,23 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
   }
 
   void _showSnackBar(String msg, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: isError ? Colors.red : null,
-      ),
-    );
+    if (isError) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(TrakaSnackBar.error(context, Text(msg)));
+    } else {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(TrakaSnackBar.info(context, Text(msg)));
+    }
   }
 
   void _showSnackBarWithRetry(String msg, {required VoidCallback onRetry}) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: Colors.red,
-        action: SnackBarAction(
-          label: 'Coba lagi',
-          textColor: Colors.white,
-          onPressed: onRetry,
-        ),
+      TrakaSnackBar.error(
+        context,
+        Text(msg),
+        action: SnackBarAction(label: 'Coba lagi', onPressed: onRetry),
       ),
     );
   }
@@ -1770,7 +1973,10 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
           Semantics(
             label: TrakaL10n.of(context).logout,
             button: true,
-            child: IconButton(icon: const Icon(Icons.logout), onPressed: _onLogout),
+            child: IconButton(
+              icon: const Icon(Icons.logout),
+              onPressed: _onLogout,
+            ),
           ),
         ],
       ),
@@ -1791,538 +1997,550 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                 ),
               ),
               child: SingleChildScrollView(
-                  padding: EdgeInsets.only(
-                    left: context.responsive.spacing(AppTheme.spacingLg),
-                    right: context.responsive.spacing(AppTheme.spacingLg),
-                    top: context.responsive.spacing(AppTheme.spacingLg),
-                    bottom: context.responsive.spacing(AppTheme.spacingLg) +
-                        MediaQuery.paddingOf(context).bottom +
-                        96,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (_profileLoadIncomplete)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Material(
-                            color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.35),
-                            borderRadius: BorderRadius.circular(12),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.cloud_off_outlined,
-                                    color: Theme.of(context).colorScheme.error,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      'Profil tidak selesai dimuat (jaringan atau antrean simpan data). Ketuk Muat ulang.',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Theme.of(context).colorScheme.onSurface,
-                                        height: 1.3,
-                                      ),
+                padding: EdgeInsets.only(
+                  left: context.responsive.spacing(AppTheme.spacingLg),
+                  right: context.responsive.spacing(AppTheme.spacingLg),
+                  top: context.responsive.spacing(AppTheme.spacingLg),
+                  bottom:
+                      context.responsive.spacing(AppTheme.spacingLg) +
+                      MediaQuery.paddingOf(context).bottom +
+                      96,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_profileLoadIncomplete)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Material(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.errorContainer.withValues(alpha: 0.35),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.cloud_off_outlined,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'Profil tidak selesai dimuat (jaringan atau antrean simpan data). Ketuk Muat ulang.',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                      height: 1.3,
                                     ),
                                   ),
-                                  _profileRefreshing
-                                      ? Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
+                                ),
+                                _profileRefreshing
+                                    ? Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
+                                        child: SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
                                           ),
-                                          child: SizedBox(
-                                            width: 22,
-                                            height: 22,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .primary,
+                                        ),
+                                      )
+                                    : TextButton(
+                                        onPressed: _onProfileBannerReload,
+                                        child: const Text('Muat ulang'),
+                                      ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (_userData['adminVerificationPendingAt'] != null)
+                      AdminVerificationBanner(
+                        userData: _userData,
+                        onSubmitted: () => _loadUser(),
+                      ),
+                    if (_verificationCompleteCount < 3) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        TrakaL10n.of(context).verificationCompleteCount(
+                          _verificationCompleteCount,
+                          3,
+                        ),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    // Layout horizontal: foto di kiri, nama dan rating di tengah, gambar admin di kanan
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Foto profil di sebelah kiri
+                        GestureDetector(
+                          onTap: _isCheckingFace
+                              ? null
+                              : () {
+                                  if (_canChangePhoto()) {
+                                    _pickAndVerifyPhoto();
+                                  } else {
+                                    final d = _daysUntilPhotoChange();
+                                    if (d != null && mounted) {
+                                      _showSnackBar(
+                                        TrakaL10n.of(
+                                          context,
+                                        ).photoLockedForDays(d),
+                                      );
+                                    }
+                                  }
+                                },
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              CircleAvatar(
+                                radius: 40, // Ukuran lebih kecil
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
+                                backgroundImage:
+                                    (photoUrl != null && photoUrl.isNotEmpty)
+                                    ? CachedNetworkImageProvider(photoUrl)
+                                    : null,
+                                child: (photoUrl == null || photoUrl.isEmpty)
+                                    ? Icon(
+                                        Icons.camera_alt,
+                                        size: 32,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      )
+                                    : null,
+                              ),
+                              if (_isCheckingFace)
+                                const CircularProgressIndicator(),
+                              if (!_canChangePhoto() && !_isCheckingFace)
+                                Positioned(
+                                  bottom: 0,
+                                  right: 0,
+                                  child: Icon(
+                                    Icons.lock,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    size: 20,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(width: context.responsive.spacing(16)),
+                        // Nama dan rating di tengah
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Nama (dengan centang verifikasi jika semua lengkap) + tombol Platinum; nama bisa turun ke bawah jika panjang
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Wrap(
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        Text(
+                                          _nameController.text.isNotEmpty
+                                              ? _nameController.text
+                                              : 'Nama Driver',
+                                          style: TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                          ),
+                                        ),
+                                        if (_isAllProfileVerified)
+                                          const SizedBox(width: 4),
+                                        if (_isAllProfileVerified)
+                                          Icon(
+                                            Icons.verified,
+                                            size: 20,
+                                            color: _verificationCheckColor,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  // Badge tier (Basic/Gold/Platinum)
+                                  FutureBuilder<(double?, int)>(
+                                    future: _driverRatingFuture,
+                                    builder: (context, snap) {
+                                      final avg = snap.data?.$1;
+                                      final count = snap.data?.$2 ?? 0;
+                                      final tier =
+                                          RatingService.getDriverTierLabel(
+                                            avg,
+                                            count,
+                                          );
+                                      Color tierColor;
+                                      switch (tier) {
+                                        case 'Platinum':
+                                          tierColor = Colors.deepPurple;
+                                          break;
+                                        case 'Gold':
+                                          tierColor = Colors.amber.shade700;
+                                          break;
+                                        default:
+                                          tierColor = Colors.grey.shade600;
+                                      }
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          left: 8,
+                                          right: 8,
+                                        ),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: tierColor,
+                                            borderRadius: BorderRadius.circular(
+                                              12,
                                             ),
                                           ),
-                                        )
-                                      : TextButton(
-                                          onPressed: _onProfileBannerReload,
-                                          child: const Text('Muat ulang'),
+                                          child: Text(
+                                            tier,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
+                                            ),
+                                          ),
                                         ),
+                                      );
+                                    },
+                                  ),
                                 ],
                               ),
-                            ),
-                          ),
-                        ),
-                      if (_userData['adminVerificationPendingAt'] != null)
-                        AdminVerificationBanner(
-                          userData: _userData,
-                          onSubmitted: () => _loadUser(),
-                        ),
-                      if (_verificationCompleteCount < 3) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          TrakaL10n.of(context).verificationCompleteCount(_verificationCompleteCount, 3),
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                      // Layout horizontal: foto di kiri, nama dan rating di tengah, gambar admin di kanan
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Foto profil di sebelah kiri
-                          GestureDetector(
-                            onTap: _isCheckingFace
-                                ? null
-                                : () {
-                                    if (_canChangePhoto()) {
-                                      _pickAndVerifyPhoto();
-                                    } else {
-                                      final d = _daysUntilPhotoChange();
-                                      if (d != null && mounted) {
-                                        _showSnackBar(
-                                          TrakaL10n.of(context).photoLockedForDays(d),
+                              const SizedBox(height: 8),
+                              // Rating bintang (5 bintang) + angka + jumlah ulasan
+                              FutureBuilder<(double?, int)>(
+                                future: _driverRatingFuture,
+                                builder: (context, snap) {
+                                  final avg = snap.data?.$1;
+                                  final count = snap.data?.$2 ?? 0;
+                                  return Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      ...List.generate(5, (index) {
+                                        final starValue = index + 1.0;
+                                        IconData icon;
+                                        if (avg == null ||
+                                            avg < starValue - 0.5) {
+                                          icon = Icons.star_border;
+                                        } else if (avg < starValue) {
+                                          icon = Icons.star_half;
+                                        } else {
+                                          icon = Icons.star;
+                                        }
+                                        return Icon(
+                                          icon,
+                                          color: Colors.amber.shade700,
+                                          size: 20,
                                         );
-                                      }
-                                    }
-                                  },
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                CircleAvatar(
-                                  radius: 40, // Ukuran lebih kecil
-                                  backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                  backgroundImage:
-                                      (photoUrl != null && photoUrl.isNotEmpty)
-                                      ? CachedNetworkImageProvider(photoUrl)
-                                      : null,
-                                  child: (photoUrl == null || photoUrl.isEmpty)
-                                      ? Icon(Icons.camera_alt, size: 32, color: Theme.of(context).colorScheme.onSurfaceVariant)
-                                      : null,
-                                ),
-                                if (_isCheckingFace)
-                                  const CircularProgressIndicator(),
-                                if (!_canChangePhoto() && !_isCheckingFace)
-                                  Positioned(
-                                    bottom: 0,
-                                    right: 0,
-                                    child: Icon(
-                                      Icons.lock,
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      size: 20,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          SizedBox(width: context.responsive.spacing(16)),
-                          // Nama dan rating di tengah
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Nama (dengan centang verifikasi jika semua lengkap) + tombol Platinum; nama bisa turun ke bawah jika panjang
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Wrap(
-                                        crossAxisAlignment:
-                                            WrapCrossAlignment.center,
-                                        children: [
-                                          Text(
-                                            _nameController.text.isNotEmpty
-                                                ? _nameController.text
-                                                : 'Nama Driver',
-                                            style: TextStyle(
-                                              fontSize: 20,
-                                              fontWeight: FontWeight.bold,
-                                              color: Theme.of(context).colorScheme.primary,
-                                            ),
+                                      }),
+                                      if (avg != null || count > 0) ...[
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          avg != null
+                                              ? '${avg.toStringAsFixed(1)}${count > 0 ? ' ($count ulasan)' : ''}'
+                                              : count > 0
+                                              ? '($count ulasan)'
+                                              : '',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
                                           ),
-                                          if (_isAllProfileVerified)
-                                            const SizedBox(width: 4),
-                                          if (_isAllProfileVerified)
-                                            Icon(
-                                              Icons.verified,
-                                              size: 20,
-                                              color: _verificationCheckColor,
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                    // Badge tier (Basic/Gold/Platinum)
-                                    FutureBuilder<(double?, int)>(
-                                      future: _driverRatingFuture,
-                                          builder: (context, snap) {
-                                            final avg = snap.data?.$1;
-                                            final count = snap.data?.$2 ?? 0;
-                                            final tier = RatingService.getDriverTierLabel(avg, count);
-                                            Color tierColor;
-                                            switch (tier) {
-                                              case 'Platinum':
-                                                tierColor = Colors.deepPurple;
-                                                break;
-                                              case 'Gold':
-                                                tierColor = Colors.amber.shade700;
-                                                break;
-                                              default:
-                                                tierColor = Colors.grey.shade600;
-                                            }
-                                            return Padding(
-                                              padding: const EdgeInsets.only(left: 8, right: 8),
-                                              child: Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                                decoration: BoxDecoration(
-                                                  color: tierColor,
-                                                  borderRadius: BorderRadius.circular(12),
-                                                ),
-                                                child: Text(
-                                                  tier,
-                                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                                                ),
-                                              ),
-                                            );
-                                          },
                                         ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                // Rating bintang (5 bintang) + angka + jumlah ulasan
-                                FutureBuilder<(double?, int)>(
-                                  future: _driverRatingFuture,
-                                  builder: (context, snap) {
-                                    final avg = snap.data?.$1;
-                                    final count = snap.data?.$2 ?? 0;
-                                    return Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        ...List.generate(5, (index) {
-                                          final starValue = index + 1.0;
-                                          IconData icon;
-                                          if (avg == null || avg < starValue - 0.5) {
-                                            icon = Icons.star_border;
-                                          } else if (avg < starValue) {
-                                            icon = Icons.star_half;
-                                          } else {
-                                            icon = Icons.star;
-                                          }
-                                          return Icon(icon, color: Colors.amber.shade700, size: 20);
-                                        }),
-                                        if (avg != null || count > 0) ...[
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            avg != null
-                                                ? '${avg.toStringAsFixed(1)}${count > 0 ? ' ($count ulasan)' : ''}'
-                                                : count > 0
-                                                    ? '($count ulasan)'
-                                                    : '',
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                            ),
-                                          ),
-                                        ],
                                       ],
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (daysPhoto != null) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          'Foto profil dapat diubah setelah $daysPhoto hari lagi.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ] else if (_canChangePhoto()) ...[
-                        const SizedBox(height: 12),
-                        // Garis dekoratif putih-biru bergantian dari ujung kiri sampai kanan (lebih besar)
-                        Row(
-                          children: List.generate(20, (index) {
-                            return Expanded(
-                              child: Container(
-                                height:
-                                    4, // Lebih besar dari sebelumnya (2 -> 4)
-                                color: index % 2 == 0
-                                    ? Colors.white
-                                    : Theme.of(context).colorScheme.primary,
+                                    ],
+                                  );
+                                },
                               ),
-                            );
-                          }),
+                            ],
+                          ),
                         ),
                       ],
-                      const SizedBox(height: 24),
-                      _buildSectionCard(
-                        icon: Icons.verified_user_outlined,
-                        title: TrakaL10n.of(context).verification,
-                        children: [
-                          if (!_isAllProfileVerified)
-                            Padding(
-                              padding: EdgeInsets.only(
-                                bottom: context.responsive.spacing(10),
-                              ),
-                              child: Text(
-                                TrakaL10n.of(context).driverVerificationSubtitle,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  height: 1.35,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                              ),
+                    ),
+                    if (daysPhoto != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'Foto profil dapat diubah setelah $daysPhoto hari lagi.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ] else if (_canChangePhoto()) ...[
+                      const SizedBox(height: 12),
+                      // Garis dekoratif putih-biru bergantian dari ujung kiri sampai kanan (lebih besar)
+                      Row(
+                        children: List.generate(20, (index) {
+                          return Expanded(
+                            child: Container(
+                              height: 4, // Lebih besar dari sebelumnya (2 -> 4)
+                              color: index % 2 == 0
+                                  ? Colors.white
+                                  : Theme.of(context).colorScheme.primary,
                             ),
-                          GridView.count(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            crossAxisCount: 3,
-                            mainAxisSpacing: context.responsive.spacing(12),
-                            crossAxisSpacing: context.responsive.spacing(12),
-                            childAspectRatio:
-                                _profileGridAspectRatio(context, 0.92),
-                            children: [
-                              _buildMenuCard(
-                                title: TrakaL10n.of(context).vehicleData,
-                                icon: Icons.directions_car,
-                                verified: _isDataKendaraanFilled,
-                                verifiedIconColor: _vehicleVerificationIconColor,
-                                onTap: _showDataKendaraanDialog,
-                              ),
-                              _buildMenuCard(
-                                title: TrakaL10n.of(context).driverVerification,
-                                icon: Icons.person_add_alt_1,
-                                verified: _isDriverVerified,
-                                verifiedIconColor: _verificationCheckColor,
-                                onTap: _isDriverVerified
-                                    ? _showVerifikasiSudahBerhasilDialog
-                                    : _showVerifikasiDriverDialog,
-                              ),
-                              _buildMenuCard(
-                                title: TrakaL10n.of(context).emailAndPhone,
-                                icon: Icons.contact_phone,
-                                verified: _hasVerifiedPhone,
-                                verifiedIconColor: _verificationCheckColor,
-                                onTap: _showEmailDanTelpSheet,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      _buildSectionCard(
-                        icon: Icons.tune_rounded,
-                        title: TrakaL10n.of(context).settings,
-                        children: [
-                          GridView.count(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            crossAxisCount: 2,
-                            mainAxisSpacing: context.responsive.spacing(12),
-                            crossAxisSpacing: context.responsive.spacing(12),
-                            childAspectRatio:
-                                _profileGridAspectRatio(context, 0.92),
-                            children: [
-                              _buildMenuCard(
-                                title: TrakaL10n.of(context).locale ==
-                                        AppLocale.id
-                                    ? 'Sinkronkan data'
-                                    : 'Sync data',
-                                icon: Icons.sync,
-                                onTap: () {
-                                  HybridForegroundRecovery
-                                      .requestManualDriverSyncAll();
-                                  if (!context.mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        TrakaL10n.of(context).locale ==
-                                                AppLocale.id
-                                            ? 'Memperbarui jadwal, chat, dan data order…'
-                                            : 'Refreshing schedule, chat, and orders…',
-                                      ),
-                                      behavior: SnackBarBehavior.floating,
-                                      duration: const Duration(seconds: 2),
-                                    ),
-                                  );
-                                },
-                              ),
-                              _buildMenuCard(
-                                title: TrakaL10n.of(context).changePassword,
-                                icon: Icons.lock_outline,
-                                onTap: _showChangePasswordDialog,
-                              ),
-                              _buildMenuCard(
-                                title: TrakaL10n.of(context).paymentHistory,
-                                icon: Icons.receipt_long,
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          const PaymentHistoryScreen(
-                                              isDriver: true),
-                                    ),
-                                  );
-                                },
-                              ),
-                              _buildMenuCard(
-                                title: 'Rekening & QRIS',
-                                icon: Icons.account_balance,
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          const DriverPaymentMethodsScreen(),
-                                    ),
-                                  );
-                                },
-                              ),
-                              _buildMenuCard(
-                                title:
-                                    TrakaL10n.of(context).driverEarningsTitle,
-                                icon: Icons.account_balance_wallet,
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          const DriverEarningsScreen(),
-                                    ),
-                                  );
-                                },
-                              ),
-                              _buildMenuCard(
-                                title: TrakaL10n.of(context)
-                                    .contributionTariffTitle,
-                                icon: Icons.info_outline,
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          const ContributionDriverScreen(),
-                                    ),
-                                  );
-                                },
-                              ),
-                              _buildMenuCard(
-                                title: TrakaL10n.of(context).language,
-                                icon: Icons.language,
-                                onTap: _showLanguageSelector,
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: context.responsive.spacing(12)),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context)
-                                .notificationSettingsTitle,
-                            icon: Icons.notifications_outlined,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) =>
-                                      const NotificationSettingsScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                          SizedBox(height: context.responsive.spacing(8)),
-                          _buildLiteModeTile(),
-                        ],
-                      ),
-                      _buildSectionCard(
-                        icon: Icons.help_outline_rounded,
-                        title: TrakaL10n.of(context).help,
-                        children: [
-                          GridView.count(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            crossAxisCount: 3,
-                            mainAxisSpacing: context.responsive.spacing(12),
-                            crossAxisSpacing: context.responsive.spacing(12),
-                            childAspectRatio:
-                                _profileGridAspectRatio(context, 0.92),
-                            children: [
-                              _buildMenuCard(
-                                title: TrakaL10n.of(context).infoAndPromo,
-                                icon: Icons.campaign_outlined,
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => const PromoListScreen(
-                                          role: 'driver'),
-                                    ),
-                                  );
-                                },
-                              ),
-                              _buildMenuCard(
-                                title: TrakaL10n.of(context).guide,
-                                icon: Icons.menu_book_outlined,
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          const PanduanAplikasiScreen(),
-                                    ),
-                                  );
-                                },
-                              ),
-                              _buildMenuCard(
-                                title: TrakaL10n.of(context).suggestionToAdmin,
-                                icon: Icons.feedback_outlined,
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          const SaranKeAdminScreen(),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      _buildSectionCard(
-                        icon: Icons.more_horiz_rounded,
-                        title: TrakaL10n.of(context).other,
-                        children: [
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).locale == AppLocale.id
-                                ? 'Kunci dengan sidik jari/wajah'
-                                : 'Lock with fingerprint/face',
-                            icon: Icons.fingerprint,
-                            onTap: _showBiometricSheet,
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).showLowRamWarning,
-                            icon: Icons.memory_outlined,
-                            onTap: () async {
-                              await LowRamWarningService.resetWarningFlag();
-                              if (context.mounted) {
-                                await LowRamWarningService.showWarningIfLowRam(
-                                    context);
-                              }
-                            },
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).deleteAccount,
-                            icon: Icons.delete_outline,
-                            onTap: _showHapusAkunDialog,
-                            isDanger: true,
-                          ),
-                        ],
+                          );
+                        }),
                       ),
                     ],
-                  ),
+                    const SizedBox(height: 24),
+                    _buildSectionCard(
+                      icon: Icons.verified_user_outlined,
+                      title: TrakaL10n.of(context).verification,
+                      children: [
+                        if (!_isAllProfileVerified)
+                          Padding(
+                            padding: EdgeInsets.only(
+                              bottom: context.responsive.spacing(10),
+                            ),
+                            child: Text(
+                              TrakaL10n.of(context).driverVerificationSubtitle,
+                              style: TextStyle(
+                                fontSize: 12,
+                                height: 1.35,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        GridView.count(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          crossAxisCount: 3,
+                          mainAxisSpacing: context.responsive.spacing(12),
+                          crossAxisSpacing: context.responsive.spacing(12),
+                          childAspectRatio: _profileGridAspectRatio(
+                            context,
+                            0.92,
+                          ),
+                          children: [
+                            _buildMenuCard(
+                              title: TrakaL10n.of(context).vehicleData,
+                              icon: Icons.directions_car,
+                              verified: _isDataKendaraanFilled,
+                              verifiedIconColor: _vehicleVerificationIconColor,
+                              onTap: _showDataKendaraanDialog,
+                            ),
+                            _buildMenuCard(
+                              title: TrakaL10n.of(context).driverVerification,
+                              icon: Icons.person_add_alt_1,
+                              verified: _isDriverVerified,
+                              verifiedIconColor: _verificationCheckColor,
+                              onTap: _isDriverVerified
+                                  ? _showVerifikasiSudahBerhasilDialog
+                                  : _showVerifikasiDriverDialog,
+                            ),
+                            _buildMenuCard(
+                              title: TrakaL10n.of(context).emailAndPhone,
+                              icon: Icons.contact_phone,
+                              verified: _hasVerifiedPhone,
+                              verifiedIconColor: _verificationCheckColor,
+                              onTap: _showEmailDanTelpSheet,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    _buildSectionCard(
+                      icon: Icons.tune_rounded,
+                      title: TrakaL10n.of(context).settings,
+                      children: [
+                        _buildProfileListTile(
+                          icon: Icons.lock_outline_rounded,
+                          title:
+                              (_auth.currentUser != null &&
+                                  _userHasPasswordProvider(_auth.currentUser!))
+                              ? TrakaL10n.of(context).changePassword
+                              : TrakaL10n.of(context).addPasswordMenu,
+                          onTap: _showChangePasswordDialog,
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.language_rounded,
+                          title: TrakaL10n.of(context).language,
+                          onTap: _showLanguageSelector,
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.notifications_outlined,
+                          title: TrakaL10n.of(
+                            context,
+                          ).notificationSettingsTitle,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    const NotificationSettingsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.receipt_long_rounded,
+                          title: TrakaL10n.of(context).paymentHistory,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const PaymentHistoryScreen(isDriver: true),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.account_balance_rounded,
+                          title: 'Rekening & QRIS',
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const DriverPaymentMethodsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.account_balance_wallet_outlined,
+                          title: TrakaL10n.of(context).driverEarningsTitle,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const DriverEarningsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.info_outline_rounded,
+                          title: TrakaL10n.of(context).contributionTariffTitle,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const ContributionDriverScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        SizedBox(height: context.responsive.spacing(12)),
+                        _buildLiteModeTile(),
+                      ],
+                    ),
+                    _buildSectionCard(
+                      icon: Icons.help_outline_rounded,
+                      title: TrakaL10n.of(context).help,
+                      children: [
+                        _buildProfileListTile(
+                          icon: Icons.campaign_outlined,
+                          title: TrakaL10n.of(context).infoAndPromo,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const PromoListScreen(role: 'driver'),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.menu_book_outlined,
+                          title: TrakaL10n.of(context).guide,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const PanduanAplikasiScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.feedback_outlined,
+                          title: TrakaL10n.of(context).suggestionToAdmin,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const SaranKeAdminScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    _buildSectionCard(
+                      icon: Icons.more_horiz_rounded,
+                      title: TrakaL10n.of(context).other,
+                      children: [
+                        _buildProfileListTile(
+                          icon: Icons.fingerprint_rounded,
+                          title: TrakaL10n.of(context).locale == AppLocale.id
+                              ? 'Kunci dengan sidik jari/wajah'
+                              : 'Lock with fingerprint/face',
+                          onTap: _showBiometricSheet,
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.memory_outlined,
+                          title: TrakaL10n.of(context).showLowRamWarning,
+                          onTap: () async {
+                            await LowRamWarningService.resetWarningFlag();
+                            if (context.mounted) {
+                              await LowRamWarningService.showWarningIfLowRam(
+                                context,
+                              );
+                            }
+                          },
+                        ),
+                        _buildProfileMenuDivider(),
+                        _buildProfileListTile(
+                          icon: Icons.delete_outline_rounded,
+                          title: TrakaL10n.of(context).deleteAccount,
+                          onTap: _showHapusAkunDialog,
+                          isDanger: true,
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
+              ),
             ),
           ),
           // Toggle tema (kiri) + kontak admin (kanan): di atas inset sistem & nav bar.
@@ -2335,10 +2553,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
               minimum: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  ThemeToggleWidget(),
-                  AdminContactWidget(),
-                ],
+                children: const [ThemeToggleWidget(), AdminContactWidget()],
               ),
             ),
           ),
@@ -2357,27 +2572,35 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
+                        CircularProgressIndicator(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                         const SizedBox(height: 16),
                         Text(
                           'Membaca SIM...',
-                          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           'Proses mungkin 30–60 detik. Mohon tunggu.',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
                         ),
                         if (_isLowRamDevice) ...[
                           const SizedBox(height: 8),
                           Text(
                             'Perangkat RAM rendah terdeteksi — proses dioptimalkan.',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontSize: 12,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontSize: 12,
+                                ),
                           ),
                         ],
                       ],
@@ -2413,9 +2636,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
         color: cs.surfaceContainerLow,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: cs.outlineVariant.withValues(alpha: 0.45),
-          ),
+          side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.45)),
         ),
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
@@ -2450,6 +2671,71 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     );
   }
 
+  Widget _buildProfileMenuDivider() {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Divider(
+        height: 1,
+        thickness: 1,
+        color: cs.outlineVariant.withValues(alpha: 0.45),
+      ),
+    );
+  }
+
+  /// Menu baris tunggal — rapi, mudah dipindai (selaras Material 3).
+  Widget _buildProfileListTile({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    bool isDanger = false,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    final accent = isDanger ? cs.error : cs.primary;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            vertical: context.responsive.spacing(10),
+            horizontal: 2,
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, size: 22, color: accent),
+              ),
+              SizedBox(width: context.responsive.spacing(14)),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: context.responsive.fontSize(15),
+                    height: 1.25,
+                    color: isDanger ? cs.error : cs.onSurface,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.85),
+                size: 22,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLiteModeTile() {
     return ValueListenableBuilder<bool>(
       valueListenable: LiteModeService.liteModeNotifier,
@@ -2464,13 +2750,19 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
             color: Theme.of(context).colorScheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(context.responsive.radius(12)),
             border: Border.all(
-              color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+              color: Theme.of(
+                context,
+              ).colorScheme.outline.withValues(alpha: 0.5),
               width: 1,
             ),
           ),
           child: Row(
             children: [
-              Icon(Icons.speed, color: Theme.of(context).colorScheme.primary, size: 24),
+              Icon(
+                Icons.speed,
+                color: Theme.of(context).colorScheme.primary,
+                size: 24,
+              ),
               SizedBox(width: context.responsive.spacing(12)),
               Expanded(
                 child: Column(
@@ -2530,20 +2822,26 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
           borderRadius: BorderRadius.circular(context.responsive.radius(12)),
           boxShadow: [
             BoxShadow(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.08),
               blurRadius: 8,
               offset: const Offset(0, 4),
               spreadRadius: 0,
             ),
             BoxShadow(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.04),
               blurRadius: 4,
               offset: const Offset(0, 2),
               spreadRadius: 0,
             ),
           ],
           border: Border.all(
-            color: isDanger ? Colors.red.withValues(alpha: 0.5) : Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+            color: isDanger
+                ? Colors.red.withValues(alpha: 0.5)
+                : Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
             width: 1,
           ),
         ),
@@ -2579,14 +2877,18 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                       ),
                   ],
                 ),
-                SizedBox(height: context.responsive.spacing(isCompact ? 6 : 10)),
+                SizedBox(
+                  height: context.responsive.spacing(isCompact ? 6 : 10),
+                ),
                 Text(
                   title,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: fontSize,
                     fontWeight: FontWeight.w600,
-                    color: isDanger ? Colors.red : Theme.of(context).colorScheme.onSurface,
+                    color: isDanger
+                        ? Colors.red
+                        : Theme.of(context).colorScheme.onSurface,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -2691,29 +2993,17 @@ class _TeleponVerifikasiDialogState extends State<_TeleponVerifikasiDialog> {
       },
       verificationFailed: (FirebaseAuthException e) {
         if (!mounted) return;
-        String message = 'Verifikasi gagal. Coba lagi.';
-        final code = e.code;
-        final msg = (e.message ?? '').toLowerCase();
-        if (code == 'missing-client-identifier' ||
-            msg.contains('app identifier') ||
-            msg.contains('play integrity') ||
-            msg.contains('recaptcha')) {
-          message =
-              'Perangkat/aplikasi belum terverifikasi oleh Firebase. '
-              'Pastikan SHA-1 sudah ditambahkan di Firebase Console dan coba di HP asli (bukan emulator). '
-              'Lihat docs/FIREBASE_OTP_LANGKAH.md untuk langkah perbaikan.';
-        } else if (msg.contains('blocked') ||
-            msg.contains('unusual activity')) {
-          message =
-              'Perangkat ini sementara diblokir karena aktivitas tidak biasa (terlalu banyak percobaan). '
-              'Tunggu beberapa jam lalu coba lagi, atau coba dari jaringan lain.';
-        } else if (e.message != null && e.message!.isNotEmpty) {
-          message = e.message!;
-        }
         setState(() {
           _loading = false;
-          _error = message;
+          _error = null;
         });
+        final l10n = AppLocalizations(locale: LocaleService.current);
+        showPhoneVerificationFailedSnackBar(
+          context,
+          exception: e,
+          analyticsSource: 'profile_driver_phone',
+          l10n: l10n,
+        );
       },
       codeSent: (String verificationId, int? resendToken) {
         if (!mounted) return;
@@ -2808,7 +3098,9 @@ class _TeleponVerifikasiDialogState extends State<_TeleponVerifikasiDialog> {
                   controller: _phoneController,
                   decoration: InputDecoration(
                     labelText: 'No. Telepon',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                     prefixText: '${IndonesiaConfig.phonePrefix} ',
                   ),
                   keyboardType: TextInputType.phone,
@@ -2817,14 +3109,19 @@ class _TeleponVerifikasiDialogState extends State<_TeleponVerifikasiDialog> {
               ] else ...[
                 Text(
                   'Kode dikirim ke $_phoneE164',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _otpController,
                   decoration: InputDecoration(
                     labelText: 'Kode verifikasi (6 digit)',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                   ),
                   keyboardType: TextInputType.number,
                   maxLength: 6,
@@ -2976,10 +3273,11 @@ class _TambahEmailOtpDialogState extends State<_TambahEmailOtpDialog> {
         password: password,
       );
       await user.linkWithCredential(credential);
-      await user.reload(); // Refresh token setelah link agar tidak trigger logout
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-        'email': email,
-      });
+      await user
+          .reload(); // Refresh token setelah link agar tidak trigger logout
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update(
+        {'email': email},
+      );
       if (!mounted) return;
       widget.onSuccess();
     } on FirebaseAuthException catch (e) {
@@ -3031,12 +3329,16 @@ class _TambahEmailOtpDialogState extends State<_TambahEmailOtpDialog> {
                   controller: _emailController,
                   decoration: InputDecoration(
                     labelText: 'Email',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                     hintText: 'contoh@email.com',
                   ),
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Email wajib diisi';
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Email wajib diisi';
+                    }
                     if (!RegExp(r'^[\w.-]+@[\w.-]+\.\w+$').hasMatch(v.trim())) {
                       return 'Format email tidak valid';
                     }
@@ -3048,7 +3350,9 @@ class _TambahEmailOtpDialogState extends State<_TambahEmailOtpDialog> {
                   controller: _passwordController,
                   decoration: InputDecoration(
                     labelText: 'Password baru',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                     hintText: 'Min. 8 karakter, ada angka',
                   ),
                   obscureText: true,
@@ -3064,11 +3368,15 @@ class _TambahEmailOtpDialogState extends State<_TambahEmailOtpDialog> {
                   controller: _confirmController,
                   decoration: InputDecoration(
                     labelText: 'Konfirmasi password',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                   ),
                   obscureText: true,
                   validator: (v) {
-                    if (v != _passwordController.text) return 'Password tidak sama';
+                    if (v != _passwordController.text) {
+                      return 'Password tidak sama';
+                    }
                     return null;
                   },
                 ),
@@ -3085,7 +3393,9 @@ class _TambahEmailOtpDialogState extends State<_TambahEmailOtpDialog> {
                   controller: _otpController,
                   decoration: InputDecoration(
                     labelText: 'Kode verifikasi (6 digit)',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                   ),
                   keyboardType: TextInputType.number,
                   maxLength: 6,
@@ -3102,9 +3412,7 @@ class _TambahEmailOtpDialogState extends State<_TambahEmailOtpDialog> {
           child: const Text('Batal'),
         ),
         FilledButton(
-          onPressed: _loading
-              ? null
-              : (_stepOtp ? _verifyAndLink : _sendOtp),
+          onPressed: _loading ? null : (_stepOtp ? _verifyAndLink : _sendOtp),
           child: _loading
               ? const SizedBox(
                   width: 20,
@@ -3250,12 +3558,16 @@ class _UbahEmailOtpDialogState extends State<_UbahEmailOtpDialog> {
                   controller: _emailController,
                   decoration: InputDecoration(
                     labelText: 'Email baru',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                     hintText: 'contoh@email.com',
                   ),
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Email wajib diisi';
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Email wajib diisi';
+                    }
                     if (!RegExp(r'^[\w.-]+@[\w.-]+\.\w+$').hasMatch(v.trim())) {
                       return 'Format email tidak valid';
                     }
@@ -3275,7 +3587,9 @@ class _UbahEmailOtpDialogState extends State<_UbahEmailOtpDialog> {
                   controller: _otpController,
                   decoration: InputDecoration(
                     labelText: 'Kode verifikasi (6 digit)',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                    ),
                   ),
                   keyboardType: TextInputType.number,
                   maxLength: 6,
@@ -3292,9 +3606,7 @@ class _UbahEmailOtpDialogState extends State<_UbahEmailOtpDialog> {
           child: const Text('Batal'),
         ),
         FilledButton(
-          onPressed: _loading
-              ? null
-              : (_stepOtp ? _verifyAndUpdate : _sendOtp),
+          onPressed: _loading ? null : (_stepOtp ? _verifyAndUpdate : _sendOtp),
           child: _loading
               ? const SizedBox(
                   width: 20,

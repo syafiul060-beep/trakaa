@@ -9,6 +9,7 @@ import '../services/order_service.dart';
 import '../theme/app_theme.dart';
 import 'traka_bottom_sheet.dart';
 import 'traka_empty_state.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Sheet pilih jadwal target untuk pindah pesanan terjadwal.
 void showPindahJadwalSheet(
@@ -92,12 +93,9 @@ class _PindahJadwalSheetState extends State<_PindahJadwalSheet> {
       if (maxPassengers > 0 && usedSlots + totalPenumpang > maxPassengers) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
+            TrakaSnackBar.error(context, Text(
                 'Kapasitas jadwal target tidak cukup (sudah $usedSlots slot terpakai, max $maxPassengers).',
-              ),
-              backgroundColor: Colors.red,
-            ),
+              )),
           );
         }
         return;
@@ -124,14 +122,11 @@ class _PindahJadwalSheetState extends State<_PindahJadwalSheet> {
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pesanan berhasil dipindah. Penumpang akan dapat notifikasi.'),
-          backgroundColor: Colors.green,
-        ),
+        TrakaSnackBar.success(context, Text('Pesanan berhasil dipindah. Penumpang akan dapat notifikasi.')),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(err ?? 'Gagal'), backgroundColor: Colors.red),
+        TrakaSnackBar.error(context, Text(err ?? 'Gagal')),
       );
     }
   }

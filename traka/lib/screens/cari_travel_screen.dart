@@ -22,6 +22,7 @@ import '../models/order_model.dart';
 import '../services/active_drivers_service.dart';
 import '../services/route_category_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/traka_snackbar.dart';
 import '../theme/app_interaction_styles.dart';
 import '../widgets/traka_empty_state.dart';
 import '../services/app_analytics_service.dart';
@@ -1261,10 +1262,10 @@ class _RequestFormSheetState extends State<_RequestFormSheet> {
       logError('CariTravelScreen._RequestFormSheet._submit', e, st);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(TrakaL10n.of(context).failedToSendDetail(e)),
+          TrakaSnackBar.error(
+            context,
+            Text(TrakaL10n.of(context).failedToSendDetail(e)),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.red,
           ),
         );
       }

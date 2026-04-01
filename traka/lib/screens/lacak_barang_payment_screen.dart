@@ -12,6 +12,7 @@ import '../services/payment_context_service.dart';
 import '../services/lacak_barang_service.dart';
 import 'cek_lokasi_barang_screen.dart';
 import 'payment_history_screen.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Halaman bayar Lacak Barang via Google Play.
 /// [isPengirim]: true = pengirim bayar, false = penerima bayar.
@@ -114,12 +115,8 @@ class _LacakBarangPaymentScreenState extends State<LacakBarangPaymentScreen> {
         setState(() => _purchasing = false);
         final navigator = Navigator.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(TrakaL10n.of(context).paymentSuccessTrackGoods),
-            backgroundColor: Colors.green,
-            action: SnackBarAction(
+          TrakaSnackBar.success(context, Text(TrakaL10n.of(context).paymentSuccessTrackGoods), action: SnackBarAction(
               label: TrakaL10n.of(context).viewPaymentHistory,
-              textColor: Colors.white,
               onPressed: () {
                 navigator.push(
                   MaterialPageRoute(
@@ -127,8 +124,7 @@ class _LacakBarangPaymentScreenState extends State<LacakBarangPaymentScreen> {
                   ),
                 );
               },
-            ),
-          ),
+            )),
         );
         navigator.pushReplacement(
           MaterialPageRoute<void>(
@@ -366,9 +362,9 @@ class _LacakBarangPaymentScreenState extends State<LacakBarangPaymentScreen> {
                               : 'Bayar via Google Play',
                     ),
                     style: AppInteractionStyles.elevatedPrimary(
-                      backgroundColor: Colors.orange.shade700,
-                      foregroundColor: Colors.white,
-                      shadowTint: Colors.orange.shade700,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      shadowTint: Theme.of(context).colorScheme.primary,
                     ).copyWith(
                       padding: WidgetStateProperty.all(
                         const EdgeInsets.symmetric(vertical: 16),

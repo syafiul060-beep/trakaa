@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/traka_snackbar.dart';
 import '../widgets/traka_empty_state.dart';
 import '../theme/app_interaction_styles.dart';
 import '../widgets/traka_l10n_scope.dart';
@@ -269,21 +270,25 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
                 ? 'Berhasil $successCount. $failCount gagal.'
                 : 'Gagal menghapus. ${lastError ?? ""}')
           : 'Berhasil menghapus $successCount pesan.';
+      final duration = failCount > 0
+          ? const Duration(seconds: 5)
+          : const Duration(seconds: 2);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: failCount > 0 ? Colors.orange : Colors.green,
-          duration: failCount > 0
-              ? const Duration(seconds: 5)
-              : const Duration(seconds: 2),
-          action: failCount > 0
-              ? SnackBarAction(
+        failCount > 0
+            ? TrakaSnackBar.warning(
+                context,
+                Text(msg),
+                duration: duration,
+                action: SnackBarAction(
                   label: 'OK',
-                  textColor: Colors.white,
                   onPressed: () {},
-                )
-              : null,
-        ),
+                ),
+              )
+            : TrakaSnackBar.success(
+                context,
+                Text(msg),
+                duration: duration,
+              ),
       );
     }
 

@@ -17,6 +17,10 @@ import '../theme/traka_visual_tokens.dart';
 import '../widgets/auth_loading_overlay.dart';
 import '../widgets/traka_loading_indicator.dart';
 import '../utils/phone_utils.dart';
+import '../utils/phone_verification_snackbar.dart';
+import '../theme/traka_snackbar.dart';
+import '../l10n/app_localizations.dart';
+import '../services/locale_service.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../services/biometric_login_service.dart';
 import '../services/device_service.dart';
@@ -208,7 +212,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         verificationFailed: (FirebaseAuthException e) {
           if (!mounted) return;
           setState(() => _loading = false);
-          _showSnack(e.message ?? 'Verifikasi gagal.', isError: true);
+          final l10n = AppLocalizations(locale: LocaleService.current);
+          showPhoneVerificationFailedSnackBar(
+            context,
+            exception: e,
+            analyticsSource: 'forgot_password_phone',
+            l10n: l10n,
+          );
         },
         codeSent: (String verificationId, int? resendToken) {
           if (!mounted) return;
@@ -451,13 +461,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   void _showSnack(String msg, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: isError ? Colors.red : null,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    if (isError) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        TrakaSnackBar.error(context, Text(msg)),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        TrakaSnackBar.info(context, Text(msg)),
+      );
+    }
   }
 
   @override

@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../services/biometric_login_service.dart';
 import '../services/biometric_lock_service.dart';
 import '../services/locale_service.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Toggle "Kunci dengan sidik jari/wajah" di Pengaturan.
 /// Hanya tampil jika device mendukung biometric.
@@ -242,19 +243,14 @@ class _BiometricToggleWidgetState extends State<BiometricToggleWidget> {
           : (e.message ??
               (isId ? 'Gagal menyimpan. Coba lagi.' : 'Could not save. Try again.'));
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          content: Text(msg),
-        ),
+        TrakaSnackBar.error(context, Text(msg)),
       );
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          content: Text(
+        TrakaSnackBar.error(
+          context,
+          Text(
             isId ? 'Terjadi kesalahan. Coba lagi.' : 'Something went wrong. Try again.',
           ),
         ),

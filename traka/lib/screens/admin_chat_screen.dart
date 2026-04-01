@@ -6,6 +6,7 @@ import '../models/support_ticket_model.dart';
 import '../services/support_chat_service.dart';
 import '../theme/app_interaction_styles.dart';
 import '../widgets/traka_empty_state.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Halaman live chat support: auto-reply bot, antrian, sambungan ke admin.
 /// Menampilkan nama admin saat terhubung.
@@ -51,16 +52,12 @@ class _AdminChatScreenState extends State<AdminChatScreen> {
     if (!ok) {
       _textController.text = text;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             SupportChatService.lastBlockedReason ??
                 'Gagal mengirim pesan. Periksa koneksi dan coba lagi.',
-          ),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
+          ), duration: const Duration(seconds: 4),
           behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-        ),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 100)),
       );
       return;
     }

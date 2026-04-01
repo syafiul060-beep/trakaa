@@ -6,6 +6,7 @@ import '../widgets/traka_l10n_scope.dart';
 import '../services/chat_filter_service.dart';
 import '../services/feedback_service.dart';
 import '../theme/app_interaction_styles.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Form saran/masukan ke admin. Data disimpan di Firestore app_feedback.
 class SaranKeAdminScreen extends StatefulWidget {
@@ -29,11 +30,7 @@ class _SaranKeAdminScreenState extends State<SaranKeAdminScreen> {
   Future<void> _submit() async {
     if (FirebaseAuth.instance.currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Sesi tidak valid. Silakan login kembali.'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text('Sesi tidak valid. Silakan login kembali.'), behavior: SnackBarBehavior.floating),
       );
       return;
     }
@@ -49,21 +46,13 @@ class _SaranKeAdminScreenState extends State<SaranKeAdminScreen> {
     }
     if (text.length > FeedbackService.maxTextLength) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Maksimal ${FeedbackService.maxTextLength} karakter.'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text('Maksimal ${FeedbackService.maxTextLength} karakter.'), behavior: SnackBarBehavior.floating),
       );
       return;
     }
     if (ChatFilterService.containsBlockedContent(text)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Saran tidak boleh berisi kontak atau nomor untuk transaksi di luar aplikasi.'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text('Saran tidak boleh berisi kontak atau nomor untuk transaksi di luar aplikasi.'), behavior: SnackBarBehavior.floating),
       );
       return;
     }
@@ -76,19 +65,11 @@ class _SaranKeAdminScreenState extends State<SaranKeAdminScreen> {
         _controller.clear();
         AppAnalyticsService.logFeedbackSubmit(type: _type);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Terima kasih! Saran Anda telah dikirim ke admin.'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
+          TrakaSnackBar.success(context, Text('Terima kasih! Saran Anda telah dikirim ke admin.'), behavior: SnackBarBehavior.floating),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errMsg ?? 'Gagal mengirim. Coba lagi.'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+          TrakaSnackBar.error(context, Text(errMsg ?? 'Gagal mengirim. Coba lagi.'), behavior: SnackBarBehavior.floating),
         );
       }
     } finally {

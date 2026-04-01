@@ -1,6 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -26,12 +30,31 @@ import '../services/fake_gps_overlay_service.dart';
 import '../services/location_service.dart';
 import '../models/user_role.dart';
 import '../utils/app_logger.dart';
+import '../config/google_oauth_web_client.dart';
 import '../utils/phone_utils.dart';
+import '../utils/phone_verification_snackbar.dart';
 import 'privacy_screen.dart';
 import 'terms_screen.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Tipe pendaftaran: Penumpang atau Driver.
 enum RegisterType { penumpang, driver }
+
+/// Pesan di [AuthLoadingOverlay] saat loading (Google vs kirim formulir).
+enum _RegisterAuthOverlayKind { googleEmail, completingRegistration }
+
+/// Jarak vertikal konsisten (skala responsif), selaras dengan halaman login.
+class _RegisterLayoutGap {
+  _RegisterLayoutGap(this._context);
+  final BuildContext _context;
+  double _s(double base) => _context.responsive.spacing(base);
+  double get xs => _s(8);
+  double get sm => _s(12);
+  double get md => _s(16);
+  double get lg => _s(20);
+  double get xl => _s(24);
+  double get xxl => _s(32);
+}
 
 class RegisterScreen extends StatefulWidget {
   final RegisterType type;
@@ -57,12 +80,38 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _agreeToTerms = false;
   bool _isLoading = false;
+  _RegisterAuthOverlayKind? _registerAuthOverlayKind;
+  /// OTP sedang diminta — tanpa [AuthLoadingOverlay] agar WebView reCAPTCHA tidak «nempel» di atas scrim.
+  bool _otpRequestInFlight = false;
   bool _phoneOtpSent = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   String? _phoneVerificationId;
 
   AppLocalizations get l10n => AppLocalizations(locale: LocaleService.current);
+
+  void _setRegisterLoading(
+    bool value, {
+    _RegisterAuthOverlayKind? overlayKind,
+  }) {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = value;
+      _registerAuthOverlayKind = value ? overlayKind : null;
+    });
+  }
+
+  String? _registerAuthOverlayMessage() {
+    if (!_isLoading || _otpRequestInFlight) return null;
+    switch (_registerAuthOverlayKind) {
+      case _RegisterAuthOverlayKind.googleEmail:
+        return l10n.authOverlayGoogleEmailVerifying;
+      case _RegisterAuthOverlayKind.completingRegistration:
+        return l10n.authOverlayCompletingRegistration;
+      case null:
+        return null;
+    }
+  }
 
   bool get _googleUserReady {
     if (!widget.useGoogleSignUp) return true;
@@ -81,17 +130,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     await FirebaseAuth.instance.signOut();
     if (!mounted) return true;
-    setState(() => _isLoading = false);
+    _setRegisterLoading(false);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
+      TrakaSnackBar.warning(context, Text(
           l10n.locale == AppLocale.id
               ? 'Akun Google ini sudah terdaftar di Traka. Silakan login (Google atau nomor + OTP).'
               : 'This Google account is already registered. Please sign in (Google or phone + SMS code).',
-        ),
-        backgroundColor: Colors.orange,
-        behavior: SnackBarBehavior.floating,
-      ),
+        ), behavior: SnackBarBehavior.floating),
     );
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
@@ -148,17 +193,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (data?['conflict'] != true) return false;
       await FirebaseAuth.instance.signOut();
       if (!mounted) return true;
-      setState(() => _isLoading = false);
+      _setRegisterLoading(false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.warning(context, Text(
             l10n.locale == AppLocale.id
                 ? 'Email Google ini sudah dipakai profil Traka lain. Gunakan Login atau akun Google lain.'
                 : 'This Google email is already used by another Traka profile. Sign in or use a different Google account.',
-          ),
-          backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-        ),
+          ), behavior: SnackBarBehavior.floating),
       );
       return true;
     } catch (e, st) {
@@ -187,7 +228,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } catch (_) {}
 
     if (!mounted) return true;
-    setState(() => _isLoading = false);
+    _setRegisterLoading(false);
     final message = result.message ??
         (l10n.locale == AppLocale.id
             ? (widget.type == RegisterType.driver
@@ -206,7 +247,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _signInWithGoogleForRegister() async {
     FocusScope.of(context).unfocus();
-    setState(() => _isLoading = true);
+    _setRegisterLoading(
+      true,
+      overlayKind: _RegisterAuthOverlayKind.googleEmail,
+    );
     await Future<void>.delayed(Duration.zero);
     try {
       if (await _redirectIfDeviceNotAllowedForGoogleRegister()) return;
@@ -214,11 +258,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
       await FirebaseAuth.instance.signOut();
       final googleSignIn = GoogleSignIn(
         scopes: const <String>['email', 'profile'],
+        serverClientId: kGoogleOAuthWebClientId,
       );
       final account = await googleSignIn.signIn();
       if (!mounted) return;
       if (account == null) {
-        setState(() => _isLoading = false);
+        _setRegisterLoading(false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(l10n.googleSignInCancelled),
@@ -230,13 +275,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final auth = await account.authentication;
       if (auth.idToken == null && auth.accessToken == null) {
         if (!mounted) return;
-        setState(() => _isLoading = false);
+        _setRegisterLoading(false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.googleSignInFailed),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+          TrakaSnackBar.error(context, Text(l10n.googleSignInFailed), behavior: SnackBarBehavior.floating),
         );
         return;
       }
@@ -248,13 +289,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final user = uc.user;
       if (!mounted) return;
       if (user == null) {
-        setState(() => _isLoading = false);
+        _setRegisterLoading(false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.googleSignInFailed),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+          TrakaSnackBar.error(context, Text(l10n.googleSignInFailed), behavior: SnackBarBehavior.floating),
         );
         return;
       }
@@ -268,11 +305,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (await _blockIfGoogleEmailLinkedToOtherFirestoreUser(user)) return;
       if (await _redirectIfGoogleAccountAlreadyRegistered(user)) return;
       if (await _completeGoogleRegistrationIfAuthHasPhone(user)) return;
-      setState(() => _isLoading = false);
+      _setRegisterLoading(false);
     } on FirebaseAuthException catch (e, st) {
       logError('RegisterScreen.signInWithGoogle', e, st);
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setRegisterLoading(false);
       final String msg;
       switch (e.code) {
         case 'account-exists-with-different-credential':
@@ -294,22 +331,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
           msg = e.message ?? l10n.googleSignInFailed;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text(msg), behavior: SnackBarBehavior.floating),
       );
     } catch (e, st) {
       logError('RegisterScreen.signInWithGoogle', e, st);
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setRegisterLoading(false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.googleSignInFailed),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text(l10n.googleSignInFailed), behavior: SnackBarBehavior.floating),
       );
     }
   }
@@ -335,17 +364,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!hasPermission && mounted) {
       // User tidak kasih izin, kembali ke login
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             'Izin lokasi diperlukan untuk menggunakan aplikasi Traka.',
             textAlign: TextAlign.center,
             style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
+          ), behavior: SnackBarBehavior.floating,
           margin: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          duration: Duration(seconds: 4),
-        ),
+          duration: Duration(seconds: 4)),
       );
       Navigator.of(context).pop();
     }
@@ -425,13 +450,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() => _otpRequestInFlight = true);
     await Future<void>.delayed(Duration.zero);
     if (widget.useGoogleSignUp) {
       final u = FirebaseAuth.instance.currentUser;
       if (u != null) {
         final finished = await _completeGoogleRegistrationIfAuthHasPhone(u);
-        if (finished) return;
+        if (finished) {
+          if (mounted) setState(() => _otpRequestInFlight = false);
+          return;
+        }
       }
     }
     // Cek apakah nomor sudah terdaftar (untuk UX: arahkan ke Login)
@@ -441,21 +469,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final data = result.data as Map<String, dynamic>?;
       final exists = data?['exists'] as bool? ?? false;
       if (exists && mounted) {
-        setState(() => _isLoading = false);
+        setState(() => _otpRequestInFlight = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+          TrakaSnackBar.warning(context, Text(
               l10n.locale == AppLocale.id
                   ? 'Nomor sudah terdaftar. Silakan login.'
                   : 'Number already registered. Please login.',
               textAlign: TextAlign.center,
               style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
+            ), behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            duration: const Duration(seconds: 4),
-          ),
+            duration: const Duration(seconds: 4)),
         );
         return;
       }
@@ -463,22 +487,42 @@ class _RegisterScreenState extends State<RegisterScreen> {
       logError('RegisterScreen.checkPhoneExists', e, null);
     }
 
-    await FirebaseAuth.instance.verifyPhoneNumber(
-      phoneNumber: phoneE164,
-      verificationCompleted: (PhoneAuthCredential credential) async {
+    try {
+      // Pastikan klien reCAPTCHA siap sebelum WebView native dibuka; init di main.dart
+      // berjalan unawaited sehingga tap cepat «Kirim kode» kadang memicu tampilan kosong.
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS)) {
+        try {
+          await FirebaseAuth.instance.initializeRecaptchaConfig();
+        } catch (_) {}
+      }
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: phoneE164,
+        verificationCompleted: (PhoneAuthCredential credential) async {
         if (!mounted) return;
         if (widget.useGoogleSignUp) {
           final user = FirebaseAuth.instance.currentUser;
-          if (user == null) return;
+          if (user == null) {
+            if (mounted) setState(() => _otpRequestInFlight = false);
+            return;
+          }
           try {
             await user.linkWithCredential(credential);
           } on FirebaseAuthException catch (e) {
             if (e.code == 'provider-already-linked') {
               final done = await _completeGoogleRegistrationIfAuthHasPhone(user);
-              if (done) return;
+              if (done) {
+                if (mounted) setState(() => _otpRequestInFlight = false);
+                return;
+              }
             }
             if (!mounted) return;
-            setState(() => _isLoading = false);
+            setState(() {
+              _registerAuthOverlayKind = null;
+              _isLoading = false;
+              _otpRequestInFlight = false;
+            });
             final msg = e.code == 'credential-already-in-use'
                 ? (l10n.locale == AppLocale.id
                     ? 'Nomor sudah terdaftar di akun lain. Silakan login.'
@@ -491,21 +535,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ? 'Nomor sudah terdaftar atau tidak bisa dipakai. Silakan login.'
                         : 'Number unavailable or already in use. Please log in.'));
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(msg), backgroundColor: Colors.orange),
+              TrakaSnackBar.warning(context, Text(msg)),
             );
             return;
           } catch (_) {
             if (!mounted) return;
-            setState(() => _isLoading = false);
+            setState(() {
+              _registerAuthOverlayKind = null;
+              _isLoading = false;
+              _otpRequestInFlight = false;
+            });
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
+              TrakaSnackBar.warning(context, Text(
                   l10n.locale == AppLocale.id
                       ? 'Nomor sudah terdaftar atau tidak bisa dipakai. Silakan login.'
                       : 'Number unavailable or already in use. Please log in.',
-                ),
-                backgroundColor: Colors.orange,
-              ),
+                )),
             );
             return;
           }
@@ -514,6 +559,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   : UserRole.driver)
               .firestoreValue;
           final name = _nameController.text.trim();
+          if (mounted) setState(() => _otpRequestInFlight = false);
           await _completeRegistration(
             user.uid,
             name: name,
@@ -524,7 +570,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           return;
         }
         final password = _passwordController.text;
-        if (password.length < 6) return;
+        if (password.length < 6) {
+          if (mounted) setState(() => _otpRequestInFlight = false);
+          return;
+        }
         try {
           final authEmail = _phoneToAuthEmail(phoneE164);
           await FirebaseAuth.instance.createUserWithEmailAndPassword(
@@ -550,44 +599,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
           }
         } catch (e) {
           if (mounted) {
-            setState(() => _isLoading = false);
+            setState(() {
+              _registerAuthOverlayKind = null;
+              _isLoading = false;
+              _otpRequestInFlight = false;
+            });
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(e.toString().replaceAll('Exception: ', '')),
-                backgroundColor: Colors.red,
-              ),
+              TrakaSnackBar.error(context, Text(e.toString().replaceAll('Exception: ', ''))),
             );
           }
         }
       },
       verificationFailed: (FirebaseAuthException e) {
         if (!mounted) return;
-        setState(() => _isLoading = false);
-        String message = l10n.locale == AppLocale.id
-            ? 'Verifikasi gagal. Coba lagi.'
-            : 'Verification failed. Try again.';
-        final code = e.code;
-        final msg = (e.message ?? '').toLowerCase();
-        if (code == 'missing-client-identifier' ||
-            msg.contains('app identifier') ||
-            msg.contains('play integrity') ||
-            msg.contains('recaptcha')) {
-          message = l10n.locale == AppLocale.id
-              ? 'Perangkat/aplikasi belum terverifikasi. Tambahkan SHA-1 di Firebase Console dan coba di HP asli.'
-              : 'App not verified. Add SHA-1 in Firebase Console and try on real device.';
-        } else if (msg.contains('blocked') || msg.contains('unusual activity')) {
-          message = l10n.locale == AppLocale.id
-              ? 'Perangkat ini sementara diblokir. Tunggu beberapa jam lalu coba lagi.'
-              : 'Device temporarily blocked. Try again in a few hours.';
-        } else if (e.message != null && e.message!.isNotEmpty) {
-          message = e.message!;
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
+        setState(() {
+          _registerAuthOverlayKind = null;
+          _isLoading = false;
+          _otpRequestInFlight = false;
+        });
+        showPhoneVerificationFailedSnackBar(
+          context,
+          exception: e,
+          analyticsSource: 'register',
+          l10n: l10n,
         );
       },
       codeSent: (String verificationId, int? resendToken) {
@@ -595,21 +629,36 @@ class _RegisterScreenState extends State<RegisterScreen> {
         setState(() {
           _phoneVerificationId = verificationId;
           _phoneOtpSent = true;
+          _registerAuthOverlayKind = null;
           _isLoading = false;
+          _otpRequestInFlight = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+          TrakaSnackBar.success(context, Text(
               l10n.locale == AppLocale.id
                   ? 'Kode verifikasi telah dikirim ke $phoneE164'
                   : 'Verification code sent to $phoneE164',
-            ),
-            backgroundColor: Colors.green,
-          ),
+            )),
         );
       },
       codeAutoRetrievalTimeout: (_) {},
-    );
+      );
+    } catch (e, st) {
+      logError('RegisterScreen.verifyPhoneNumber', e, st);
+      if (!mounted) return;
+      setState(() {
+        _registerAuthOverlayKind = null;
+        _isLoading = false;
+        _otpRequestInFlight = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        TrakaSnackBar.error(context, Text(
+            l10n.locale == AppLocale.id
+                ? 'Tidak bisa memulai verifikasi SMS. Coba lagi.'
+                : 'Could not start SMS verification. Try again.',
+          )),
+      );
+    }
   }
 
   void _openTerms() {
@@ -667,14 +716,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
         if (!mounted) return false;
         final confirm = await _showCancelDeletionDialog();
         if (!mounted || confirm != true) {
-          setState(() => _isLoading = false);
+          _setRegisterLoading(false);
           await FirebaseAuth.instance.signOut();
           return false;
         }
         await AccountDeletionService.cancelAccountDeletion(uid);
         await DeviceSecurityService.recordRegistration(uid, role);
         if (!mounted) return false;
-        setState(() => _isLoading = false);
+        _setRegisterLoading(false);
         FcmService.saveTokenForUser(uid);
         VoiceCallIncomingService.start(uid);
         if (role == UserRole.penumpang.firestoreValue) {
@@ -693,16 +742,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
       // User sudah terdaftar, arahkan ke login
       await FirebaseAuth.instance.signOut();
       if (!mounted) return false;
-      setState(() => _isLoading = false);
+      _setRegisterLoading(false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.warning(context, Text(
             l10n.locale == AppLocale.id
                 ? 'Akun sudah terdaftar. Silakan login.'
                 : 'Account already registered. Please login.',
-          ),
-          backgroundColor: Colors.orange,
-        ),
+          )),
       );
       Navigator.of(context).pop();
       return false;
@@ -718,59 +764,47 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (!securityResult.allowed) {
       if (!mounted) return false;
-      setState(() => _isLoading = false);
+      _setRegisterLoading(false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             securityResult.message ?? 'Registrasi tidak diperbolehkan.',
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
+          ), behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          duration: const Duration(seconds: 4),
-        ),
+          duration: const Duration(seconds: 4)),
       );
       return false;
     }
     if (locationResult.errorMessage != null) {
       if (!mounted) return false;
-      setState(() => _isLoading = false);
+      _setRegisterLoading(false);
       if (locationResult.isFakeGpsDetected) {
         FakeGpsOverlayService.showOverlay();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+          TrakaSnackBar.error(context, Text(
               locationResult.errorMessage!,
               textAlign: TextAlign.center,
               style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
+            ), behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            duration: const Duration(seconds: 5),
-          ),
+            duration: const Duration(seconds: 5)),
         );
       }
       return false;
     }
     if (!locationResult.isInIndonesia) {
       if (!mounted) return false;
-      setState(() => _isLoading = false);
+      _setRegisterLoading(false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             l10n.trakaIndonesiaOnly,
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
+          ), behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          duration: const Duration(seconds: 4),
-        ),
+          duration: const Duration(seconds: 4)),
       );
       return false;
     }
@@ -808,16 +842,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     AppAnalyticsService.logRegisterSuccess(role: role);
 
     if (!mounted) return false;
-    setState(() => _isLoading = false);
+    _setRegisterLoading(false);
 
     await FirebaseAuth.instance.signOut();
 
     if (!mounted) return false;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(l10n.registerSuccess),
-        backgroundColor: Colors.green,
-      ),
+      TrakaSnackBar.success(context, Text(l10n.registerSuccess)),
     );
 
     Navigator.of(context).pushAndRemoveUntil(
@@ -882,7 +913,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     if (!_phoneOtpSent || _phoneVerificationId == null) {
-      setState(() => _isLoading = true);
+      _setRegisterLoading(true);
       await Future<void>.delayed(Duration.zero);
       await _sendPhoneOtp();
       return;
@@ -902,7 +933,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    _setRegisterLoading(
+      true,
+      overlayKind: _RegisterAuthOverlayKind.completingRegistration,
+    );
     await Future<void>.delayed(Duration.zero);
 
     try {
@@ -914,7 +948,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (widget.useGoogleSignUp) {
         final user = FirebaseAuth.instance.currentUser;
         if (user == null) {
-          if (mounted) setState(() => _isLoading = false);
+          if (mounted) _setRegisterLoading(false);
           return;
         }
         try {
@@ -925,7 +959,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             if (done) return;
           }
           if (!mounted) return;
-          setState(() => _isLoading = false);
+          _setRegisterLoading(false);
           final String msg;
           if (e.code == 'credential-already-in-use') {
             msg = l10n.locale == AppLocale.id
@@ -942,21 +976,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     : 'Invalid or expired code.');
           }
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(msg), backgroundColor: Colors.red),
+            TrakaSnackBar.error(context, Text(msg)),
           );
           return;
         } catch (_) {
           if (!mounted) return;
-          setState(() => _isLoading = false);
+          _setRegisterLoading(false);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
+            TrakaSnackBar.warning(context, Text(
                 l10n.locale == AppLocale.id
                     ? 'Nomor sudah terdaftar. Silakan login.'
                     : 'Number already registered. Please log in.',
-              ),
-              backgroundColor: Colors.orange,
-            ),
+              )),
           );
           return;
         }
@@ -977,7 +1008,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        if (mounted) setState(() => _isLoading = false);
+        if (mounted) _setRegisterLoading(false);
         return;
       }
       try {
@@ -985,16 +1016,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
       } catch (_) {
         await FirebaseAuth.instance.signOut();
         if (!mounted) return;
-        setState(() => _isLoading = false);
+        _setRegisterLoading(false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+          TrakaSnackBar.warning(context, Text(
               l10n.locale == AppLocale.id
                   ? 'Nomor sudah terdaftar. Silakan login.'
                   : 'Number already registered. Please login.',
-            ),
-            backgroundColor: Colors.orange,
-          ),
+            )),
         );
         return;
       }
@@ -1006,7 +1034,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setRegisterLoading(false);
       String msg = e.message ??
           (l10n.locale == AppLocale.id
               ? 'Kode salah atau kedaluwarsa.'
@@ -1017,23 +1045,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
             : 'Number already registered. Please login.';
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        TrakaSnackBar.error(context, Text(msg)),
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setRegisterLoading(false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString().replaceAll('Exception: ', '')),
-          backgroundColor: Colors.red,
-        ),
+        TrakaSnackBar.error(context, Text(e.toString().replaceAll('Exception: ', ''))),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final textTheme = theme.textTheme;
     final title = widget.type == RegisterType.penumpang
         ? '${l10n.penumpang} – Pendaftaran'
         : '${l10n.driver} – Pendaftaran';
@@ -1051,7 +1078,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text(title),
+        title: Text(
+          title,
+          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+        ),
       ),
       resizeToAvoidBottomInset: true,
       body: Stack(
@@ -1069,268 +1099,383 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
           Positioned.fill(
             child: SafeArea(
-              child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(
-                context.responsive.horizontalPadding,
-                MediaQuery.paddingOf(context).top + kToolbarHeight + 8,
-                context.responsive.horizontalPadding,
-                24,
-              ),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                _RegisterWelcomeHero(
-                  type: widget.type,
-                  isId: l10n.locale == AppLocale.id,
-                ),
-                if (widget.useGoogleSignUp) ...[
-                  SizedBox(height: context.responsive.spacing(16)),
-                  OutlinedButton.icon(
-                    onPressed: _isLoading ? null : _signInWithGoogleForRegister,
-                    icon: const _RegisterGoogleGlyph(size: 22),
-                    label: Text(
-                      _googleUserReady
-                          ? l10n.googleConnectedShort(
-                              FirebaseAuth.instance.currentUser?.email,
-                            )
-                          : l10n.connectGooglePrompt,
-                      style: Theme.of(context).textTheme.labelLarge,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                    ),
-                  ),
-                ],
-                SizedBox(height: context.responsive.spacing(20)),
-                _RegisterUnderlineField(
-                  controller: _nameController,
-                  hint: l10n.nameHint,
-                  icon: Icons.person_outline,
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return l10n.locale == AppLocale.id
-                          ? 'Nama wajib diisi'
-                          : 'Name is required';
-                    }
-                    return null;
-                  },
-                ),
-                SizedBox(height: context.responsive.spacing(20)),
-                _RegisterUnderlineField(
-                  controller: _phoneController,
-                  hint: l10n.phoneHintRegister,
-                  icon: Icons.phone_outlined,
-                  keyboardType: TextInputType.phone,
-                  suffix: _phoneOtpSent
-                      ? (_isLoading
-                          ? const Padding(
-                              padding: EdgeInsets.all(8.0),
-                              child: TrakaLoadingIndicator(size: 22, strokeWidth: 2.5),
-                            )
-                          : IconButton(
-                              icon: Icon(
-                                Icons.refresh,
-                                color: Theme.of(context).colorScheme.primary,
-                                size: 22,
-                              ),
-                              onPressed: _sendPhoneOtp,
-                              splashRadius: 24,
-                            ))
-                      : null,
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return l10n.locale == AppLocale.id
-                          ? 'No. telepon wajib diisi'
-                          : 'Phone number is required';
-                    }
-                    final digits = v.replaceAll(RegExp(r'\D'), '');
-                    if (digits.length < 10) {
-                      return l10n.locale == AppLocale.id
-                          ? 'Format no. telepon tidak valid'
-                          : 'Invalid phone number format';
-                    }
-                    return null;
-                  },
-                ),
-                if (!_phoneOtpSent) ...[
-                  SizedBox(height: context.responsive.spacing(12)),
-                  FilledButton(
-                    onPressed: _isLoading ? null : _sendPhoneOtp,
-                    style: AppInteractionStyles.authPrimaryCta(context),
-                    child: _isLoading
-                        ? TrakaLoadingIndicator(
-                            size: 24,
-                            strokeWidth: 2.5,
-                            primary: Theme.of(context).colorScheme.onPrimary,
-                            secondary: Theme.of(context)
-                                .colorScheme
-                                .onPrimary
-                                .withValues(alpha: 0.75),
-                            variant: TrakaLoadingVariant.onDimmedBackdrop,
-                          )
-                        : Row(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final gap = _RegisterLayoutGap(context);
+                  final hPad = context.responsive.horizontalPadding;
+                  final maxFormW = math.min(440.0, constraints.maxWidth);
+                  final topPad =
+                      MediaQuery.paddingOf(context).top + kToolbarHeight + gap.sm;
+                  final captionStyle = textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    height: 1.4,
+                  );
+
+                  return SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(hPad, topPad, hPad, gap.xl),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxFormW),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(
-                                l10n.locale == AppLocale.id ? 'Kirim kode' : 'Send code',
-                                style: AppInteractionStyles.authCtaLabelStyle,
+                              _RegisterWelcomeHero(
+                                type: widget.type,
+                                isId: l10n.locale == AppLocale.id,
                               ),
-                              const SizedBox(width: 8),
-                              Icon(
-                                Icons.arrow_forward_rounded,
-                                size: 22,
-                                color: Theme.of(context).colorScheme.onPrimary,
+                              if (widget.useGoogleSignUp) ...[
+                                SizedBox(height: gap.lg),
+                                OutlinedButton.icon(
+                                  onPressed: (_isLoading || _otpRequestInFlight)
+                                      ? null
+                                      : _signInWithGoogleForRegister,
+                                  icon: _RegisterGoogleGlyph(
+                                    size: context.responsive.iconSize(22),
+                                  ),
+                                  label: Text(
+                                    _googleUserReady
+                                        ? l10n.googleConnectedShort(
+                                            FirebaseAuth.instance.currentUser?.email,
+                                          )
+                                        : l10n.connectGooglePrompt,
+                                    style: textTheme.labelLarge,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  style: AppInteractionStyles.outlinedModern(
+                                    primaryColor: cs.primary,
+                                    outlineColor: cs.outline,
+                                    foregroundColor: cs.onSurface,
+                                  ),
+                                ),
+                              ],
+                              SizedBox(height: gap.xl),
+                              _RegisterTextField(
+                                controller: _nameController,
+                                hint: l10n.nameHint,
+                                icon: Icons.person_outline,
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) {
+                                    return l10n.locale == AppLocale.id
+                                        ? 'Nama wajib diisi'
+                                        : 'Name is required';
+                                  }
+                                  return null;
+                                },
                               ),
+                              SizedBox(height: gap.md),
+                              _RegisterTextField(
+                                controller: _phoneController,
+                                hint: l10n.phoneHintRegister,
+                                icon: Icons.phone_outlined,
+                                keyboardType: TextInputType.phone,
+                                suffix: _phoneOtpSent
+                                    ? (_otpRequestInFlight
+                                        ? Padding(
+                                            padding: EdgeInsets.all(gap.xs),
+                                            child: TrakaLoadingIndicator(
+                                              size: context.responsive.iconSize(22),
+                                              strokeWidth: 2.5,
+                                              primary: cs.primary,
+                                              variant:
+                                                  TrakaLoadingVariant.onLightSurface,
+                                            ),
+                                          )
+                                        : IconButton(
+                                            icon: Icon(
+                                              Icons.refresh_rounded,
+                                              color: cs.primary,
+                                              size: context.responsive.iconSize(22),
+                                            ),
+                                            onPressed: _sendPhoneOtp,
+                                            style: IconButton.styleFrom(
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize.shrinkWrap,
+                                            ),
+                                          ))
+                                    : null,
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) {
+                                    return l10n.locale == AppLocale.id
+                                        ? 'No. telepon wajib diisi'
+                                        : 'Phone number is required';
+                                  }
+                                  final digits = v.replaceAll(RegExp(r'\D'), '');
+                                  if (digits.length < 10) {
+                                    return l10n.locale == AppLocale.id
+                                        ? 'Format no. telepon tidak valid'
+                                        : 'Invalid phone number format';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              if (!widget.useGoogleSignUp) ...[
+                                SizedBox(height: gap.md),
+                                _RegisterTextField(
+                                  controller: _passwordController,
+                                  hint: l10n.passwordHintRegister,
+                                  icon: Icons.lock_outline,
+                                  obscureText: _obscurePassword,
+                                  suffix: IconButton(
+                                    icon: Icon(
+                                      _obscurePassword
+                                          ? Icons.visibility_off_outlined
+                                          : Icons.visibility_outlined,
+                                      size: context.responsive.iconSize(22),
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                                    onPressed: () => setState(
+                                      () => _obscurePassword = !_obscurePassword,
+                                    ),
+                                  ),
+                                  validator: (v) {
+                                    if (v == null || v.isEmpty) {
+                                      return l10n.locale == AppLocale.id
+                                          ? 'Kata sandi wajib diisi'
+                                          : 'Password is required';
+                                    }
+                                    if (v.length < 6) {
+                                      return l10n.locale == AppLocale.id
+                                          ? 'Minimal 6 karakter'
+                                          : 'Minimum 6 characters';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                SizedBox(height: gap.md),
+                                _RegisterTextField(
+                                  controller: _confirmPasswordController,
+                                  hint: l10n.confirmPasswordHint,
+                                  icon: Icons.lock_outline,
+                                  obscureText: _obscureConfirmPassword,
+                                  suffix: IconButton(
+                                    icon: Icon(
+                                      _obscureConfirmPassword
+                                          ? Icons.visibility_off_outlined
+                                          : Icons.visibility_outlined,
+                                      size: context.responsive.iconSize(22),
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                                    onPressed: () => setState(
+                                      () => _obscureConfirmPassword =
+                                          !_obscureConfirmPassword,
+                                    ),
+                                  ),
+                                  validator: (v) {
+                                    if (v == null || v.isEmpty) {
+                                      return l10n.locale == AppLocale.id
+                                          ? 'Ulangi kata sandi wajib diisi'
+                                          : 'Confirm password is required';
+                                    }
+                                    if (v != _passwordController.text) {
+                                      return l10n.locale == AppLocale.id
+                                          ? 'Kata sandi tidak sama'
+                                          : 'Passwords do not match';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ],
+                              if (!_phoneOtpSent) ...[
+                                SizedBox(height: gap.lg),
+                                FilledButton(
+                                  onPressed:
+                                      _otpRequestInFlight ? null : _sendPhoneOtp,
+                                  style: AppInteractionStyles.authPrimaryCta(context),
+                                  child: _otpRequestInFlight
+                                      ? TrakaLoadingIndicator(
+                                          size: 24,
+                                          strokeWidth: 2.5,
+                                          primary: cs.onPrimary,
+                                          secondary: cs.onPrimary
+                                              .withValues(alpha: 0.75),
+                                          variant:
+                                              TrakaLoadingVariant.onDimmedBackdrop,
+                                        )
+                                      : Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              l10n.locale == AppLocale.id
+                                                  ? 'Kirim kode'
+                                                  : 'Send code',
+                                              style:
+                                                  AppInteractionStyles.authCtaLabelStyle,
+                                            ),
+                                            SizedBox(width: gap.sm),
+                                            Icon(
+                                              Icons.arrow_forward_rounded,
+                                              size: context.responsive.iconSize(22),
+                                              color: cs.onPrimary,
+                                            ),
+                                          ],
+                                        ),
+                                ),
+                                SizedBox(height: gap.md),
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: cs.surfaceContainerHighest
+                                        .withValues(alpha: 0.65),
+                                    borderRadius:
+                                        BorderRadius.circular(AppTheme.radiusMd),
+                                    border: Border.all(
+                                      color: cs.outlineVariant.withValues(
+                                        alpha: 0.55,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: EdgeInsets.all(gap.md),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(
+                                          Icons.info_outline_rounded,
+                                          size: context.responsive.iconSize(20),
+                                          color: cs.primary,
+                                        ),
+                                        SizedBox(width: gap.sm),
+                                        Expanded(
+                                          child: Text(
+                                            l10n.registerPhoneOtpRecaptchaHint,
+                                            style: captionStyle,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              if (_phoneOtpSent) ...[
+                                SizedBox(height: gap.lg),
+                                _RegisterTextField(
+                                  controller: _otpController,
+                                  hint: l10n.verificationCodeHint,
+                                  icon: Icons.sms_outlined,
+                                  keyboardType: TextInputType.number,
+                                  validator: (v) {
+                                    if (!_phoneOtpSent) return null;
+                                    if (v == null || v.trim().isEmpty) {
+                                      return l10n.locale == AppLocale.id
+                                          ? 'Kode verifikasi wajib diisi'
+                                          : 'Verification code is required';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ],
+                              SizedBox(height: gap.lg),
+                              Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: cs.outlineVariant.withValues(alpha: 0.65),
+                              ),
+                              SizedBox(height: gap.md),
+                              _TermsCheckbox(
+                                value: _agreeToTerms,
+                                onChanged: (v) =>
+                                    setState(() => _agreeToTerms = v ?? false),
+                                onTermsTap: _openTerms,
+                                onPrivacyTap: _openPrivacy,
+                                label: l10n.agreeTerms,
+                                termsLabel: l10n.termsOfService,
+                                privacyLabel: l10n.privacyPolicy,
+                              ),
+                              SizedBox(height: gap.lg),
+                              FilledButton(
+                                onPressed: (_isLoading || _otpRequestInFlight)
+                                    ? null
+                                    : () {
+                                        if (!_phoneOtpSent) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                l10n.locale == AppLocale.id
+                                                    ? 'Tekan «Kirim kode», lalu isi kode SMS di atas.'
+                                                    : 'Tap «Send code», then enter the SMS code above.',
+                                              ),
+                                              behavior: SnackBarBehavior.floating,
+                                            ),
+                                          );
+                                          return;
+                                        }
+                                        if (!_agreeToTerms) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                l10n.locale == AppLocale.id
+                                                    ? 'Centang persyaratan dan kebijakan privasi terlebih dahulu.'
+                                                    : 'Please accept the terms and privacy policy first.',
+                                              ),
+                                              behavior: SnackBarBehavior.floating,
+                                            ),
+                                          );
+                                          return;
+                                        }
+                                        _onSubmit();
+                                      },
+                                style: AppInteractionStyles.registerTermsSubmit(
+                                  context,
+                                  agreeToTerms: _agreeToTerms && _phoneOtpSent,
+                                ),
+                                child: _isLoading
+                                    ? TrakaLoadingIndicator(
+                                        size: 24,
+                                        strokeWidth: 2.5,
+                                        primary: cs.onPrimary,
+                                        secondary:
+                                            cs.onPrimary.withValues(alpha: 0.72),
+                                        variant:
+                                            TrakaLoadingVariant.onDimmedBackdrop,
+                                      )
+                                    : Text(
+                                        widget.type == RegisterType.driver
+                                            ? l10n.submitButton
+                                            : l10n.registerFormSubmitButton,
+                                        style:
+                                            AppInteractionStyles.authCtaLabelStyle,
+                                      ),
+                              ),
+                              SizedBox(height: gap.xl),
+                              OutlinedButton.icon(
+                                onPressed: () => Navigator.of(context).pop(),
+                                icon: Icon(
+                                  Icons.arrow_back_rounded,
+                                  size: context.responsive.iconSize(20),
+                                ),
+                                label: Text(l10n.backToLogin),
+                                style: AppInteractionStyles.outlinedFromTheme(
+                                  context,
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: gap.sm,
+                                  ),
+                                  sideColor: cs.primary,
+                                ),
+                              ),
+                              SizedBox(height: gap.md),
                             ],
                           ),
-                  ),
-                ],
-                if (!widget.useGoogleSignUp) ...[
-                  SizedBox(height: context.responsive.spacing(20)),
-                  _RegisterUnderlineField(
-                    controller: _passwordController,
-                    hint: l10n.passwordHintRegister,
-                    icon: Icons.lock_outline,
-                    obscureText: _obscurePassword,
-                    suffix: IconButton(
-                      icon: Icon(
-                        _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                        size: 22,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
-                    ),
-                    validator: (v) {
-                      if (v == null || v.isEmpty) {
-                        return l10n.locale == AppLocale.id
-                            ? 'Kata sandi wajib diisi'
-                            : 'Password is required';
-                      }
-                      if (v.length < 6) {
-                        return l10n.locale == AppLocale.id
-                            ? 'Minimal 6 karakter'
-                            : 'Minimum 6 characters';
-                      }
-                      return null;
-                    },
-                  ),
-                  SizedBox(height: context.responsive.spacing(20)),
-                  _RegisterUnderlineField(
-                    controller: _confirmPasswordController,
-                    hint: l10n.confirmPasswordHint,
-                    icon: Icons.lock_outline,
-                    obscureText: _obscureConfirmPassword,
-                    suffix: IconButton(
-                      icon: Icon(
-                        _obscureConfirmPassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                        size: 22,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      onPressed: () => setState(
-                        () => _obscureConfirmPassword = !_obscureConfirmPassword,
-                      ),
-                    ),
-                    validator: (v) {
-                      if (v == null || v.isEmpty) {
-                        return l10n.locale == AppLocale.id
-                            ? 'Ulangi kata sandi wajib diisi'
-                            : 'Confirm password is required';
-                      }
-                      if (v != _passwordController.text) {
-                        return l10n.locale == AppLocale.id
-                            ? 'Kata sandi tidak sama'
-                            : 'Passwords do not match';
-                      }
-                      return null;
-                    },
-                  ),
-                ],
-                if (_phoneOtpSent) ...[
-                  SizedBox(height: context.responsive.spacing(20)),
-                  _RegisterUnderlineField(
-                    controller: _otpController,
-                    hint: l10n.verificationCodeHint,
-                    icon: Icons.sms_outlined,
-                    keyboardType: TextInputType.number,
-                    validator: (v) {
-                      if (!_phoneOtpSent) return null;
-                      if (v == null || v.trim().isEmpty) {
-                        return l10n.locale == AppLocale.id
-                            ? 'Kode verifikasi wajib diisi'
-                            : 'Verification code is required';
-                      }
-                      return null;
-                    },
-                  ),
-                ],
-                const SizedBox(height: 24),
-                // Tombol Ajukan – hijau bila agree, abu-abu bila belum
-                FilledButton(
-                  onPressed: _agreeToTerms && !_isLoading ? _onSubmit : null,
-                  style: AppInteractionStyles.registerTermsSubmit(
-                    context,
-                    agreeToTerms: _agreeToTerms,
-                  ),
-                  child: _isLoading
-                      ? TrakaLoadingIndicator(
-                          size: 24,
-                          strokeWidth: 2.5,
-                          primary: Colors.white,
-                          secondary: Colors.white.withValues(alpha: 0.72),
-                          variant: TrakaLoadingVariant.onDimmedBackdrop,
-                        )
-                      : Text(
-                          _phoneOtpSent
-                              ? (widget.type == RegisterType.driver
-                                  ? l10n.submitButton
-                                  : l10n.registerFormSubmitButton)
-                              : l10n.registerFormSubmitButton,
-                          style: AppInteractionStyles.authCtaLabelStyle,
                         ),
-                ),
-                const SizedBox(height: 16),
-                // Checkbox + Terms & Privacy (klikabel)
-                _TermsCheckbox(
-                  value: _agreeToTerms,
-                  onChanged: (v) => setState(() => _agreeToTerms = v ?? false),
-                  onTermsTap: _openTerms,
-                  onPrivacyTap: _openPrivacy,
-                  label: l10n.agreeTerms,
-                  termsLabel: l10n.termsOfService,
-                  privacyLabel: l10n.privacyPolicy,
-                ),
-                const SizedBox(height: 32),
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.arrow_back, size: 18),
-                  label: Text(l10n.backToLogin),
-                  style: AppInteractionStyles.outlinedFromTheme(
-                    context,
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 12),
-                    sideColor: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                  ],
-                ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
+          AuthLoadingOverlay(
+            visible: _isLoading && !_otpRequestInFlight,
+            opaqueBackdrop: true,
+            message: _registerAuthOverlayMessage(),
           ),
-          AuthLoadingOverlay(visible: _isLoading),
         ],
       ),
     );
@@ -1481,12 +1626,11 @@ class _RegisterWelcomeHeroState extends State<_RegisterWelcomeHero>
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  height: 1.35,
-                  color: cs.onSurfaceVariant,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      height: 1.4,
+                      fontWeight: FontWeight.w500,
+                    ),
               ),
             ],
           ),
@@ -1496,7 +1640,8 @@ class _RegisterWelcomeHeroState extends State<_RegisterWelcomeHero>
   }
 }
 
-class _RegisterUnderlineField extends StatelessWidget {
+/// Field pendaftaran — selaras [InputDecorationTheme] aplikasi (outline, radius).
+class _RegisterTextField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final IconData icon;
@@ -1505,7 +1650,7 @@ class _RegisterUnderlineField extends StatelessWidget {
   final TextInputType? keyboardType;
   final String? Function(String?)? validator;
 
-  const _RegisterUnderlineField({
+  const _RegisterTextField({
     required this.controller,
     required this.hint,
     required this.icon,
@@ -1517,6 +1662,9 @@ class _RegisterUnderlineField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final defaults = theme.inputDecorationTheme;
     return TextFormField(
       controller: controller,
       obscureText: obscureText,
@@ -1524,24 +1672,17 @@ class _RegisterUnderlineField extends StatelessWidget {
       autocorrect: false,
       enableSuggestions: false,
       validator: validator,
+      style: theme.textTheme.bodyLarge,
+      cursorColor: cs.primary,
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 14),
-        prefixIcon: Icon(icon, size: 22, color: Theme.of(context).colorScheme.onSurfaceVariant),
+        prefixIcon: Icon(
+          icon,
+          size: context.responsive.iconSize(22),
+          color: cs.onSurfaceVariant,
+        ),
         suffixIcon: suffix,
-        border: UnderlineInputBorder(
-          borderSide: BorderSide(color: Theme.of(context).colorScheme.outline),
-        ),
-        enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Theme.of(context).colorScheme.outline),
-        ),
-        focusedBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.5),
-        ),
-        errorBorder: const UnderlineInputBorder(
-          borderSide: BorderSide(color: Colors.red),
-        ),
-      ),
+      ).applyDefaults(defaults),
     );
   }
 }
@@ -1575,61 +1716,56 @@ class _TermsCheckbox extends StatelessWidget {
     final between = andParts.isNotEmpty ? andParts[0] : '';
     final afterPrivacy = andParts.length > 1 ? andParts[1] : '';
 
+    final cs = Theme.of(context).colorScheme;
+    final baseStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: cs.onSurfaceVariant,
+          height: 1.45,
+        );
+    final linkStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: cs.primary,
+          fontWeight: FontWeight.w600,
+          decoration: TextDecoration.underline,
+          decorationColor: cs.primary,
+          height: 1.45,
+        );
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          height: 24,
-          width: 24,
-          child: Checkbox(
-            value: value,
-            onChanged: onChanged,
-            activeColor: Theme.of(context).colorScheme.primary,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(4),
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: Checkbox(
+              value: value,
+              onChanged: onChanged,
+              activeColor: cs.primary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppTheme.radiusXs),
+              ),
+              side: BorderSide(color: cs.outline),
             ),
           ),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: AppTheme.spacingSm),
         Expanded(
           child: Wrap(
             alignment: WrapAlignment.start,
-            runSpacing: 2,
+            runSpacing: 4,
+            spacing: 2,
             children: [
-              Text(
-                beforeTerms,
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-              ),
+              Text(beforeTerms, style: baseStyle),
               GestureDetector(
                 onTap: onTermsTap,
-                child: Text(
-                  termsLabel,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontSize: 13,
-                    decoration: TextDecoration.underline,
-                  ),
-                ),
+                child: Text(termsLabel, style: linkStyle),
               ),
-              Text(
-                between,
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-              ),
+              Text(between, style: baseStyle),
               GestureDetector(
                 onTap: onPrivacyTap,
-                child: Text(
-                  privacyLabel,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontSize: 13,
-                    decoration: TextDecoration.underline,
-                  ),
-                ),
+                child: Text(privacyLabel, style: linkStyle),
               ),
-              Text(
-                afterPrivacy,
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-              ),
+              Text(afterPrivacy, style: baseStyle),
             ],
           ),
         ),

@@ -34,7 +34,7 @@ class PenumpangDriverSekitarButton extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final pill = BorderRadius.circular(22);
     final surface = TrakaMapControlChrome.fabSurface(cs);
-    final border = AppTheme.primary.withValues(alpha: loading ? 0.35 : 0.5);
+    final border = AppTheme.primary.withValues(alpha: loading ? 0.38 : 0.48);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -85,8 +85,8 @@ class PenumpangDriverSekitarButton extends StatelessWidget {
                       ),
                     ],
             ),
-            border: Border.all(color: border, width: loading ? 1 : 1.2),
-            boxShadow: TrakaMapControlChrome.floatingShadows(context),
+            border: Border.all(color: border, width: loading ? 1 : 1.15),
+            boxShadow: TrakaMapControlChrome.floatingShadowsMapHero(context),
           ),
           child: ClipRRect(
             borderRadius: pill,
@@ -317,11 +317,14 @@ class PenumpangSearchBar extends StatelessWidget {
                       ],
                     ),
                     border: Border.all(
-                      color: TrakaMapControlChrome.fabBorder(
+                      color: TrakaMapControlChrome.fabBorderMapHero(
                         Theme.of(context).colorScheme,
                       ),
+                      width: 1.1,
                     ),
-                    boxShadow: TrakaMapControlChrome.floatingShadows(context),
+                    boxShadow: TrakaMapControlChrome.floatingShadowsMapHero(
+                      context,
+                    ),
                   ),
                   child: Stack(
                     children: [
@@ -427,12 +430,15 @@ class PenumpangSearchBar extends StatelessWidget {
                                 shape: BoxShape.circle,
                                 color: AppTheme.primary.withValues(alpha: 0.1),
                                 border: Border.all(
-                                  color: AppTheme.primary.withValues(alpha: 0.22),
+                                  color: AppTheme.primary.withValues(alpha: 0.32),
+                                  width: 1,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppTheme.primary.withValues(alpha: 0.08),
-                                    blurRadius: 8,
+                                    color: AppTheme.primary.withValues(
+                                      alpha: 0.14,
+                                    ),
+                                    blurRadius: 10,
                                     offset: const Offset(0, 2),
                                   ),
                                 ],

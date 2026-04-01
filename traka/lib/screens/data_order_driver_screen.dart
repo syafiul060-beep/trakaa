@@ -46,6 +46,7 @@ import 'driver_earnings_screen.dart';
 import 'payment_history_screen.dart';
 import 'riwayat_rute_detail_screen.dart';
 import 'scan_transfer_driver_screen.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Halaman Data Order untuk driver dengan 4 menu:
 /// 1. Pemesanan - pesanan aktif. Belum dikategorikan "pesan travel" sampai driver
@@ -215,14 +216,10 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
               await RouteNotificationService.showAutoConfirmPickupNotification();
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
+                TrakaSnackBar.success(context, Text(
                     'Penumpang (travel) dikonfirmasi dijemput otomatis. Notifikasi dikirim ke penumpang.',
-                  ),
-                  backgroundColor: Colors.green,
-                  behavior: SnackBarBehavior.floating,
-                  duration: Duration(seconds: 4),
-                ),
+                  ), behavior: SnackBarBehavior.floating,
+                  duration: Duration(seconds: 4)),
               );
               // StreamBuilder akan rebuild otomatis saat Firestore emit; hindari setState (cegah kedip)
             }
@@ -291,14 +288,10 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
           await RouteNotificationService.showAutoCompleteNotification();
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
+            TrakaSnackBar.success(context, Text(
                 'Pesanan selesai otomatis. Notifikasi telah dikirim ke penumpang dan driver.',
-              ),
-              backgroundColor: Colors.green,
-              behavior: SnackBarBehavior.floating,
-              duration: Duration(seconds: 4),
-            ),
+              ), behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 4)),
           );
           // StreamBuilder akan rebuild otomatis saat Firestore emit; hindari setState (cegah kedip)
         } else {
@@ -1699,13 +1692,9 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
               ? () {
                   if (!order.adminCancelled) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
+                      TrakaSnackBar.warning(context, Text(
                           'Tidak bisa dibatalkan saat dekat dengan penumpang (radius ${OrderService.radiusDekatMeter} m).',
-                        ),
-                        backgroundColor: Colors.orange,
-                        behavior: SnackBarBehavior.floating,
-                      ),
+                        ), behavior: SnackBarBehavior.floating),
                     );
                   }
                 }
@@ -1873,11 +1862,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(TrakaL10n.of(context).failedToCancel),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text(TrakaL10n.of(context).failedToCancel), behavior: SnackBarBehavior.floating),
       );
     }
   }
@@ -2737,8 +2722,14 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                   margin: const EdgeInsets.only(bottom: 12),
                   child: ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: Colors.orange.shade100,
-                      child: Icon(Icons.route, color: Colors.orange.shade700),
+                      backgroundColor: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.18),
+                      child: Icon(
+                        Icons.route,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                     title: Text(
                       originText,

@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show HttpException;
+import 'dart:io' show HttpException, Platform;
 
 import 'services/performance_trace_service.dart';
 import 'dart:ui' show PlatformDispatcher;
@@ -10,7 +10,8 @@ import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_performance/firebase_performance.dart';
-import 'package:flutter/foundation.dart' show Listenable, kDebugMode;
+import 'package:flutter/foundation.dart'
+    show Listenable, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -75,6 +76,16 @@ void main() async {
       runApp(_ErrorApp(message: 'Gagal memuat Firebase: $e'));
       return;
     }
+  }
+
+  // Kurangi glitch UI reCAPTCHA/phone auth di mobile (WebView tidak bertumpu scrim loader).
+  if (!kIsWeb &&
+      (Platform.isAndroid || Platform.isIOS)) {
+    unawaited(
+      FirebaseAuth.instance
+          .initializeRecaptchaConfig()
+          .catchError((Object _) {}),
+    );
   }
 
   if (kDebugMode) {

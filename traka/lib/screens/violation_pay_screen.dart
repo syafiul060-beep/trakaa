@@ -11,6 +11,7 @@ import '../services/violation_payment_service.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../services/violation_service.dart';
 import 'payment_history_screen.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Product ID: traka_violation_fee_5k (Rp 5.000), traka_violation_fee_10k (Rp 10.000), dll.
 /// Format singkat agar selaras dengan lacak_barang (10k, 15k, 25k).
@@ -111,12 +112,8 @@ class _ViolationPayScreenState extends State<ViolationPayScreen> {
         setState(() => _purchasing = false);
         final navigator = Navigator.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(TrakaL10n.of(context).paymentSuccessSearchTravel),
-            backgroundColor: Colors.green,
-            action: SnackBarAction(
+          TrakaSnackBar.success(context, Text(TrakaL10n.of(context).paymentSuccessSearchTravel), action: SnackBarAction(
               label: TrakaL10n.of(context).viewPaymentHistory,
-              textColor: Colors.white,
               onPressed: () {
                 navigator.push(
                   MaterialPageRoute(
@@ -124,8 +121,7 @@ class _ViolationPayScreenState extends State<ViolationPayScreen> {
                   ),
                 );
               },
-            ),
-          ),
+            )),
         );
         await _loadOutstanding();
         if (_outstandingFee <= 0) {
@@ -381,9 +377,9 @@ class _ViolationPayScreenState extends State<ViolationPayScreen> {
                               : 'Bayar via Google Play',
                     ),
                     style: AppInteractionStyles.elevatedPrimary(
-                      backgroundColor: Colors.orange.shade700,
-                      foregroundColor: Colors.white,
-                      shadowTint: Colors.orange.shade700,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      shadowTint: Theme.of(context).colorScheme.primary,
                     ).copyWith(
                       padding: WidgetStateProperty.all(
                         const EdgeInsets.symmetric(vertical: 16),

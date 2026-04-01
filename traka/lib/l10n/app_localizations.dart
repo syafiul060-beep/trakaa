@@ -20,6 +20,14 @@ class AppLocalizations {
       locale == AppLocale.id ? 'Masukkan email Anda' : 'Enter your email';
   String get passwordHint =>
       locale == AppLocale.id ? 'Masukkan sandi Anda' : 'Enter your password';
+  /// Placeholder kolom pertama login (email/no. HP) — singkat, menyebut Google.
+  String get loginEmailOrPhoneFieldHint => locale == AppLocale.id
+      ? 'Email / no. HP — Google? Tombol di bawah'
+      : 'Email / phone — Google? Use button below';
+  /// Satu baris tipis di bawah kolom email (bukan placeholder penuh agar tidak terpotong).
+  String get loginEmailFieldSubhint => locale == AppLocale.id
+      ? 'Sandi untuk login email bisa ditambahkan di Profil (Tambah sandi) setelah masuk.'
+      : 'You can add an email sign-in password in Profile (Add password) after signing in.';
   String get loginButton => locale == AppLocale.id ? 'Masuk' : 'Login';
   /// Dipakai di snackbar gagal login untuk akun nomor HP (@traka.phone): wrong-password / invalid-credential.
   String get loginTrakaPhoneCredentialHint => locale == AppLocale.id
@@ -65,6 +73,59 @@ class AppLocalizations {
   String get googleSignInFailed => locale == AppLocale.id
       ? 'Gagal masuk dengan Google. Periksa koneksi dan pengaturan Google di Firebase.'
       : 'Google sign-in failed. Check network and Google provider in Firebase.';
+
+  /// Teks di overlay loading (layar putih) saat sambung Google — agar tidak dikira hang/bug.
+  String get authOverlayGoogleEmailVerifying => locale == AppLocale.id
+      ? 'Menghubungkan ke Google dan memverifikasi email. Mohon tunggu — ini proses normal, bukan error.'
+      : 'Connecting to Google and verifying your email. Please wait — this is normal, not an error.';
+
+  String get authOverlayCompletingRegistration => locale == AppLocale.id
+      ? 'Menyelesaikan pendaftaran…'
+      : 'Completing registration…';
+
+  /// Bantuan di form daftar: OTP bisa memicu layar verifikasi Google (reCAPTCHA).
+  String get registerPhoneOtpRecaptchaHint => locale == AppLocale.id
+      ? 'Setelah «Kirim kode», bisa muncul verifikasi Google. Selesaikan jika ada, lalu kembali ke sini untuk isi kode SMS.'
+      : 'After «Send code», Google verification may appear. Complete it if shown, then return here to enter the SMS code.';
+
+  String get authOverlayLoginSigningIn => locale == AppLocale.id
+      ? 'Memproses masuk…'
+      : 'Signing in…';
+
+  String get authOverlayLoginEmailPassword => locale == AppLocale.id
+      ? 'Memverifikasi email dan sandi…'
+      : 'Verifying email and password…';
+
+  String get authOverlayLoginRecovery => locale == AppLocale.id
+      ? 'Memverifikasi kode recovery…'
+      : 'Verifying recovery code…';
+
+  String get authOverlayLoginPhoneOtp => locale == AppLocale.id
+      ? 'Memverifikasi kode SMS…'
+      : 'Verifying SMS code…';
+
+  String get authOverlayLoginCompletingProfile => locale == AppLocale.id
+      ? 'Memuat profil dan memeriksa keamanan…'
+      : 'Loading profile and security checks…';
+
+  String get authOverlayBiometricLogin => locale == AppLocale.id
+      ? 'Memverifikasi biometrik…'
+      : 'Verifying biometric…';
+
+  /// SnackBar: verifikasi nomor gagal — baris utama (ringkas).
+  String get phoneVerificationFailedTitle => locale == AppLocale.id
+      ? 'Verifikasi nomor gagal'
+      : 'Phone verification failed';
+
+  /// Penjelasan singkat bila terkait SHA / perangkat (tanpa path file panjang).
+  String get phoneVerificationFailedShaHint => locale == AppLocale.id
+      ? 'Tambahkan SHA-1 & SHA-256 di Firebase Console (aplikasi Android), lalu uji di HP asli.'
+      : 'Add SHA-1 & SHA-256 in Firebase Console (Android app), then test on a real device.';
+
+  String get phoneVerificationFailedBlockedHint => locale == AppLocale.id
+      ? 'Coba lagi beberapa jam kemudian.'
+      : 'Try again in a few hours.';
+
   String googleConnectedShort(String? email) {
     if (email == null || email.isEmpty) {
       return locale == AppLocale.id
@@ -379,6 +440,23 @@ class AppLocalizations {
       : 'Photo does not meet requirements';
   String get useThisPhoto => locale == AppLocale.id ? 'Pakai foto ini' : 'Use this photo';
   String get changePasswordTitle => locale == AppLocale.id ? 'Ganti Password' : 'Change Password';
+  String get addPasswordMenu => locale == AppLocale.id ? 'Tambah sandi' : 'Add password';
+  String get addPasswordDialogTitle => locale == AppLocale.id ? 'Tambah sandi login' : 'Add sign-in password';
+  String get addPasswordGoogleExplanation => locale == AppLocale.id
+      ? 'Akun Anda masuk dengan Google dan belum punya sandi untuk kolom email di layar login. Buat sandi di bawah agar Anda bisa masuk dengan email + sandi. Tombol «Masuk dengan Google» tetap bisa dipakai.'
+      : 'You sign in with Google and have no password for email sign-in yet. Set a password below to sign in with email + password. «Sign in with Google» still works.';
+  String get loginHintGoogleOrAddPassword => locale == AppLocale.id
+      ? 'Daftar / biasanya pakai Google? Gunakan «Masuk dengan Google» di bawah. Sandi untuk email bisa ditambahkan di Profil → Tambah sandi setelah masuk.'
+      : 'Signed up with Google? Use «Sign in with Google» below. You can add an email password in Profile → Add password after signing in.';
+  String get passwordLinkedSuccess => locale == AppLocale.id
+      ? 'Sandi berhasil ditambahkan. Anda bisa masuk dengan email dan sandi ini.'
+      : 'Password added. You can now sign in with email and this password.';
+  String get passwordAddedProfileWithBiometricClear => locale == AppLocale.id
+      ? 'Sandi login ditambahkan. Anda bisa masuk dengan email + sandi. Login cepat sidik jari/wajah di HP ini dinonaktifkan — aktifkan lagi di Pengaturan profil jika perlu.'
+      : 'Sign-in password added. You can use email + password. Quick biometric sign-in on this device was turned off — enable it again in Profile if needed.';
+  String get addPasswordRequiresRecentLogin => locale == AppLocale.id
+      ? 'Demi keamanan: keluar, masuk lagi dengan Google, lalu buka Tambah sandi sekali lagi.'
+      : 'For security: sign out, sign in with Google again, then try Add password once more.';
   String get addEmailFirstToChangePassword => locale == AppLocale.id
       ? 'Untuk mengubah password, Anda perlu menambahkan dan memverifikasi email terlebih dahulu.'
       : 'To change password, you need to add and verify your email first.';

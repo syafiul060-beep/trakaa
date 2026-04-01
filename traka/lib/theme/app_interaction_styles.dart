@@ -188,12 +188,18 @@ abstract final class AppInteractionStyles {
   );
 
   /// Tombol utama login & daftar (Masuk, Kirim kode, dll.) — radius LG + tinggi tap konsisten.
+  ///
+  /// Saat **disabled** (loading penuh + overlay), latar tetap **primer penuh** — blend dengan
+  /// [surface] memicu «kotak abu» tebal di atas scrim; spinner di tombol + overlay sudah cukup.
   static ButtonStyle authPrimaryCta(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final brand = cs.primary;
+    final onBrand = cs.onPrimary;
     return elevatedPrimary(
-      backgroundColor: cs.primary,
-      foregroundColor: cs.onPrimary,
-      shadowTint: cs.primary,
+      backgroundColor: brand,
+      foregroundColor: onBrand,
+      shadowTint: brand,
+      disabledBackground: brand,
     ).copyWith(
       minimumSize: WidgetStateProperty.all(const Size(64, 54)),
       padding: WidgetStateProperty.all(
@@ -203,23 +209,41 @@ abstract final class AppInteractionStyles {
         ),
       ),
       textStyle: WidgetStateProperty.all(authCtaLabelStyle),
+      foregroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return onBrand.withValues(alpha: 0.96);
+        }
+        return onBrand;
+      }),
     );
   }
 
-  /// Daftar: merek penuh hanya jika [agreeToTerms]; netral M3 jika belum centang.
+  /// Daftar: merek penuh hanya jika [agreeToTerms].
+  /// Sebelum siap: **bukan** blok abu `surfaceContainerHighest` (sering terlihat seperti «kotak abu»
+  /// di atas latar gradien) — pakai transparan + border outline agar menyatu dengan layar.
   static ButtonStyle registerTermsSubmit(
     BuildContext context, {
     required bool agreeToTerms,
   }) {
     final cs = Theme.of(context).colorScheme;
     final brand = cs.primary;
-    final inactiveBg = cs.surfaceContainerHighest;
-    final inactiveFg = cs.onSurfaceVariant;
+    final radius = BorderRadius.circular(AppTheme.radiusLg);
+    final shapeOutline = RoundedRectangleBorder(
+      borderRadius: radius,
+      side: BorderSide(
+        color: cs.outline.withValues(alpha: 0.72),
+        width: 1.2,
+      ),
+    );
+    final shapeFilled = RoundedRectangleBorder(borderRadius: radius);
     return elevatedPrimary(
       backgroundColor: brand,
       foregroundColor: cs.onPrimary,
       shadowTint: brand,
-      disabledBackground: inactiveBg,
+      disabledBackground: Color.alphaBlend(
+        brand.withValues(alpha: 0.72),
+        cs.surface,
+      ),
     ).copyWith(
       minimumSize: WidgetStateProperty.all(const Size(64, 54)),
       padding: WidgetStateProperty.all(
@@ -230,14 +254,16 @@ abstract final class AppInteractionStyles {
       ),
       textStyle: WidgetStateProperty.all(authCtaLabelStyle),
       backgroundColor: WidgetStateProperty.resolveWith((states) {
-        if (!agreeToTerms) return inactiveBg;
+        if (!agreeToTerms) return Colors.transparent;
         if (states.contains(WidgetState.disabled)) {
-          return brand.withValues(alpha: 0.55);
+          return Color.alphaBlend(brand.withValues(alpha: 0.72), cs.surface);
         }
         return brand;
       }),
       foregroundColor: WidgetStateProperty.resolveWith((states) {
-        if (!agreeToTerms) return inactiveFg;
+        if (!agreeToTerms) {
+          return brand.withValues(alpha: 0.78);
+        }
         if (states.contains(WidgetState.disabled)) {
           return cs.onPrimary.withValues(alpha: 0.92);
         }
@@ -246,6 +272,10 @@ abstract final class AppInteractionStyles {
       shadowColor: WidgetStateProperty.resolveWith((states) {
         if (!agreeToTerms) return Colors.transparent;
         return brand.withValues(alpha: 0.42);
+      }),
+      shape: WidgetStateProperty.resolveWith((states) {
+        if (!agreeToTerms) return shapeOutline;
+        return shapeFilled;
       }),
       elevation: WidgetStateProperty.resolveWith((states) {
         if (!agreeToTerms) return 0.0;

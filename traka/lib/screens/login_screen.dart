@@ -18,7 +18,9 @@ import '../theme/app_interaction_styles.dart';
 import '../theme/traka_visual_tokens.dart';
 import '../theme/responsive.dart';
 import '../utils/app_logger.dart';
+import '../config/google_oauth_web_client.dart';
 import '../utils/phone_utils.dart';
+import '../utils/phone_verification_snackbar.dart';
 import '../services/account_deletion_service.dart';
 import '../services/auth_flow_service.dart';
 import '../models/user_role.dart';
@@ -33,11 +35,24 @@ import '../services/verification_log_service.dart';
 import '../services/auth_redirect_state.dart';
 import '../services/performance_trace_service.dart';
 import '../services/biometric_login_service.dart';
+import '../services/app_config_service.dart';
 import 'active_liveness_screen.dart';
 import 'forgot_password_screen.dart';
 import 'register_screen.dart';
 import '../widgets/auth_loading_overlay.dart';
 import '../widgets/traka_bottom_sheet.dart';
+import '../widgets/traka_loading_indicator.dart';
+import '../theme/traka_snackbar.dart';
+
+/// Pesan [AuthLoadingOverlay] saat login (email / Google / OTP / recovery).
+enum _LoginAuthOverlayKind {
+  googleEmail,
+  emailPassword,
+  recoveryCode,
+  phoneOtp,
+  signingIn,
+  completingLogin,
+}
 
 class LoginScreen extends StatefulWidget {
   /// Jika tidak null, tampilkan SnackBar "Perangkat sudah digunakan oleh penumpang/driver" setelah halaman terbuka.
@@ -58,16 +73,57 @@ class _LoginScreenState extends State<LoginScreen> {
   final _recoveryCodeController = TextEditingController();
 
   AppLocalizations get l10n => AppLocalizations(locale: LocaleService.current);
+
+  void _setLoginLoadingOff() {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = false;
+      _loginAuthOverlayKind = null;
+    });
+  }
+
+  void _setLoginAuthOverlayKind(_LoginAuthOverlayKind? kind) {
+    if (!mounted) return;
+    setState(() => _loginAuthOverlayKind = kind);
+  }
+
+  String? _loginAuthOverlayMessage() {
+    if (_otpRequestInFlight) return null;
+    if (_biometricLoginLoading) return l10n.authOverlayBiometricLogin;
+    if (!_isLoading) return null;
+    switch (_loginAuthOverlayKind) {
+      case _LoginAuthOverlayKind.googleEmail:
+        return l10n.authOverlayGoogleEmailVerifying;
+      case _LoginAuthOverlayKind.emailPassword:
+        return l10n.authOverlayLoginEmailPassword;
+      case _LoginAuthOverlayKind.recoveryCode:
+        return l10n.authOverlayLoginRecovery;
+      case _LoginAuthOverlayKind.phoneOtp:
+        return l10n.authOverlayLoginPhoneOtp;
+      case _LoginAuthOverlayKind.signingIn:
+        return l10n.authOverlayLoginSigningIn;
+      case _LoginAuthOverlayKind.completingLogin:
+        return l10n.authOverlayLoginCompletingProfile;
+      case null:
+        return l10n.authOverlayLoginSigningIn;
+    }
+  }
+
   bool _obscurePassword = true;
   bool _isLoading = false;
+  /// Meminta OTP SMS — tanpa overlay penuh agar reCAPTCHA tidak «nempel» di scrim.
+  bool _otpRequestInFlight = false;
   /// false = form terpadu (email/phone + password). true = legacy OTP untuk akun lama.
   bool _loginWithPhone = false;
   String? _phoneVerificationId;
   bool _phoneOtpSent = false;
   bool _showBiometricLogin = false;
   bool _biometricLoginLoading = false;
+  _LoginAuthOverlayKind? _loginAuthOverlayKind;
   bool _isFacePreferred = false;
   int _biometricConsecutiveFailures = 0;
+  LoginSloganConfig _loginSlogan = const LoginSloganConfig();
+  StreamSubscription<LoginSloganConfig>? _loginSloganSub;
 
   @override
   void initState() {
@@ -82,15 +138,17 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!mounted) return;
         final msg = widget.deviceAlreadyUsedMessage!;
         final isVerifyError = msg.contains('memverifikasi perangkat');
+        final cs = Theme.of(context).colorScheme;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               msg,
               style: TextStyle(
-                color: isVerifyError ? Colors.black87 : Theme.of(context).colorScheme.onPrimaryContainer,
+                color: isVerifyError ? cs.onPrimary : cs.onPrimaryContainer,
               ),
             ),
-            backgroundColor: isVerifyError ? Colors.amber : Theme.of(context).colorScheme.primaryContainer,
+            backgroundColor:
+                isVerifyError ? cs.primary : cs.primaryContainer,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 3),
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -98,6 +156,9 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       });
     }
+    _loginSloganSub = AppConfigService.watchLoginSloganConfig().listen((c) {
+      if (mounted) setState(() => _loginSlogan = c);
+    });
   }
 
   /// Mendapatkan Device ID saat halaman login (untuk verifikasi perangkat).
@@ -140,11 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } else if (error != null && error.isNotEmpty) {
       _biometricConsecutiveFailures += 1;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text(error), behavior: SnackBarBehavior.floating),
       );
       if (_biometricConsecutiveFailures >= 3 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -160,6 +217,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _loginSloganSub?.cancel();
     AuthRedirectState.setOnLoginScreen(false);
     _emailController.dispose();
     _passwordController.dispose();
@@ -173,19 +231,18 @@ class _LoginScreenState extends State<LoginScreen> {
     final code = _recoveryCodeController.text.trim().toUpperCase();
     if (code.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.warning(context, Text(
             l10n.locale == AppLocale.id
                 ? 'Masukkan kode recovery dari tim support.'
                 : 'Enter recovery code from support team.',
-          ),
-          backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-        ),
+          ), behavior: SnackBarBehavior.floating),
       );
       return;
     }
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loginAuthOverlayKind = _LoginAuthOverlayKind.recoveryCode;
+    });
     await Future<void>.delayed(Duration.zero);
     AuthRedirectState.setInLoginFlow(true);
     try {
@@ -205,30 +262,22 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } on FirebaseFunctionsException catch (e) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setLoginLoadingOff();
       final msg = e.message ?? (l10n.locale == AppLocale.id
           ? 'Kode tidak valid atau sudah kedaluwarsa.'
           : 'Code invalid or expired.');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text(msg), behavior: SnackBarBehavior.floating),
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setLoginLoadingOff();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             l10n.locale == AppLocale.id
                 ? 'Gagal login dengan kode recovery.'
                 : 'Failed to login with recovery code.',
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+          ), behavior: SnackBarBehavior.floating),
       );
     } finally {
       AuthRedirectState.setInLoginFlow(false);
@@ -244,19 +293,15 @@ class _LoginScreenState extends State<LoginScreen> {
     final rateLimitResult = await DeviceSecurityService.checkLoginRateLimit();
     if (!rateLimitResult.allowed) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setLoginLoadingOff();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             rateLimitResult.message ?? 'Login ditangguhkan.',
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
+          ), behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          duration: const Duration(seconds: 4),
-        ),
+          duration: const Duration(seconds: 4)),
       );
       return;
     }
@@ -275,47 +320,38 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       if (!exists) {
-        setState(() => _isLoading = false);
+        _setLoginLoadingOff();
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+          TrakaSnackBar.error(context, Text(
               l10n.locale == AppLocale.id
                   ? 'No. telepon belum terdaftar. Silakan daftar terlebih dahulu.'
                   : 'Phone number not registered. Please register first.',
               textAlign: TextAlign.center,
               style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
+            ), behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             duration: const Duration(seconds: 5),
             action: SnackBarAction(
               label: l10n.locale == AppLocale.id ? 'Daftar' : 'Register',
-              textColor: Colors.white,
               onPressed: () => _onRegister(),
-            ),
-          ),
+            )),
         );
         return;
       }
 
       if (oauthGoogle) {
-        setState(() => _isLoading = false);
+        _setLoginLoadingOff();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+          TrakaSnackBar.warning(context, Text(
               l10n.locale == AppLocale.id
                   ? 'Akun ini terhubung ke Google tanpa sandi di Traka. Gunakan «Masuk dengan akun Google».'
                   : 'This account uses Google sign-in without a Traka password. Use «Sign in with Google».',
               textAlign: TextAlign.center,
               style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
+            ), behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            duration: const Duration(seconds: 5),
-          ),
+            duration: const Duration(seconds: 5)),
         );
         return;
       }
@@ -323,21 +359,18 @@ class _LoginScreenState extends State<LoginScreen> {
       if (legacy) {
         setState(() {
           _isLoading = false;
+          _loginAuthOverlayKind = null;
           _loginWithPhone = true;
           _phoneController.text = phoneInput;
           _phoneVerificationId = null;
           _phoneOtpSent = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+          TrakaSnackBar.warning(context, Text(
               l10n.locale == AppLocale.id
                   ? 'Akun ini memerlukan verifikasi OTP. Kirim kode SMS.'
                   : 'This account requires OTP verification. Send SMS code.',
-            ),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
-          ),
+            ), behavior: SnackBarBehavior.floating),
         );
         return;
       }
@@ -348,23 +381,19 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!mounted) return;
       } else {
         if (!mounted) return;
-        setState(() => _isLoading = false);
+        _setLoginLoadingOff();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+          TrakaSnackBar.error(context, Text(
               l10n.locale == AppLocale.id
                   ? 'Gagal login. Silakan coba lagi.'
                   : 'Login failed. Please try again.',
-            ),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+            ), behavior: SnackBarBehavior.floating),
         );
       }
     } catch (e, st) {
       logError('LoginScreen._onLoginWithPhoneOrPassword', e, st);
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setLoginLoadingOff();
       final errStr = e.toString();
       final msg = kDebugMode
           ? (errStr.length > 120 ? '${errStr.substring(0, 120)}...' : errStr)
@@ -372,12 +401,8 @@ class _LoginScreenState extends State<LoginScreen> {
               ? 'Gagal login. Silakan coba lagi.'
               : 'Login failed. Please try again.');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg, textAlign: TextAlign.center),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 5),
-        ),
+        TrakaSnackBar.error(context, Text(msg, textAlign: TextAlign.center), behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5)),
       );
     }
   }
@@ -392,7 +417,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     FocusScope.of(context).unfocus();
     // Disable tombol + overlay; jeda satu frame agar UI sempat melukis (terasa responsif).
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loginAuthOverlayKind = _LoginAuthOverlayKind.signingIn;
+    });
     await Future<void>.delayed(Duration.zero);
     AuthRedirectState.setInLoginFlow(true);
     try {
@@ -417,22 +445,20 @@ class _LoginScreenState extends State<LoginScreen> {
     final rateLimitResult = await DeviceSecurityService.checkLoginRateLimit();
     if (!rateLimitResult.allowed) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setLoginLoadingOff();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             rateLimitResult.message ?? 'Login ditangguhkan.',
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
+          ), behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          duration: const Duration(seconds: 4),
-        ),
+          duration: const Duration(seconds: 4)),
       );
       return;
     }
+
+    _setLoginAuthOverlayKind(_LoginAuthOverlayKind.emailPassword);
 
     try {
       final userCredential = await FirebaseAuth.instance
@@ -441,7 +467,7 @@ class _LoginScreenState extends State<LoginScreen> {
       await _handlePostLogin(uid);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setLoginLoadingOff();
       AppAnalyticsService.logLoginFailed(reason: e.code);
       try {
         await DeviceSecurityService.recordLoginFailed();
@@ -520,22 +546,18 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       final snackSecs = errorMessage.contains('\n\n') ? 8 : 3;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             errorMessage,
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold, height: 1.35),
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
+          ), behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          duration: Duration(seconds: snackSecs),
-        ),
+          duration: Duration(seconds: snackSecs)),
       );
     } catch (e, st) {
       logError('LoginScreen.login', e, st);
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setLoginLoadingOff();
       AppAnalyticsService.logLoginFailed(reason: e.toString());
       try {
         await DeviceSecurityService.recordLoginFailed();
@@ -551,17 +573,13 @@ class _LoginScreenState extends State<LoginScreen> {
               ? 'Gagal login. Silakan coba lagi.'
               : 'Login failed. Please try again.');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             msg,
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
+          ), behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          duration: const Duration(seconds: 5),
-        ),
+          duration: const Duration(seconds: 5)),
       );
     }
   }
@@ -571,6 +589,11 @@ class _LoginScreenState extends State<LoginScreen> {
     String uid, {
     String? analyticsLoginMethod,
   }) async {
+    if (mounted && _isLoading) {
+      setState(() {
+        _loginAuthOverlayKind = _LoginAuthOverlayKind.completingLogin;
+      });
+    }
     // Delay minimal untuk edge case: logout dari device A lalu langsung login di device B
     // Jalankan Firestore + deviceId paralel agar lebih cepat
     Future<DocumentSnapshot<Map<String, dynamic>>?> fetchUserDoc() async {
@@ -612,21 +635,17 @@ class _LoginScreenState extends State<LoginScreen> {
     if (userDoc == null) {
       await FirebaseAuth.instance.signOut();
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setLoginLoadingOff();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             l10n.locale == AppLocale.id
                 ? 'Gagal membaca data pengguna. Silakan coba lagi.'
                 : 'Failed to read user data. Please try again.',
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
+          ), behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          duration: const Duration(seconds: 3),
-        ),
+          duration: const Duration(seconds: 3)),
       );
       return;
     }
@@ -634,27 +653,22 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!userDoc.exists) {
       await FirebaseAuth.instance.signOut();
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setLoginLoadingOff();
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             l10n.locale == AppLocale.id
                 ? 'No. telepon belum terdaftar. Silakan daftar terlebih dahulu.'
                 : 'Phone number not registered. Please register first.',
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
+          ), behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           duration: const Duration(seconds: 5),
           action: SnackBarAction(
             label: l10n.locale == AppLocale.id ? 'Daftar' : 'Register',
-            textColor: Colors.white,
             onPressed: () => _onRegister(),
-          ),
-        ),
+          )),
       );
       return;
     }
@@ -678,7 +692,7 @@ class _LoginScreenState extends State<LoginScreen> {
         // Lanjut ke flow normal (jangan return)
       } else {
         await FirebaseAuth.instance.signOut();
-        setState(() => _isLoading = false);
+        _setLoginLoadingOff();
         return;
       }
     }
@@ -725,21 +739,17 @@ class _LoginScreenState extends State<LoginScreen> {
           uid, role, currentDeviceId)) {
         await FirebaseAuth.instance.signOut();
         if (!mounted) return;
-        setState(() => _isLoading = false);
+        _setLoginLoadingOff();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+          TrakaSnackBar.error(context, Text(
               l10n.locale == AppLocale.id
                   ? 'Device ini sudah digunakan oleh akun $role lain. 1 akun hanya boleh login di 1 device. Silakan logout dari device lain terlebih dahulu.'
                   : 'This device is already used by another $role account. 1 account can only login on 1 device. Please logout from the other device first.',
               textAlign: TextAlign.center,
               style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
+            ), behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            duration: const Duration(seconds: 5),
-          ),
+            duration: const Duration(seconds: 5)),
         );
         return;
       }
@@ -811,7 +821,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       if (!result.verified) {
         await FirebaseAuth.instance.signOut();
-        setState(() => _isLoading = false);
+        _setLoginLoadingOff();
         return;
       }
       // Lepaskan device lama dari device_accounts agar HP lama bisa daftar lagi
@@ -844,7 +854,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     if (!mounted) return;
-    setState(() => _isLoading = false);
+    _setLoginLoadingOff();
 
     // recordLoginSuccess + analytics di background (tidak blok navigasi)
     unawaited(Future(() async {
@@ -872,19 +882,15 @@ class _LoginScreenState extends State<LoginScreen> {
       await FirebaseAuth.instance.signOut();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             l10n.locale == AppLocale.id
                 ? 'Role tidak valid. Silakan hubungi administrator.'
                 : 'Invalid role. Please contact administrator.',
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
+          ), behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          duration: const Duration(seconds: 3),
-        ),
+          duration: const Duration(seconds: 3)),
       );
     }
   }
@@ -1229,12 +1235,13 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
     final phoneE164 = toE164(phone);
-    setState(() => _isLoading = true);
+    setState(() => _otpRequestInFlight = true);
     await Future<void>.delayed(Duration.zero);
     await FirebaseAuth.instance.verifyPhoneNumber(
       phoneNumber: phoneE164,
       verificationCompleted: (PhoneAuthCredential credential) async {
         if (!mounted) return;
+        if (mounted) setState(() => _otpRequestInFlight = false);
         try {
           final userCredential = await FirebaseAuth.instance
               .signInWithCredential(credential);
@@ -1244,50 +1251,35 @@ class _LoginScreenState extends State<LoginScreen> {
           if (!mounted) return;
           await FirebaseAuth.instance.signOut();
           if (!mounted) return;
-          setState(() => _isLoading = false);
+          setState(() {
+            _isLoading = false;
+            _loginAuthOverlayKind = null;
+            _otpRequestInFlight = false;
+          });
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
+            TrakaSnackBar.error(context, const Text(
                 'No. telepon belum terdaftar. Silakan daftar terlebih dahulu.',
-              ),
-              backgroundColor: Colors.red,
-              action: SnackBarAction(
+              ), action: SnackBarAction(
                 label: 'Daftar',
-                textColor: Colors.white,
                 onPressed: () => _onRegister(),
               ),
-              duration: const Duration(seconds: 5),
-            ),
+              duration: const Duration(seconds: 5)),
           );
         }
       },
       verificationFailed: (FirebaseAuthException e) {
         if (!mounted) return;
-        setState(() => _isLoading = false);
-        String message = 'Verifikasi gagal. Coba lagi.';
-        final code = e.code;
-        final msg = (e.message ?? '').toLowerCase();
-        if (code == 'missing-client-identifier' ||
-            msg.contains('app identifier') ||
-            msg.contains('play integrity') ||
-            msg.contains('recaptcha')) {
-          message =
-              'Perangkat/aplikasi belum terverifikasi. '
-              'Tambahkan SHA-1 di Firebase Console dan coba di HP asli. Lihat docs/FIREBASE_OTP_LANGKAH.md';
-        } else if (msg.contains('blocked') ||
-            msg.contains('unusual activity')) {
-          message =
-              'Perangkat ini sementara diblokir karena aktivitas tidak biasa. Tunggu beberapa jam lalu coba lagi.';
-        } else if (e.message != null && e.message!.isNotEmpty) {
-          message = e.message!;
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
+        setState(() {
+          _isLoading = false;
+          _loginAuthOverlayKind = null;
+          _otpRequestInFlight = false;
+        });
+        showPhoneVerificationFailedSnackBar(
+          context,
+          exception: e,
+          analyticsSource: 'login',
+          l10n: l10n,
         );
       },
       codeSent: (String verificationId, int? resendToken) {
@@ -1296,16 +1288,15 @@ class _LoginScreenState extends State<LoginScreen> {
           _phoneVerificationId = verificationId;
           _phoneOtpSent = true;
           _isLoading = false;
+          _loginAuthOverlayKind = null;
+          _otpRequestInFlight = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+          TrakaSnackBar.success(context, Text(
               l10n.locale == AppLocale.id
                   ? 'Kode verifikasi telah dikirim ke $phoneE164'
                   : 'Verification code sent to $phoneE164',
-            ),
-            backgroundColor: Colors.green,
-          ),
+            )),
         );
       },
       codeAutoRetrievalTimeout: (_) {},
@@ -1315,6 +1306,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _onLoginWithPhone() async {
     final code = _otpController.text.trim();
     if (code.isEmpty || _phoneVerificationId == null) {
+      _setLoginLoadingOff();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -1326,7 +1318,10 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       return;
     }
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loginAuthOverlayKind = _LoginAuthOverlayKind.phoneOtp;
+    });
     await Future<void>.delayed(Duration.zero);
     try {
       final credential = PhoneAuthProvider.credential(
@@ -1340,30 +1335,24 @@ class _LoginScreenState extends State<LoginScreen> {
       if (uid != null) {
         await _handlePostLogin(uid);
       } else {
-        setState(() => _isLoading = false);
+        _setLoginLoadingOff();
       }
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setLoginLoadingOff();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             e.message ??
                 (l10n.locale == AppLocale.id
                     ? 'Kode salah atau kedaluwarsa.'
                     : 'Invalid or expired code.'),
-          ),
-          backgroundColor: Colors.red,
-        ),
+          )),
       );
     } catch (_) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setLoginLoadingOff();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Gagal login dengan no. telepon.'),
-          backgroundColor: Colors.red,
-        ),
+        TrakaSnackBar.error(context, Text('Gagal login dengan no. telepon.')),
       );
     }
   }
@@ -1376,42 +1365,40 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!rateLimitResult.allowed) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             rateLimitResult.message ?? 'Login ditangguhkan.',
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
+          ), behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          duration: const Duration(seconds: 4),
-        ),
+          duration: const Duration(seconds: 4)),
       );
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loginAuthOverlayKind = _LoginAuthOverlayKind.googleEmail;
+    });
     await Future<void>.delayed(Duration.zero);
     AuthRedirectState.setInLoginFlow(true);
-    final googleSignIn = GoogleSignIn(scopes: const <String>['email', 'profile']);
+    final googleSignIn = GoogleSignIn(
+      scopes: const <String>['email', 'profile'],
+      serverClientId: kGoogleOAuthWebClientId,
+    );
     try {
       final account = await googleSignIn.signIn();
       if (!mounted) return;
       if (account == null) {
-        setState(() => _isLoading = false);
+        _setLoginLoadingOff();
         return;
       }
       final auth = await account.authentication;
       if (auth.idToken == null && auth.accessToken == null) {
         if (!mounted) return;
-        setState(() => _isLoading = false);
+        _setLoginLoadingOff();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.googleSignInFailed),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+          TrakaSnackBar.error(context, Text(l10n.googleSignInFailed), behavior: SnackBarBehavior.floating),
         );
         return;
       }
@@ -1423,7 +1410,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final user = uc.user;
       if (!mounted) return;
       if (user == null) {
-        setState(() => _isLoading = false);
+        _setLoginLoadingOff();
         return;
       }
       final hasPhoneProvider =
@@ -1432,26 +1419,23 @@ class _LoginScreenState extends State<LoginScreen> {
         await FirebaseAuth.instance.signOut();
         await googleSignIn.signOut();
         if (!mounted) return;
-        setState(() => _isLoading = false);
+        _setLoginLoadingOff();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+          TrakaSnackBar.warning(context, Text(
               l10n.loginGoogleNeedPhone,
               textAlign: TextAlign.center,
               style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
+            ), behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            duration: const Duration(seconds: 6),
-          ),
+            duration: const Duration(seconds: 6)),
         );
         return;
       }
+      if (!mounted) return;
       await _handlePostLogin(user.uid, analyticsLoginMethod: 'google');
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setLoginLoadingOff();
       AppAnalyticsService.logLoginFailed(reason: e.code);
       try {
         await DeviceSecurityService.recordLoginFailed();
@@ -1460,24 +1444,20 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
+        TrakaSnackBar.error(context, Text(
             e.message ??
                 (l10n.locale == AppLocale.id
                     ? 'Gagal masuk dengan Google.'
                     : 'Google sign-in failed.'),
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        ),
+          ), behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16)),
       );
     } catch (e, st) {
       logError('LoginScreen.loginWithGoogle', e, st);
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      _setLoginLoadingOff();
       AppAnalyticsService.logLoginFailed(reason: e.toString());
       try {
         await DeviceSecurityService.recordLoginFailed();
@@ -1486,11 +1466,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.googleSignInFailed),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text(l10n.googleSignInFailed), behavior: SnackBarBehavior.floating),
       );
     } finally {
       AuthRedirectState.setInLoginFlow(false);
@@ -1734,323 +1710,434 @@ class _LoginScreenState extends State<LoginScreen> {
           // saat keyboard / inset berubah (terlihat seperti layar "tidak full").
           Positioned.fill(
             child: SafeArea(
-              child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                horizontal: context.responsive.horizontalPadding,
-              ),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                SizedBox(height: context.responsive.spacing(16)),
-                // Language – kanan atas
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: _LanguageSelector(
-                    current: LocaleService.current,
-                    onSelected: _onLanguageSelected,
-                  ),
-                ),
-                SizedBox(height: context.responsive.spacing(24)),
-                // Logo
-                const _LogoSection(),
-                SizedBox(height: context.responsive.spacing(24)),
-                SizedBox(height: context.responsive.spacing(16)),
-                // Form terpadu: Email atau No. Telepon + Password. Legacy OTP jika akun lama.
-                if (!_loginWithPhone) ...[
-                  _UnderlineTextField(
-                    controller: _emailController,
-                    hint: l10n.locale == AppLocale.id
-                        ? 'Email atau No. Telepon'
-                        : 'Email or Phone number',
-                    prefixIcon: Icons.person_outline,
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (v) {
-                      if (v == null || v.trim().isEmpty) {
-                        return l10n.locale == AppLocale.id
-                            ? 'Email atau no. telepon wajib diisi'
-                            : 'Email or phone is required';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 20),
-                  _UnderlineTextField(
-                    controller: _passwordController,
-                    hint: l10n.passwordHint,
-                    prefixIcon: Icons.lock_outline,
-                    obscureText: _obscurePassword,
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
-                    ),
-                    validator: (v) {
-                      if (v == null || v.isEmpty) {
-                        return l10n.locale == AppLocale.id
-                            ? 'Sandi wajib diisi'
-                            : 'Password is required';
-                      }
-                      return null;
-                    },
-                  ),
-                  if (_showBiometricLogin) ...[
-                    const SizedBox(height: 24),
-                    Center(
-                      child: _ModernBiometricLoginButton(
-                        isLoading: _biometricLoginLoading,
-                        onTap: _onBiometricLogin,
-                        isId: l10n.locale == AppLocale.id,
-                        isFacePreferred: _isFacePreferred,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 20),
-                  Semantics(
-                    label: l10n.loginButton,
-                    button: true,
-                    child: FilledButton(
-                      onPressed: _isLoading ? null : _onLogin,
-                      style: AppInteractionStyles.authPrimaryCta(context),
-                      child: _isLoading
-                        ? SizedBox(
-                            height: 22,
-                            width: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: colorScheme.onPrimary,
-                            ),
-                          )
-                        : Text(
-                            l10n.loginButton,
-                            style: AppInteractionStyles.authCtaLabelStyle,
-                          ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Semantics(
-                      label: l10n.forgotPassword,
-                      button: true,
-                      child: GestureDetector(
-                        onTap: _onForgotPassword,
-                        child: Text(
-                          l10n.forgotPassword,
-                          style: TextStyle(
-                            color: colorScheme.onSurfaceVariant,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ] else ...[
-                  _UnderlineTextField(
-                    controller: _phoneController,
-                    hint: l10n.locale == AppLocale.id
-                        ? 'No. telepon (contoh: 08123456789)'
-                        : 'Phone (e.g. 08123456789)',
-                    prefixIcon: Icons.phone_outlined,
-                    keyboardType: TextInputType.phone,
-                  ),
-                  if (!_phoneOtpSent) ...[
-                    const SizedBox(height: 28),
-                    FilledButton(
-                      onPressed: _isLoading ? null : _sendPhoneOtp,
-                      style: AppInteractionStyles.authPrimaryCta(context),
-                      child: _isLoading
-                          ? SizedBox(
-                              height: 22,
-                              width: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: colorScheme.onPrimary,
-                              ),
-                            )
-                          : Text(
-                              l10n.locale == AppLocale.id
-                                  ? 'Kirim kode SMS'
-                                  : 'Send SMS code',
-                              style: AppInteractionStyles.authCtaLabelStyle,
-                            ),
-                    ),
-                  ] else ...[
-                    const SizedBox(height: 20),
-                    _UnderlineTextField(
-                      controller: _otpController,
-                      hint: l10n.locale == AppLocale.id
-                          ? 'Kode verifikasi (6 digit)'
-                          : 'Verification code (6 digits)',
-                      prefixIcon: Icons.sms_outlined,
-                      keyboardType: TextInputType.number,
-                    ),
-                    const SizedBox(height: 28),
-                    FilledButton(
-                      onPressed: _isLoading ? null : _onLoginWithPhone,
-                      style: AppInteractionStyles.authPrimaryCta(context),
-                      child: _isLoading
-                          ? SizedBox(
-                              height: 22,
-                              width: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: colorScheme.onPrimary,
-                              ),
-                            )
-                          : Text(
-                              l10n.loginButton,
-                              style: AppInteractionStyles.authCtaLabelStyle,
-                            ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        TextButton(
-                          onPressed: () => setState(() {
-                            _phoneOtpSent = false;
-                            _phoneVerificationId = null;
-                            _otpController.clear();
-                          }),
-                          child: Text(
-                            l10n.locale == AppLocale.id
-                                ? 'Ganti no. telepon'
-                                : 'Change phone number',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => setState(() {
-                            _loginWithPhone = false;
-                            _phoneOtpSent = false;
-                            _phoneVerificationId = null;
-                            _otpController.clear();
-                          }),
-                          child: Text(
-                            l10n.locale == AppLocale.id
-                                ? 'Email / Password'
-                                : 'Email / Password',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-                const SizedBox(height: 24),
-                Center(
-                  child: GestureDetector(
-                    onTap: _isLoading ? null : () => _loginWithGoogle(),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const _LoginGoogleGlyph(size: 20),
-                        const SizedBox(width: 10),
-                        Text(
-                          l10n.loginWithGoogle,
-                          style: TextStyle(
-                            color: colorScheme.primary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            decoration: TextDecoration.underline,
-                            decorationColor: colorScheme.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 32),
-                Center(
-                  child: GestureDetector(
-                    onTap: () => _showRecoveryCodeDialog(),
-                    child: Text(
-                      l10n.locale == AppLocale.id
-                          ? 'Nomor hilang? Masukkan kode recovery'
-                          : 'Lost number? Enter recovery code',
-                      style: TextStyle(
-                        color: colorScheme.primary,
-                        fontSize: 14,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 48),
-                // Belum Punya Akun...? Daftar – tengah, Daftar diklik buka pilihan Penumpang/Driver
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            l10n.locale == AppLocale.id
-                                ? 'Belum Punya Akun...? '
-                                : "Don't have an account...? ",
-                            style: TextStyle(
-                              color: colorScheme.onSurfaceVariant,
-                              fontSize: 15,
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: _onRegister,
-                            child: Text(
-                              l10n.register,
-                              style: TextStyle(
-                                color: colorScheme.onSurfaceVariant,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w500,
-                                decoration: TextDecoration.underline,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      GestureDetector(
-                        onTap: _onRegisterWithGoogle,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final gap = _LoginLayoutGap(context);
+                  final theme = Theme.of(context);
+                  final textTheme = theme.textTheme;
+                  final hPad = context.responsive.horizontalPadding;
+                  final maxFormW = math.min(440.0, constraints.maxWidth);
+                  final linkPrimary = textTheme.labelLarge?.copyWith(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.underline,
+                    decorationColor: colorScheme.primary,
+                  );
+                  final linkMuted = textTheme.labelLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
+                    decoration: TextDecoration.underline,
+                    decorationColor: colorScheme.onSurfaceVariant,
+                  );
+                  final captionStyle = textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    height: 1.4,
+                  );
+
+                  Widget primaryCtaChild(bool busy, String label) {
+                    if (busy) {
+                      return TrakaLoadingIndicator(
+                        size: 24,
+                        strokeWidth: 2.5,
+                        primary: colorScheme.onPrimary,
+                        secondary: colorScheme.onPrimary.withValues(alpha: 0.75),
+                        variant: TrakaLoadingVariant.onDimmedBackdrop,
+                      );
+                    }
+                    return Text(label, style: AppInteractionStyles.authCtaLabelStyle);
+                  }
+
+                  return SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(hPad, gap.md, hPad, gap.xl),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: maxFormW),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            const _LoginGoogleGlyph(size: 20),
-                            const SizedBox(width: 10),
-                            Text(
-                              l10n.registerWithGoogle,
-                              style: TextStyle(
-                                color: colorScheme.primary,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                decoration: TextDecoration.underline,
-                                decorationColor: colorScheme.primary,
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: _LanguageSelector(
+                                current: LocaleService.current,
+                                onSelected: _onLanguageSelected,
                               ),
                             ),
+                            SizedBox(height: gap.lg),
+                            Builder(
+                              builder: (context) {
+                                final copy =
+                                    _loginSlogan.resolve(l10n.locale == AppLocale.id);
+                                final pills = _loginSlogan.resolveHeroPills(
+                                  l10n.locale == AppLocale.id,
+                                );
+                                return _LoginBrandHero(
+                                  isId: l10n.locale == AppLocale.id,
+                                  title: copy.title,
+                                  subtitle: copy.subtitle,
+                                  pills: pills,
+                                );
+                              },
+                            ),
+                            SizedBox(height: gap.xl),
+                            // —— Form utama: email/telepon + sandi atau OTP ——
+                            if (!_loginWithPhone) ...[
+                              _UnderlineTextField(
+                                controller: _emailController,
+                                hint: l10n.loginEmailOrPhoneFieldHint,
+                                prefixIcon: Icons.person_outline,
+                                keyboardType: TextInputType.emailAddress,
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) {
+                                    return l10n.locale == AppLocale.id
+                                        ? 'Email atau no. telepon wajib diisi'
+                                        : 'Email or phone is required';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  top: gap.xs,
+                                  left: AppTheme.spacingXs,
+                                  right: AppTheme.spacingXs,
+                                ),
+                                child: Text(
+                                  l10n.loginEmailFieldSubhint,
+                                  style: captionStyle,
+                                ),
+                              ),
+                              SizedBox(height: gap.md),
+                              _UnderlineTextField(
+                                controller: _passwordController,
+                                hint: l10n.passwordHint,
+                                prefixIcon: Icons.lock_outline,
+                                obscureText: _obscurePassword,
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                    color: colorScheme.onSurfaceVariant,
+                                    size: context.responsive.iconSize(22),
+                                  ),
+                                  onPressed: () => setState(
+                                    () => _obscurePassword = !_obscurePassword,
+                                  ),
+                                ),
+                                validator: (v) {
+                                  if (v == null || v.isEmpty) {
+                                    return l10n.locale == AppLocale.id
+                                        ? 'Sandi wajib diisi'
+                                        : 'Password is required';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              if (_showBiometricLogin) ...[
+                                SizedBox(height: gap.xl),
+                                Center(
+                                  child: _ModernBiometricLoginButton(
+                                    isLoading: _biometricLoginLoading,
+                                    onTap: _onBiometricLogin,
+                                    isId: l10n.locale == AppLocale.id,
+                                    isFacePreferred: _isFacePreferred,
+                                  ),
+                                ),
+                              ],
+                              SizedBox(height: gap.lg),
+                              Semantics(
+                                label: l10n.loginButton,
+                                button: true,
+                                child: FilledButton(
+                                  onPressed: _isLoading ? null : _onLogin,
+                                  style: AppInteractionStyles.authPrimaryCta(context),
+                                  child: primaryCtaChild(_isLoading, l10n.loginButton),
+                                ),
+                              ),
+                              SizedBox(height: gap.md),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Semantics(
+                                  label: l10n.forgotPassword,
+                                  button: true,
+                                  child: TextButton(
+                                    onPressed: _onForgotPassword,
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: Text(
+                                      l10n.forgotPassword,
+                                      style: textTheme.labelLarge?.copyWith(
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ] else ...[
+                              _UnderlineTextField(
+                                controller: _phoneController,
+                                hint: l10n.locale == AppLocale.id
+                                    ? 'No. telepon (contoh: 08123456789)'
+                                    : 'Phone (e.g. 08123456789)',
+                                prefixIcon: Icons.phone_outlined,
+                                keyboardType: TextInputType.phone,
+                              ),
+                              if (!_phoneOtpSent) ...[
+                                SizedBox(height: gap.lg),
+                                FilledButton(
+                                  onPressed:
+                                      _otpRequestInFlight ? null : _sendPhoneOtp,
+                                  style: AppInteractionStyles.authPrimaryCta(context),
+                                  child: primaryCtaChild(
+                                    _otpRequestInFlight,
+                                    l10n.locale == AppLocale.id
+                                        ? 'Kirim kode SMS'
+                                        : 'Send SMS code',
+                                  ),
+                                ),
+                              ] else ...[
+                                SizedBox(height: gap.lg),
+                                _UnderlineTextField(
+                                  controller: _otpController,
+                                  hint: l10n.locale == AppLocale.id
+                                      ? 'Kode verifikasi (6 digit)'
+                                      : 'Verification code (6 digits)',
+                                  prefixIcon: Icons.sms_outlined,
+                                  keyboardType: TextInputType.number,
+                                ),
+                                SizedBox(height: gap.lg),
+                                FilledButton(
+                                  onPressed: _isLoading ? null : _onLoginWithPhone,
+                                  style: AppInteractionStyles.authPrimaryCta(context),
+                                  child: primaryCtaChild(
+                                    _isLoading,
+                                    l10n.loginButton,
+                                  ),
+                                ),
+                                SizedBox(height: gap.sm),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: TextButton(
+                                          onPressed: () => setState(() {
+                                            _phoneOtpSent = false;
+                                            _phoneVerificationId = null;
+                                            _otpController.clear();
+                                            _otpRequestInFlight = false;
+                                          }),
+                                          style: TextButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 4,
+                                              vertical: 4,
+                                            ),
+                                            minimumSize: Size.zero,
+                                            tapTargetSize: MaterialTapTargetSize
+                                                .shrinkWrap,
+                                          ),
+                                          child: Text(
+                                            l10n.locale == AppLocale.id
+                                                ? 'Ganti no. telepon'
+                                                : 'Change phone number',
+                                            style: textTheme.labelSmall,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Align(
+                                        alignment: Alignment.centerRight,
+                                        child: TextButton(
+                                          onPressed: () => setState(() {
+                                            _loginWithPhone = false;
+                                            _phoneOtpSent = false;
+                                            _phoneVerificationId = null;
+                                            _otpController.clear();
+                                            _otpRequestInFlight = false;
+                                          }),
+                                          style: TextButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 4,
+                                              vertical: 4,
+                                            ),
+                                            minimumSize: Size.zero,
+                                            tapTargetSize: MaterialTapTargetSize
+                                                .shrinkWrap,
+                                          ),
+                                          child: Text(
+                                            l10n.locale == AppLocale.id
+                                                ? 'Email / Password'
+                                                : 'Email / Password',
+                                            style: textTheme.labelSmall,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                            SizedBox(height: gap.lg),
+                            Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: colorScheme.outlineVariant.withValues(
+                                alpha: 0.65,
+                              ),
+                            ),
+                            SizedBox(height: gap.md),
+                            Center(
+                              child: _LoginGoogleTextLink(
+                                label: l10n.loginWithGoogle,
+                                enabled: !_isLoading,
+                                onTap: () => _loginWithGoogle(),
+                                style: linkPrimary,
+                              ),
+                            ),
+                            SizedBox(height: gap.sm),
+                            Text(
+                              l10n.loginHintGoogleOrAddPassword,
+                              textAlign: TextAlign.center,
+                              style: captionStyle,
+                            ),
+                            SizedBox(height: gap.lg),
+                            Center(
+                              child: TextButton(
+                                onPressed: _showRecoveryCodeDialog,
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 6,
+                                  ),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: Text(
+                                  l10n.locale == AppLocale.id
+                                      ? 'Nomor hilang? Masukkan kode recovery'
+                                      : 'Lost number? Enter recovery code',
+                                  style: linkPrimary,
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ),
+                            SizedBox(height: gap.xl),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Wrap(
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  alignment: WrapAlignment.center,
+                                  spacing: 4,
+                                  children: [
+                                    Text(
+                                      l10n.locale == AppLocale.id
+                                          ? 'Belum punya akun?'
+                                          : "Don't have an account?",
+                                      style: textTheme.bodyLarge?.copyWith(
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    InkWell(
+                                      onTap: _onRegister,
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 2,
+                                          horizontal: 2,
+                                        ),
+                                        child: Text(
+                                          l10n.register,
+                                          style: linkMuted,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(height: gap.md),
+                                Center(
+                                  child: _LoginGoogleTextLink(
+                                    label: l10n.registerWithGoogle,
+                                    enabled: true,
+                                    onTap: _onRegisterWithGoogle,
+                                    style: linkPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: gap.md),
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                  ],
-                ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
-          ),
           AuthLoadingOverlay(
-            visible: _isLoading || _biometricLoginLoading,
+            visible: (_isLoading || _biometricLoginLoading) &&
+                !_otpRequestInFlight,
+            message: _loginAuthOverlayMessage(),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Jarak vertikal konsisten (skala responsif).
+class _LoginLayoutGap {
+  _LoginLayoutGap(this._context);
+  final BuildContext _context;
+  double _s(double base) => _context.responsive.spacing(base);
+  double get xs => _s(8);
+  double get sm => _s(12);
+  double get md => _s(16);
+  double get lg => _s(20);
+  double get xl => _s(24);
+  double get xxl => _s(32);
+}
+
+/// Baris ikon Google + teks — area ketuk seragam dengan [InkWell].
+class _LoginGoogleTextLink extends StatelessWidget {
+  const _LoginGoogleTextLink({
+    required this.label,
+    required this.onTap,
+    required this.enabled,
+    required this.style,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool enabled;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _LoginGoogleGlyph(size: context.responsive.iconSize(20)),
+            SizedBox(width: context.responsive.spacing(10)),
+            Text(label, style: style),
+          ],
+        ),
       ),
     );
   }
@@ -2102,36 +2189,182 @@ class _LanguageSelector extends StatelessWidget {
         children: [
           Text(
             current == AppLocale.id ? 'Bahasa' : 'Language',
-            style: TextStyle(color: colorScheme.primary, fontSize: 14),
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
           ),
           const SizedBox(width: 4),
-          Icon(Icons.keyboard_arrow_down, color: colorScheme.primary, size: 20),
+          Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: colorScheme.primary,
+            size: context.responsive.iconSize(20),
+          ),
         ],
       ),
     );
   }
 }
 
-class _LogoSection extends StatelessWidget {
-  const _LogoSection();
+/// Logo kiri + value proposition & chip ikon kanan — teks dari Firestore (admin) atau default sales.
+class _LoginBrandHero extends StatelessWidget {
+  const _LoginBrandHero({
+    required this.isId,
+    required this.title,
+    required this.subtitle,
+    required this.pills,
+  });
+
+  final bool isId;
+  final String title;
+  final String subtitle;
+  final List<({IconData icon, String label})> pills;
 
   static const _logoAsset = 'assets/images/traka_brand_logo.png';
 
   @override
   Widget build(BuildContext context) {
-    final mq = MediaQuery.sizeOf(context);
-    final maxW = math.min(340.0, mq.width * 0.88);
-    return Center(
-      child: Image.asset(
-        _logoAsset,
-        width: maxW,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-        gaplessPlayback: true,
-        errorBuilder: (_, _, _) => Icon(
-          Icons.image_not_supported_outlined,
-          size: 56,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final primary = cs.primary;
+    final secondary = AppTheme.secondary;
+    final pillColors = [primary, secondary, AppTheme.mapDeliveryAccent];
+
+    return Semantics(
+      container: true,
+      label: 'Traka. $title $subtitle',
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: math.min(122.0, MediaQuery.sizeOf(context).width * 0.30),
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: Image.asset(
+                _logoAsset,
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+                gaplessPlayback: true,
+                errorBuilder: (_, _, _) => Icon(
+                  Icons.local_taxi_rounded,
+                  size: 58,
+                  color: primary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Icon(
+                        Icons.campaign_rounded,
+                        size: 22,
+                        color: primary,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          height: 1.22,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Icon(
+                        Icons.verified_outlined,
+                        size: 20,
+                        color: secondary,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        subtitle,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          height: 1.35,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    for (var i = 0; i < pills.length; i++)
+                      _LoginHeroPill(
+                        icon: pills[i].icon,
+                        label: pills[i].label,
+                        color: pillColors[i % pillColors.length],
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoginHeroPill extends StatelessWidget {
+  const _LoginHeroPill({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.28), width: 1),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: color),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+                height: 1,
+              ),
+            ),
+          ],
         ),
       ),
     );

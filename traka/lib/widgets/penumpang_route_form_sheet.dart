@@ -4,6 +4,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../services/destination_autocomplete_service.dart';
 import '../services/geocoding_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/placemark_formatter.dart';
 import 'traka_pin_widgets.dart';
 import 'map_destination_picker_screen.dart';
@@ -227,20 +228,20 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    return Padding(
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    // Satu sumber padding keyboard (bukan dobel dengan [showTrakaModalBottomSheet]).
+    // Tanpa DraggableScrollableSheet: sheet mengikuti tinggi konten — tidak ada «lubang» putih besar di atas keyboard.
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 100),
+      curve: Curves.easeOut,
       padding: EdgeInsets.only(bottom: bottomInset),
-      child: DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        minChildSize: 0.4,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, scrollController) => SingleChildScrollView(
-          controller: scrollController,
-          padding: const EdgeInsets.only(bottom: 24),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -328,7 +329,7 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                 TextField(
                   controller: _destController,
                   autofocus: true,
-                  scrollPadding: const EdgeInsets.only(bottom: 160),
+                  scrollPadding: const EdgeInsets.only(bottom: 24),
                   autocorrect: false,
                   enableSuggestions: false,
                   decoration: InputDecoration(
@@ -339,6 +340,19 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: AppTheme.primary.withValues(alpha: 0.38),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: AppTheme.primary.withValues(alpha: 0.9),
+                        width: 1.5,
+                      ),
                     ),
                     suffixIcon: _destController.text.isNotEmpty
                         ? IconButton(
@@ -470,7 +484,6 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                 ),
               ],
             ),
-          ),
         ),
       ),
     );

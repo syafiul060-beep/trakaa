@@ -4,6 +4,16 @@
 
 Konfigurasi di root Flutter: `traka/firebase.json` (hosting `syafiul-traka`, Functions, Firestore, Storage).
 
+### OTP / Phone Auth (Android) — SHA & App Check
+
+Agar verifikasi nomor sering **tanpa** layar reCAPTCHA kosong dan Play Integrity lancar:
+
+1. **Firebase Console** → Pengaturan project → Aplikasi Android: daftarkan **SHA-1** dan **SHA-256** untuk keystore **debug** dan **release** (yang dipakai build ke Play / APK).
+2. Unduh ulang **`google-services.json`** jika perlu, lalu build ulang aplikasi.
+3. **App Check** (jika diaktifkan di project): pastikan device test / keystore selaras dengan [dokumentasi Firebase](https://firebase.google.com/docs/app-check), atau OTP bisa gagal di lingkungan tertentu.
+
+**Lihat juga:** `docs/FIREBASE_OTP_LANGKAH.md` bila perlu langkah detail.
+
 **Deploy sekaligus** (semua target di `firebase.json`):
 
 ```bash

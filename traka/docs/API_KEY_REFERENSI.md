@@ -63,7 +63,7 @@ Dokumen ini memetakan **semua lokasi** API key di proyek Traka. Gunakan untuk ve
 
 ## Checklist Verifikasi
 
-- [x] `firebase_options.dart` — Browser, Android, iOS
+- [x] `firebase_options().dart` — Browser, Android, iOS
 - [x] `google-services.json` — Android
 - [x] `key.properties` — MAPS_API_KEY (Maps)
 - [x] `GoogleService-Info.plist` — iOS

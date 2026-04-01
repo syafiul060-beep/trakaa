@@ -1,5 +1,6 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Verifikasi OTP email untuk login pertama kali (nomor HP belum ditambahkan).
 class LoginEmailOtpScreen extends StatefulWidget {
@@ -38,13 +39,9 @@ class _LoginEmailOtpScreenState extends State<LoginEmailOtpScreen> {
         _loading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
+        TrakaSnackBar.success(context, const Text(
             'Kode verifikasi telah dikirim ke email. Cek inbox atau folder Spam.',
-          ),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
+          ), behavior: SnackBarBehavior.floating),
       );
     } on FirebaseFunctionsException catch (e) {
       if (!mounted) return;

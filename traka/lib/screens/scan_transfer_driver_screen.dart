@@ -4,6 +4,7 @@ import '../services/location_service.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../services/driver_transfer_service.dart';
+import '../theme/traka_snackbar.dart';
 
 /// Layar scan barcode Oper Driver oleh driver kedua.
 /// Setelah scan berhasil: langsung selesaikan transfer (tidak perlu password).
@@ -68,21 +69,13 @@ class _ScanTransferDriverScreenState extends State<ScanTransferDriverScreen> {
 
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Oper berhasil. Pesanan telah dipindah ke Anda.'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.success(context, Text('Oper berhasil. Pesanan telah dipindah ke Anda.'), behavior: SnackBarBehavior.floating),
       );
       Navigator.of(context).pop(true);
     } else {
       setState(() => _scanned = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error ?? 'Oper gagal'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+        TrakaSnackBar.error(context, Text(error ?? 'Oper gagal'), behavior: SnackBarBehavior.floating),
       );
     }
   }
