@@ -21,6 +21,22 @@ class AppLocalizations {
   String get passwordHint =>
       locale == AppLocale.id ? 'Masukkan sandi Anda' : 'Enter your password';
   String get loginButton => locale == AppLocale.id ? 'Masuk' : 'Login';
+  /// Dipakai di snackbar gagal login untuk akun nomor HP (@traka.phone): wrong-password / invalid-credential.
+  String get loginTrakaPhoneCredentialHint => locale == AppLocale.id
+      ? 'Pastikan nomor sama seperti saat daftar: tanpa spasi (08… atau 628…). '
+          'Di tab Email/Sandi, isi nomor di kolom pertama — bukan email Google. '
+          'Alternatif: masuk lewat kode SMS (mode login nomor telepon). '
+          'Lupa sandi? Pilih «Lupa kata sandi».'
+      : 'Use the same phone as when you registered: no spaces (08… or 628…). '
+          'On the Email/Password tab, enter the phone in the first field — not a Google email. '
+          'Or sign in with an SMS code (phone login mode). '
+          'Forgot password? Tap «Forgot password».';
+  /// user-not-found saat email terlihat seperti akun @traka.phone.
+  String get loginTrakaPhoneNotRegisteredHint => locale == AppLocale.id
+      ? 'Jika yakin sudah daftar: coba variasi nomor 08… vs 628…, tanpa spasi. '
+          'Akun hanya lewat Google? Pakai «Masuk dengan akun Google», bukan sandi.'
+      : 'If you already signed up: try 08… vs 628… formats with no spaces. '
+          'Google-only account? Use «Sign in with Google», not a password.';
   String get rememberMe => 'Remember Me';
   String get forgotPassword =>
       locale == AppLocale.id ? 'Lupa kata sandi' : 'Forgot password';
@@ -28,6 +44,38 @@ class AppLocalizations {
   String get registerPrompt => locale == AppLocale.id
       ? 'Belum Punya Akun...? Daftar'
       : "Don't have an account...? Register";
+  String get registerWithGoogle => locale == AppLocale.id
+      ? 'Daftar dengan akun Google'
+      : 'Sign up with Google';
+  String get loginWithGoogle => locale == AppLocale.id
+      ? 'Masuk dengan akun Google'
+      : 'Sign in with Google';
+  String get loginGoogleNeedPhone => locale == AppLocale.id
+      ? 'Akun Google ini belum memiliki nomor terverifikasi. Lengkapi pendaftaran (Google + OTP) atau masuk dengan nomor telepon.'
+      : 'This Google account has no verified phone yet. Finish sign-up (Google + SMS code) or sign in with your phone number.';
+  String get connectGooglePrompt => locale == AppLocale.id
+      ? 'Sambungkan akun Google'
+      : 'Connect Google account';
+  String get connectGoogleFirst => locale == AppLocale.id
+      ? 'Sambungkan akun Google terlebih dahulu.'
+      : 'Connect your Google account first.';
+  String get googleSignInCancelled => locale == AppLocale.id
+      ? 'Masuk Google dibatalkan.'
+      : 'Google sign-in was cancelled.';
+  String get googleSignInFailed => locale == AppLocale.id
+      ? 'Gagal masuk dengan Google. Periksa koneksi dan pengaturan Google di Firebase.'
+      : 'Google sign-in failed. Check network and Google provider in Firebase.';
+  String googleConnectedShort(String? email) {
+    if (email == null || email.isEmpty) {
+      return locale == AppLocale.id
+          ? 'Akun Google terhubung'
+          : 'Google account connected';
+    }
+    return locale == AppLocale.id
+        ? 'Terhubung: $email'
+        : 'Connected: $email';
+  }
+
   String get penumpang => locale == AppLocale.id ? 'Penumpang' : 'Passenger';
   String get driver => 'Driver';
 
@@ -55,6 +103,9 @@ class AppLocalizations {
       ? 'Panjang kata sandi minimal 8, harus mengandung angka'
       : 'Password minimum 8 characters, must contain a number';
   String get submitButton => locale == AppLocale.id ? 'Ajukan' : 'Submit';
+  /// Tombol utama di bawah sandi (bukan tombol «Kirim kode» di atasnya).
+  String get registerFormSubmitButton =>
+      locale == AppLocale.id ? 'Mendaftar' : 'Register';
   String get agreeTerms =>
       'I agree with the Terms of Service and Privacy Policy';
   String get termsOfService => 'Terms of Service';
@@ -88,8 +139,10 @@ class AppLocalizations {
 
   // ——— Navigasi bottom
   String get navHome => locale == AppLocale.id ? 'Beranda' : 'Home';
+  /// Label tab pertama (ikon mobil) — nama aplikasi.
+  String get navTrakaTab => 'Traka';
   String get navSchedule => locale == AppLocale.id ? 'Jadwal' : 'Schedule';
-  String get navChat => 'Chat';
+  String get navChat => locale == AppLocale.id ? 'Pesan' : 'Chat';
   String get navOrders => locale == AppLocale.id ? 'Pesanan' : 'Orders';
   /// Snackbar in-app: chat baru saat driver tidak di tab Chat.
   String get driverInAppNewChatHint => locale == AppLocale.id
@@ -508,6 +561,14 @@ class AppLocalizations {
       locale == AppLocale.id ? 'Kirim SOS' : 'Send SOS';
   String get pickOnMapActionLabel =>
       locale == AppLocale.id ? 'Pilih di peta' : 'Pick on map';
+  /// Tooltip tombol «Pilih di peta» di form rute.
+  String get pickOnMapTooltip => locale == AppLocale.id
+      ? 'Jika tujuan sudah diisi, peta dibuka di sana. Jika kosong, di lokasi Anda. Titik yang Anda pilih mengisi form.'
+      : 'If the destination is filled, the map opens there. If empty, at your location. Your chosen point fills the form.';
+  /// Dialog saat menunggu geocode alamat sebelum buka pemilih peta.
+  String get mapGeocodingForPickMapProgress => locale == AppLocale.id
+      ? 'Mencari lokasi dari alamat…'
+      : 'Finding location from address…';
   /// Driver / jadwal: pemilih titik awal rute di peta (pin awal).
   String get pickOriginOnMapActionLabel => locale == AppLocale.id
       ? 'Pilih titik awal di peta'
@@ -863,8 +924,24 @@ class AppLocalizations {
   String get phoneRequired => locale == AppLocale.id ? 'No. telepon wajib diisi' : 'Phone number is required';
   String get phoneNotRegistered => locale == AppLocale.id ? 'No. telepon tidak terdaftar.' : 'Phone not registered.';
   String get passwordChangedSuccess => locale == AppLocale.id
-      ? 'Kata sandi berhasil diubah. Silakan login.'
-      : 'Password changed successfully. Please login.';
+      ? 'Kata sandi berhasil diubah. Login cepat sidik jari/wajah di HP ini dihapus — aktifkan lagi di Profil setelah login.'
+      : 'Password updated. Quick biometric sign-in on this device was cleared — turn it on again in Profile after login.';
+  /// Kunci app dimatikan karena tidak ada sidik jari/wajah terdaftar di perangkat.
+  String get biometricLockDisabledNoEnrollment => locale == AppLocale.id
+      ? 'Sidik jari/wajah tidak tersedia di HP ini. Kunci aplikasi dimatikan. Aktifkan di Pengaturan HP lalu nyalakan lagi di Profil jika perlu.'
+      : 'No fingerprint/face enrolled on this device. App lock was turned off. Enable in phone Settings, then turn on again in Profile if needed.';
+  /// Setelah beberapa gagal login biometric — arahkan ke sandi.
+  String get biometricLoginRetryUsePassword => locale == AppLocale.id
+      ? 'Coba masuk dengan email dan sandi di bawah, atau atur ulang login cepat di Profil setelah masuk.'
+      : 'Try email and password below, or set up quick login again in Profile after you sign in.';
+  /// Setelah ubah sandi dari Profil (masih login).
+  String get biometricQuickLoginClearedOnDevice => locale == AppLocale.id
+      ? 'Login cepat sidik jari/wajah di HP ini dinonaktifkan. Aktifkan lagi di Pengaturan profil jika perlu.'
+      : 'Quick biometric sign-in on this device was turned off. Enable again in Profile settings if you want.';
+  /// Gabungan pesan ubah sandi dari Profil + hapus login cepat.
+  String get passwordChangedProfileWithBiometricClear => locale == AppLocale.id
+      ? 'Password berhasil diubah. Login cepat sidik jari/wajah di HP ini dinonaktifkan — aktifkan lagi di Pengaturan profil jika perlu.'
+      : 'Password updated. Quick biometric sign-in on this device was turned off — enable it again in Profile if you want.';
   String get phoneNotLinkedToAccount => locale == AppLocale.id
       ? 'No. telepon belum terhubung ke akun. Gunakan reset via email.'
       : 'Phone not linked to account. Use email reset.';

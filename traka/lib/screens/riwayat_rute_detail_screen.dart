@@ -7,6 +7,7 @@ import '../services/chat_service.dart';
 import '../services/driver_schedule_service.dart';
 import '../services/order_receipt_pdf_flow.dart';
 import '../services/order_service.dart';
+import '../widgets/traka_empty_state.dart';
 import '../widgets/traka_l10n_scope.dart';
 import 'driver_earnings_screen.dart';
 import 'payment_history_screen.dart';
@@ -570,34 +571,19 @@ class _RiwayatRuteDetailScreenState extends State<RiwayatRuteDetailScreen> {
                       }
                       final orderList = snapshot.data ?? [];
                       if (orderList.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.inbox,
-                          size: 48,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Tidak ada pesanan selesai untuk rute ini',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        return const Center(
+                          child: TrakaEmptyState(
+                            icon: Icons.inbox,
+                            title: 'Tidak ada pesanan selesai untuk rute ini',
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  );
-                }
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _loadPassengerInfoIfNeeded(orderList);
-                });
-                return _buildOrdersList(orderList);
-              },
-            ),
+                        );
+                      }
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        _loadPassengerInfoIfNeeded(orderList);
+                      });
+                      return _buildOrdersList(orderList);
+                    },
+                  ),
           ),
         ],
       ),
@@ -606,25 +592,10 @@ class _RiwayatRuteDetailScreenState extends State<RiwayatRuteDetailScreen> {
 
   Widget _buildOrdersList(List<OrderModel> orderList) {
     if (orderList.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.inbox,
-              size: 48,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Tidak ada pesanan selesai untuk rute ini',
-              style: TextStyle(
-                fontSize: 14,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
+      return const Center(
+        child: TrakaEmptyState(
+          icon: Icons.inbox,
+          title: 'Tidak ada pesanan selesai untuk rute ini',
         ),
       );
     }

@@ -15,56 +15,69 @@ class ThemeToggleWidget extends StatelessWidget {
       valueListenable: ThemeService.themeModeNotifier,
       builder: (_, themeMode, _) {
         final isDark = themeMode == ThemeMode.dark;
+        final scheme = Theme.of(context).colorScheme;
         return Tooltip(
           message: isDark
               ? 'Geser ke kiri untuk tema terang'
               : 'Geser ke kanan untuk tema gelap',
-          child: InkWell(
-            onTap: () => _showInfo(context),
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isDark ? Icons.dark_mode : Icons.light_mode,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 6),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Tema Gelap',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.onSurface,
+          child: Material(
+            color: Colors.white,
+            elevation: 1,
+            shadowColor: Colors.black26,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: () => _showInfo(context),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: scheme.outline.withValues(alpha: 0.28)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isDark ? Icons.dark_mode : Icons.light_mode,
+                      size: 20,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Tema Gelap',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurface,
+                          ),
                         ),
-                      ),
-                      Text(
-                        isDark ? 'Aktif' : 'Nonaktif',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        Text(
+                          isDark ? 'Aktif' : 'Nonaktif',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: scheme.onSurfaceVariant,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 8),
-                  Switch(
-                    value: isDark,
-                    onChanged: (v) {
-                      HapticFeedback.lightImpact();
-                      ThemeService.setThemeMode(
-                        v ? ThemeMode.dark : ThemeMode.light,
-                      );
-                    },
-                  ),
-                ],
+                      ],
+                    ),
+                    const SizedBox(width: 8),
+                    Switch(
+                      value: isDark,
+                      onChanged: (v) {
+                        HapticFeedback.lightImpact();
+                        ThemeService.setThemeMode(
+                          v ? ThemeMode.dark : ThemeMode.light,
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

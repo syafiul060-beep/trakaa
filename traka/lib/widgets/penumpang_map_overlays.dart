@@ -1,61 +1,21 @@
 import 'dart:math' show min;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/map_control_chrome.dart';
 import '../theme/responsive.dart';
 import 'traka_l10n_scope.dart';
+import 'traka_pin_widgets.dart';
 
-/// Chip style untuk tombol quick action (pakai di Row).
-Widget _buildQuickActionChip({
-  required BuildContext context,
-  required IconData icon,
-  required String label,
-  required VoidCallback onTap,
-  bool loading = false,
-}) {
-  return Material(
-    color: Colors.transparent,
-    child: InkWell(
-      onTap: loading ? null : onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppTheme.primary.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppTheme.primary.withValues(alpha: 0.4)),
-        ),
-        child: loading
-            ? SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppTheme.primary,
-                ),
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, size: 18, color: AppTheme.primary),
-                  const SizedBox(width: 6),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.primary,
-                    ),
-                  ),
-                ],
-              ),
-      ),
-    ),
-  );
-}
+/// Jarak bilah pencarian dari bawah — harus selaras dengan [PenumpangSearchBar].
+const double kPenumpangSearchBarBottomInset = 80;
 
-/// Tombol "Driver sekitar" - tampilkan driver aktif dalam radius 40 km tanpa isi tujuan.
+/// Ruang vertikal untuk kartu pencarian + celah agar CTA "Driver sekitar" tidak tertindih.
+const double kPenumpangSearchBarStackReserve = 136;
+
+/// Tombol "Driver sekitar" — gaya kartu mengambang (kontrol peta / ride-hailing).
 class PenumpangDriverSekitarButton extends StatelessWidget {
   const PenumpangDriverSekitarButton({
     super.key,
@@ -71,53 +31,173 @@ class PenumpangDriverSekitarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!visible) return const SizedBox.shrink();
-    return _buildQuickActionChip(
-      context: context,
-      icon: Icons.near_me,
-      label: TrakaL10n.of(context).driverNearby,
-      onTap: onTap,
-      loading: loading,
+    final cs = Theme.of(context).colorScheme;
+    final pill = BorderRadius.circular(22);
+    final surface = TrakaMapControlChrome.fabSurface(cs);
+    final border = AppTheme.primary.withValues(alpha: loading ? 0.35 : 0.5);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: loading
+            ? null
+            : () {
+                HapticFeedback.lightImpact();
+                onTap();
+              },
+        borderRadius: pill,
+        splashColor: TrakaMapControlChrome.splashForPrimary(context),
+        highlightColor: AppTheme.primary.withValues(alpha: 0.06),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: pill,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: loading
+                  ? [
+                      Color.alphaBlend(
+                        Colors.white.withValues(
+                          alpha: cs.brightness == Brightness.dark ? 0.04 : 0.12,
+                        ),
+                        surface,
+                      ),
+                      Color.alphaBlend(
+                        AppTheme.primary.withValues(alpha: 0.04),
+                        surface,
+                      ),
+                    ]
+                  : [
+                      Color.alphaBlend(
+                        Colors.white.withValues(
+                          alpha: cs.brightness == Brightness.dark ? 0.08 : 0.28,
+                        ),
+                        Color.alphaBlend(
+                          AppTheme.primary.withValues(alpha: 0.12),
+                          surface,
+                        ),
+                      ),
+                      Color.alphaBlend(
+                        AppTheme.primary.withValues(alpha: 0.08),
+                        Color.alphaBlend(
+                          AppTheme.primary.withValues(alpha: 0.04),
+                          surface,
+                        ),
+                      ),
+                    ],
+            ),
+            border: Border.all(color: border, width: loading ? 1 : 1.2),
+            boxShadow: TrakaMapControlChrome.floatingShadows(context),
+          ),
+          child: ClipRRect(
+            borderRadius: pill,
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  height: 22,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.white.withValues(
+                              alpha: cs.brightness == Brightness.dark
+                                  ? 0.1
+                                  : 0.28,
+                            ),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: loading
+                      ? SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppTheme.primary.withValues(alpha: 0.85),
+                          ),
+                        )
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  colors: [
+                                    AppTheme.primary.withValues(alpha: 0.2),
+                                    AppTheme.primary.withValues(alpha: 0.06),
+                                  ],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppTheme.primary.withValues(
+                                      alpha: 0.12,
+                                    ),
+                                    blurRadius: 6,
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                Icons.near_me_rounded,
+                                size: 18,
+                                color: AppTheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              TrakaL10n.of(context).driverNearby,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.15,
+                                color: AppTheme.primary.withValues(alpha: 0.96),
+                                shadows: [
+                                  Shadow(
+                                    color: AppTheme.primary
+                                        .withValues(alpha: 0.12),
+                                    offset: const Offset(0, 1),
+                                    blurRadius: 0,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
 
-/// Tombol "Pesan nanti" - quick action ke Jadwal.
-class PenumpangPesanNantiButton extends StatelessWidget {
-  const PenumpangPesanNantiButton({
-    super.key,
-    required this.visible,
-    required this.onTap,
-  });
-
-  final bool visible;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!visible) return const SizedBox.shrink();
-    return _buildQuickActionChip(
-      context: context,
-      icon: Icons.schedule,
-      label: TrakaL10n.of(context).pesanNanti,
-      onTap: onTap,
-    );
-  }
-}
-
-/// Baris tombol quick action: Driver sekitar + Pesan nanti.
+/// Baris quick action: hanya Driver sekitar.
 class PenumpangQuickActionsRow extends StatelessWidget {
   const PenumpangQuickActionsRow({
     super.key,
     required this.visible,
     required this.onDriverSekitarTap,
-    required this.onPesanNantiTap,
     required this.nearbyRadiusKm,
     this.driverSekitarLoading = false,
   });
 
   final bool visible;
   final VoidCallback onDriverSekitarTap;
-  final VoidCallback onPesanNantiTap;
   /// Radius «Driver sekitar» (km) — tampil di bawah tombol.
   final int nearbyRadiusKm;
   final bool driverSekitarLoading;
@@ -129,33 +209,23 @@ class PenumpangQuickActionsRow extends StatelessWidget {
     return Positioned(
       left: hp,
       right: hp,
-      bottom: 148,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.end,
+      bottom: kPenumpangSearchBarBottomInset + kPenumpangSearchBarStackReserve,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              PenumpangDriverSekitarButton(
-                visible: true,
-                onTap: onDriverSekitarTap,
-                loading: driverSekitarLoading,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                TrakaL10n.of(context).driverNearbyRadiusKm(nearbyRadiusKm),
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-          PenumpangPesanNantiButton(
+          PenumpangDriverSekitarButton(
             visible: true,
-            onTap: onPesanNantiTap,
+            onTap: onDriverSekitarTap,
+            loading: driverSekitarLoading,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            TrakaL10n.of(context).driverNearbyRadiusKm(nearbyRadiusKm),
+            style: TextStyle(
+              fontSize: 11,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -189,7 +259,7 @@ class PenumpangSearchBar extends StatelessWidget {
     return Positioned(
       left: 0,
       right: 0,
-      bottom: 80,
+      bottom: kPenumpangSearchBarBottomInset,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -202,57 +272,180 @@ class PenumpangSearchBar extends StatelessWidget {
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: maxBarW),
             child: Material(
-              elevation: 8,
-              borderRadius: BorderRadius.circular(16),
+              color: Colors.transparent,
               child: InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  onTap();
+                },
+                borderRadius: BorderRadius.circular(18),
+                splashColor: TrakaMapControlChrome.splashForPrimary(context),
+                child: Ink(
                   padding: EdgeInsets.all(r.spacing(16)),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(18),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color.alphaBlend(
+                          Colors.white.withValues(
+                            alpha:
+                                Theme.of(context).brightness == Brightness.dark
+                                    ? 0.05
+                                    : 0.2,
+                          ),
+                          TrakaMapControlChrome.fabSurface(
+                            Theme.of(context).colorScheme,
+                          ),
+                        ),
+                        Color.alphaBlend(
+                          Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.06),
+                          Color.alphaBlend(
+                            Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.03),
+                            TrakaMapControlChrome.fabSurface(
+                              Theme.of(context).colorScheme,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                    border: Border.all(
+                      color: TrakaMapControlChrome.fabBorder(
+                        Theme.of(context).colorScheme,
+                      ),
+                    ),
+                    boxShadow: TrakaMapControlChrome.floatingShadows(context),
                   ),
-                  child: Row(
+                  child: Stack(
                     children: [
-                      Icon(Icons.search, color: AppTheme.primary, size: 24),
-                      SizedBox(width: r.spacing(12)),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              currentLocationText,
-                              style: TextStyle(
-                                fontSize: r.fontSize(12),
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        top: 0,
+                        height: 36,
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.white.withValues(
+                                    alpha: Theme.of(context).brightness ==
+                                            Brightness.dark
+                                        ? 0.08
+                                        : 0.22,
+                                  ),
+                                  Colors.transparent,
+                                ],
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              destinationText.isEmpty
-                                  ? 'Masukkan tujuan (contoh: Bandara, Terminal)'
-                                  : destinationText,
-                              style: TextStyle(
-                                fontSize: r.fontSize(14),
-                                fontWeight: FontWeight.w500,
-                                color: destinationText.isEmpty
-                                    ? Theme.of(context).colorScheme.onSurfaceVariant
-                                    : Theme.of(context).colorScheme.onSurface,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                          ),
                         ),
                       ),
-                      Icon(Icons.arrow_forward_ios, size: 16, color: AppTheme.primary),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const TrakaPinFormIcon(
+                                      variant: TrakaRoutePinVariant.origin,
+                                    ),
+                                    SizedBox(width: r.spacing(8)),
+                                    Expanded(
+                                      child: Text(
+                                        currentLocationText,
+                                        style: TextStyle(
+                                          fontSize: r.fontSize(12),
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(height: r.spacing(8)),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const TrakaPinFormIcon(
+                                      variant: TrakaRoutePinVariant.destination,
+                                    ),
+                                    SizedBox(width: r.spacing(8)),
+                                    Expanded(
+                                      child: Text(
+                                        destinationText.isEmpty
+                                            ? 'Masukkan tujuan (contoh: Bandara, Terminal)'
+                                            : destinationText,
+                                        style: TextStyle(
+                                          fontSize: r.fontSize(14),
+                                          fontWeight: FontWeight.w500,
+                                          color: destinationText.isEmpty
+                                              ? Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurfaceVariant
+                                              : Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(width: r.spacing(8)),
+                          Icon(
+                            Icons.search_rounded,
+                            color: AppTheme.primary,
+                            size: 24,
+                          ),
+                          SizedBox(
+                            width: 36,
+                            height: 36,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppTheme.primary.withValues(alpha: 0.1),
+                                border: Border.all(
+                                  color: AppTheme.primary.withValues(alpha: 0.22),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppTheme.primary.withValues(alpha: 0.08),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                Icons.chevron_right_rounded,
+                                size: 22,
+                                color: AppTheme.primary.withValues(alpha: 0.9),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 import '../models/order_model.dart';
+import '../theme/app_interaction_styles.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../services/app_analytics_service.dart';
 import '../services/app_config_service.dart';
@@ -352,9 +353,14 @@ class _LacakDriverPaymentScreenState extends State<LacakDriverPaymentScreen> {
                               ? 'Bayar ${_products.first.price} via Google Play'
                               : 'Bayar via Google Play',
                     ),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    style: AppInteractionStyles.elevatedPrimary(
                       backgroundColor: Colors.green.shade700,
+                      foregroundColor: Colors.white,
+                      shadowTint: Colors.green.shade700,
+                    ).copyWith(
+                      padding: WidgetStateProperty.all(
+                        const EdgeInsets.symmetric(vertical: 16),
+                      ),
                     ),
                   ),
                 ],

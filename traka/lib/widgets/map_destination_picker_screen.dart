@@ -8,7 +8,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/geocoding_service.dart';
 import '../services/map_style_service.dart';
 import '../utils/placemark_formatter.dart';
-import 'lollipop_pin_widgets.dart';
+import 'traka_l10n_scope.dart';
+import 'traka_pin_widgets.dart';
 
 /// Hasil pemilihan titik tujuan di peta (label konsisten dengan geocoding lain di app).
 class MapPickerResult {
@@ -23,6 +24,114 @@ class MapPickerResult {
   final double lng;
 }
 
+/// Titik awal kamera untuk «Pilih di peta» (tujuan akhir): isian form → geokode teks → lokasi pengguna → fallback.
+Future<LatLng> initialTargetForDestinationMapPicker({
+  required String destText,
+  double? destLat,
+  double? destLng,
+  LatLng? userLocation,
+  LatLng fallback = const LatLng(-3.3194, 114.5907),
+}) async {
+  if (destLat != null &&
+      destLng != null &&
+      destLat.isFinite &&
+      destLng.isFinite &&
+      (destLat != 0 || destLng != 0)) {
+    return LatLng(destLat, destLng);
+  }
+  final t = destText.trim();
+  if (t.isNotEmpty) {
+    try {
+      final locs = await GeocodingService.locationFromAddress(
+        '$t, Indonesia',
+        appendIndonesia: false,
+      );
+      if (locs.isNotEmpty) {
+        return LatLng(locs.first.latitude, locs.first.longitude);
+      }
+    } catch (_) {}
+  }
+  if (userLocation != null) return userLocation;
+  return fallback;
+}
+
+/// Seperti [initialTargetForDestinationMapPicker], dengan dialog tunggu saat perlu geokode teks (tanpa koordinat).
+Future<LatLng> initialTargetForDestinationMapPickerWithLoading({
+  required BuildContext context,
+  required String destText,
+  double? destLat,
+  double? destLng,
+  LatLng? userLocation,
+  LatLng fallback = const LatLng(-3.3194, 114.5907),
+}) async {
+  final hasCoords = destLat != null &&
+      destLng != null &&
+      destLat.isFinite &&
+      destLng.isFinite &&
+      (destLat != 0 || destLng != 0);
+  final needsGeocodeOverlay = destText.trim().isNotEmpty && !hasCoords;
+  var shownDialog = false;
+  if (needsGeocodeOverlay && context.mounted) {
+    shownDialog = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (ctx) {
+        final msg = TrakaL10n.of(ctx).mapGeocodingForPickMapProgress;
+        return PopScope(
+          canPop: false,
+          child: Dialog(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  ),
+                  const SizedBox(width: 16),
+                  Flexible(
+                    child: Text(
+                      msg,
+                      style: Theme.of(ctx).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+  try {
+    return await initialTargetForDestinationMapPicker(
+      destText: destText,
+      destLat: destLat,
+      destLng: destLng,
+      userLocation: userLocation,
+      fallback: fallback,
+    );
+  } finally {
+    if (shownDialog && context.mounted) {
+      final nav = Navigator.of(context, rootNavigator: true);
+      if (nav.canPop()) {
+        nav.pop();
+      }
+    }
+  }
+}
+
+/// Callback dari form rute: teks + koordinat tujuan yang sedang ditampilkan di field.
+typedef PickDestinationOnMapCallback = Future<MapPickerResult?> Function({
+  required String destText,
+  double? destLat,
+  double? destLng,
+});
+
 /// Layar peta: pin tetap di pusat area peta **di atas** panel alamat; [GoogleMap.padding]
 /// menyelaraskan titik kamera dengan ujung pin (mirip Google Maps).
 /// Alamat diambil dari reverse geocode titik tersebut.
@@ -32,7 +141,7 @@ class MapDestinationPickerScreen extends StatefulWidget {
     required this.initialCameraTarget,
     this.deviceLocation,
     this.title = 'Pilih lokasi di peta',
-    this.pinVariant = LollipopPinVariant.destination,
+    this.pinVariant = TrakaRoutePinVariant.destination,
   });
 
   /// Titik awal kamera (dari tujuan yang sudah dipilih, geocode teks, atau lokasi perangkat).
@@ -43,8 +152,8 @@ class MapDestinationPickerScreen extends StatefulWidget {
 
   final String title;
 
-  /// [origin] = pin hijau (tujuan awal), [destination] = pin merah (tujuan akhir).
-  final LollipopPinVariant pinVariant;
+  /// origin / destination: warna penanda tengah (hijau / merah), selaras pin default Maps.
+  final TrakaRoutePinVariant pinVariant;
 
   @override
   State<MapDestinationPickerScreen> createState() =>
@@ -143,12 +252,12 @@ class _MapDestinationPickerScreenState extends State<MapDestinationPickerScreen>
         ? lineList.sublist(1).join(', ')
         : null;
 
-    final emptyHeadline = widget.pinVariant == LollipopPinVariant.origin
+    final emptyHeadline = widget.pinVariant == TrakaRoutePinVariant.origin
         ? 'Geser peta ke titik tujuan awal'
         : 'Geser peta ke titik tujuan akhir';
-    final pinFootnote = widget.pinVariant == LollipopPinVariant.origin
-        ? 'Pin biru Traka di tengah. Geser peta — ujung pin = titik yang dipilih.'
-        : 'Pin merah Traka di tengah. Geser peta — ujung pin = titik yang dipilih.';
+    final pinFootnote = widget.pinVariant == TrakaRoutePinVariant.origin
+        ? 'Pin awal di tengah. Geser peta — ujung pin = titik yang dipilih.'
+        : 'Pin akhir di tengah. Geser peta — ujung pin = titik yang dipilih.';
 
     return Scaffold(
       appBar: AppBar(
@@ -197,7 +306,7 @@ class _MapDestinationPickerScreenState extends State<MapDestinationPickerScreen>
                   },
                 ),
                 IgnorePointer(
-                  child: LollipopPinMapCenter(variant: widget.pinVariant),
+                  child: TrakaPinMapCenter(variant: widget.pinVariant),
                 ),
                 if (widget.deviceLocation != null)
                   Positioned(
@@ -272,7 +381,7 @@ class _MapDestinationPickerScreenState extends State<MapDestinationPickerScreen>
                       ],
                       const SizedBox(height: 12),
                       Text(
-                        LollipopPinLegend.shortLine,
+                        TrakaRoutePinLegend.shortLine,
                         style: TextStyle(
                           fontSize: 11,
                           height: 1.3,

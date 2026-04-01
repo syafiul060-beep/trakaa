@@ -2,12 +2,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import 'login_screen.dart';
 import 'driver_screen.dart';
 import 'penumpang_screen.dart';
 import '../widgets/app_update_wrapper.dart';
 import '../widgets/auth_loading_overlay.dart';
+import '../widgets/traka_loading_indicator.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/locale_service.dart';
@@ -16,7 +18,9 @@ import '../services/app_analytics_service.dart';
 import '../services/device_security_service.dart';
 import '../services/fcm_service.dart';
 import '../services/voice_call_incoming_service.dart';
+import '../theme/app_interaction_styles.dart';
 import '../theme/app_theme.dart';
+import '../theme/traka_visual_tokens.dart';
 import '../theme/responsive.dart';
 import '../services/fake_gps_overlay_service.dart';
 import '../services/location_service.dart';
@@ -31,8 +35,13 @@ enum RegisterType { penumpang, driver }
 
 class RegisterScreen extends StatefulWidget {
   final RegisterType type;
+  final bool useGoogleSignUp;
 
-  const RegisterScreen({super.key, required this.type});
+  const RegisterScreen({
+    super.key,
+    required this.type,
+    this.useGoogleSignUp = false,
+  });
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -54,6 +63,256 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _phoneVerificationId;
 
   AppLocalizations get l10n => AppLocalizations(locale: LocaleService.current);
+
+  bool get _googleUserReady {
+    if (!widget.useGoogleSignUp) return true;
+    final u = FirebaseAuth.instance.currentUser;
+    if (u == null) return false;
+    return u.providerData.any((p) => p.providerId == 'google.com');
+  }
+
+  /// Akun Google ini sudah punya profil Traka — daftar ulang memicu bentrok; arahkan ke login.
+  Future<bool> _redirectIfGoogleAccountAlreadyRegistered(User user) async {
+    final snap =
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    if (!snap.exists) return false;
+    final data = snap.data();
+    if (AccountDeletionService.isDeleted(data)) return false;
+
+    await FirebaseAuth.instance.signOut();
+    if (!mounted) return true;
+    setState(() => _isLoading = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          l10n.locale == AppLocale.id
+              ? 'Akun Google ini sudah terdaftar di Traka. Silakan login (Google atau nomor + OTP).'
+              : 'This Google account is already registered. Please sign in (Google or phone + SMS code).',
+        ),
+        backgroundColor: Colors.orange,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => const AppUpdateWrapper(child: LoginScreen()),
+      ),
+    );
+    return true;
+  }
+
+  /// OTP pernah berhasil (Google + phone di Auth) tetapi tulis Firestore belum — selesaikan tanpa bentrok OTP ulang.
+  Future<bool> _completeGoogleRegistrationIfAuthHasPhone(User user) async {
+    if (!widget.useGoogleSignUp) return false;
+    final doc =
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    if (doc.exists) return false;
+    final phoneRaw = user.phoneNumber?.trim();
+    if (phoneRaw == null || phoneRaw.isEmpty) return false;
+    final hasGoogle =
+        user.providerData.any((p) => p.providerId == 'google.com');
+    final hasPhone =
+        user.providerData.any((p) => p.providerId == 'phone');
+    if (!hasGoogle || !hasPhone) return false;
+
+    final name = _nameController.text.trim().isNotEmpty
+        ? _nameController.text.trim()
+        : (user.displayName?.trim() ?? '');
+    if (name.isEmpty) return false;
+
+    final role = (widget.type == RegisterType.penumpang
+            ? UserRole.penumpang
+            : UserRole.driver)
+        .firestoreValue;
+    return _completeRegistration(
+      user.uid,
+      name: name,
+      role: role,
+      phoneE164: phoneRaw,
+      email: user.email,
+    );
+  }
+
+  /// Email Google sudah dipakai dokumen `users` dengan uid lain → cegah bentrok profil.
+  Future<bool> _blockIfGoogleEmailLinkedToOtherFirestoreUser(User user) async {
+    final email = user.email?.trim();
+    if (email == null || email.isEmpty) return false;
+    try {
+      final callable = FirebaseFunctions.instance
+          .httpsCallable('checkGoogleEmailConflictForRegister');
+      final result = await callable.call(<String, dynamic>{
+        'email': email,
+        'currentUid': user.uid,
+      });
+      final data = result.data as Map<String, dynamic>?;
+      if (data?['conflict'] != true) return false;
+      await FirebaseAuth.instance.signOut();
+      if (!mounted) return true;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            l10n.locale == AppLocale.id
+                ? 'Email Google ini sudah dipakai profil Traka lain. Gunakan Login atau akun Google lain.'
+                : 'This Google email is already used by another Traka profile. Sign in or use a different Google account.',
+          ),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return true;
+    } catch (e, st) {
+      logError('RegisterScreen.checkGoogleEmailConflictForRegister', e, st);
+      return false;
+    }
+  }
+
+  String get _registrationRoleFirestoreValue =>
+      (widget.type == RegisterType.penumpang
+              ? UserRole.penumpang
+              : UserRole.driver)
+          .firestoreValue;
+
+  /// Daftar Google: perangkat sudah dipakai untuk role yang sama → info + ke Login (bisa sebelum/sesudah pilih akun Google).
+  Future<bool> _redirectIfDeviceNotAllowedForGoogleRegister() async {
+    final result = await DeviceSecurityService.checkRegistrationAllowed(
+      _registrationRoleFirestoreValue,
+    );
+    if (!mounted) return true;
+    if (result.allowed) return false;
+
+    await FirebaseAuth.instance.signOut();
+    try {
+      await GoogleSignIn().signOut();
+    } catch (_) {}
+
+    if (!mounted) return true;
+    setState(() => _isLoading = false);
+    final message = result.message ??
+        (l10n.locale == AppLocale.id
+            ? (widget.type == RegisterType.driver
+                ? 'Perangkat ini sudah terdaftar sebagai driver. Silakan login.'
+                : 'Perangkat ini sudah terdaftar sebagai penumpang. Silakan login.')
+            : (widget.type == RegisterType.driver
+                ? 'This device is already registered as a driver. Please sign in.'
+                : 'This device is already registered as a passenger. Please sign in.'));
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => LoginScreen(deviceAlreadyUsedMessage: message),
+      ),
+    );
+    return true;
+  }
+
+  Future<void> _signInWithGoogleForRegister() async {
+    FocusScope.of(context).unfocus();
+    setState(() => _isLoading = true);
+    await Future<void>.delayed(Duration.zero);
+    try {
+      if (await _redirectIfDeviceNotAllowedForGoogleRegister()) return;
+      await GoogleSignIn().signOut();
+      await FirebaseAuth.instance.signOut();
+      final googleSignIn = GoogleSignIn(
+        scopes: const <String>['email', 'profile'],
+      );
+      final account = await googleSignIn.signIn();
+      if (!mounted) return;
+      if (account == null) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.googleSignInCancelled),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      final auth = await account.authentication;
+      if (auth.idToken == null && auth.accessToken == null) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.googleSignInFailed),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      final credential = GoogleAuthProvider.credential(
+        accessToken: auth.accessToken,
+        idToken: auth.idToken,
+      );
+      final uc = await FirebaseAuth.instance.signInWithCredential(credential);
+      final user = uc.user;
+      if (!mounted) return;
+      if (user == null) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.googleSignInFailed),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      if (await _redirectIfDeviceNotAllowedForGoogleRegister()) return;
+      final display = user.displayName?.trim();
+      if (display != null &&
+          display.isNotEmpty &&
+          _nameController.text.trim().isEmpty) {
+        _nameController.text = display;
+      }
+      if (await _blockIfGoogleEmailLinkedToOtherFirestoreUser(user)) return;
+      if (await _redirectIfGoogleAccountAlreadyRegistered(user)) return;
+      if (await _completeGoogleRegistrationIfAuthHasPhone(user)) return;
+      setState(() => _isLoading = false);
+    } on FirebaseAuthException catch (e, st) {
+      logError('RegisterScreen.signInWithGoogle', e, st);
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      final String msg;
+      switch (e.code) {
+        case 'account-exists-with-different-credential':
+          msg = l10n.locale == AppLocale.id
+              ? 'Akun dengan email ini sudah ada dengan cara masuk lain. Gunakan Login dan pilih metode yang sama seperti saat pertama mendaftar.'
+              : 'An account already exists with a different sign-in method. Use Log in with the same method you used when you registered.';
+          break;
+        case 'email-already-in-use':
+          msg = l10n.locale == AppLocale.id
+              ? 'Email sudah dipakai. Gunakan Login atau daftar dengan akun lain.'
+              : 'This email is already in use. Sign in or use another account.';
+          break;
+        case 'credential-already-in-use':
+          msg = l10n.locale == AppLocale.id
+              ? 'Kredensial ini sudah terhubung ke akun lain. Silakan login.'
+              : 'This sign-in is already linked to another account. Please sign in.';
+          break;
+        default:
+          msg = e.message ?? l10n.googleSignInFailed;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e, st) {
+      logError('RegisterScreen.signInWithGoogle', e, st);
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.googleSignInFailed),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -94,18 +353,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   /// Cek device: jika perangkat sudah terdaftar (penumpang/driver), langsung ke halaman login dan tampilkan notifikasi.
   Future<void> _checkDeviceAndBlockIfNeeded() async {
-    final role = (widget.type == RegisterType.penumpang
-            ? UserRole.penumpang
-            : UserRole.driver)
-        .firestoreValue;
-    final result = await DeviceSecurityService.checkRegistrationAllowed(role);
+    final result = await DeviceSecurityService.checkRegistrationAllowed(
+      _registrationRoleFirestoreValue,
+    );
     if (!mounted) return;
     if (!result.allowed) {
       final message =
           result.message ??
           (l10n.locale == AppLocale.id
-              ? 'Perangkat sudah digunakan oleh $role. Silakan login.'
-              : 'Device already in use by $role. Please login.');
+              ? 'Perangkat sudah digunakan oleh $_registrationRoleFirestoreValue. Silakan login.'
+              : 'Device already in use by $_registrationRoleFirestoreValue. Please login.');
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
@@ -132,6 +389,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _sendPhoneOtp() async {
+    if (widget.useGoogleSignUp && !_googleUserReady) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.connectGoogleFirst),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     final phone = _phoneController.text.trim();
     if (phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -161,6 +427,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isLoading = true);
     await Future<void>.delayed(Duration.zero);
+    if (widget.useGoogleSignUp) {
+      final u = FirebaseAuth.instance.currentUser;
+      if (u != null) {
+        final finished = await _completeGoogleRegistrationIfAuthHasPhone(u);
+        if (finished) return;
+      }
+    }
     // Cek apakah nomor sudah terdaftar (untuk UX: arahkan ke Login)
     try {
       final callable = FirebaseFunctions.instance.httpsCallable('checkPhoneExists');
@@ -194,6 +467,62 @@ class _RegisterScreenState extends State<RegisterScreen> {
       phoneNumber: phoneE164,
       verificationCompleted: (PhoneAuthCredential credential) async {
         if (!mounted) return;
+        if (widget.useGoogleSignUp) {
+          final user = FirebaseAuth.instance.currentUser;
+          if (user == null) return;
+          try {
+            await user.linkWithCredential(credential);
+          } on FirebaseAuthException catch (e) {
+            if (e.code == 'provider-already-linked') {
+              final done = await _completeGoogleRegistrationIfAuthHasPhone(user);
+              if (done) return;
+            }
+            if (!mounted) return;
+            setState(() => _isLoading = false);
+            final msg = e.code == 'credential-already-in-use'
+                ? (l10n.locale == AppLocale.id
+                    ? 'Nomor sudah terdaftar di akun lain. Silakan login.'
+                    : 'This number is registered to another account. Please sign in.')
+                : (e.code == 'provider-already-linked'
+                    ? (l10n.locale == AppLocale.id
+                        ? 'Nomor sudah terhubung ke sesi Google ini. Isi nama lengkap lalu coba lagi, atau buka Login.'
+                        : 'This number is already linked. Enter your name and try again, or open Log in.')
+                    : (l10n.locale == AppLocale.id
+                        ? 'Nomor sudah terdaftar atau tidak bisa dipakai. Silakan login.'
+                        : 'Number unavailable or already in use. Please log in.'));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(msg), backgroundColor: Colors.orange),
+            );
+            return;
+          } catch (_) {
+            if (!mounted) return;
+            setState(() => _isLoading = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  l10n.locale == AppLocale.id
+                      ? 'Nomor sudah terdaftar atau tidak bisa dipakai. Silakan login.'
+                      : 'Number unavailable or already in use. Please log in.',
+                ),
+                backgroundColor: Colors.orange,
+              ),
+            );
+            return;
+          }
+          final role = (widget.type == RegisterType.penumpang
+                  ? UserRole.penumpang
+                  : UserRole.driver)
+              .firestoreValue;
+          final name = _nameController.text.trim();
+          await _completeRegistration(
+            user.uid,
+            name: name,
+            role: role,
+            phoneE164: phoneE164,
+            email: user.email,
+          );
+          return;
+        }
         final password = _passwordController.text;
         if (password.length < 6) return;
         try {
@@ -321,7 +650,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   /// Selesaikan registrasi: simpan ke Firestore, navigasi. Untuk phone dan email.
-  Future<void> _completeRegistration(
+  /// `true` jika alur selesai sukses (navigasi ke login atau layar utama pemulihan akun).
+  Future<bool> _completeRegistration(
     String uid, {
     required String name,
     required String role,
@@ -334,16 +664,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (userDoc.exists) {
       final data = userDoc.data();
       if (AccountDeletionService.isDeleted(data)) {
-        if (!mounted) return;
+        if (!mounted) return false;
         final confirm = await _showCancelDeletionDialog();
         if (!mounted || confirm != true) {
           setState(() => _isLoading = false);
           await FirebaseAuth.instance.signOut();
-          return;
+          return false;
         }
         await AccountDeletionService.cancelAccountDeletion(uid);
         await DeviceSecurityService.recordRegistration(uid, role);
-        if (!mounted) return;
+        if (!mounted) return false;
         setState(() => _isLoading = false);
         FcmService.saveTokenForUser(uid);
         VoiceCallIncomingService.start(uid);
@@ -358,11 +688,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
             (route) => false,
           );
         }
-        return;
+        return true;
       }
       // User sudah terdaftar, arahkan ke login
       await FirebaseAuth.instance.signOut();
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -375,7 +705,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
       );
       Navigator.of(context).pop();
-      return;
+      return false;
     }
 
     // Cek device + lokasi paralel agar lebih cepat
@@ -387,7 +717,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final locationResult = results[1] as DriverLocationResult;
 
     if (!securityResult.allowed) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -402,10 +732,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           duration: const Duration(seconds: 4),
         ),
       );
-      return;
+      return false;
     }
     if (locationResult.errorMessage != null) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() => _isLoading = false);
       if (locationResult.isFakeGpsDetected) {
         FakeGpsOverlayService.showOverlay();
@@ -424,10 +754,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         );
       }
-      return;
+      return false;
     }
     if (!locationResult.isInIndonesia) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -442,7 +772,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           duration: const Duration(seconds: 4),
         ),
       );
-      return;
+      return false;
     }
 
     final userRegion = locationResult.region ?? locationResult.country;
@@ -477,12 +807,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } catch (_) {}
     AppAnalyticsService.logRegisterSuccess(role: role);
 
-    if (!mounted) return;
+    if (!mounted) return false;
     setState(() => _isLoading = false);
 
     await FirebaseAuth.instance.signOut();
 
-    if (!mounted) return;
+    if (!mounted) return false;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(l10n.registerSuccess),
@@ -496,6 +826,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
       (route) => false,
     );
+    return true;
   }
 
   Future<void> _onSubmit() async {
@@ -515,6 +846,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final phone = _phoneController.text.trim();
     final password = _passwordController.text;
 
+    if (widget.useGoogleSignUp && !_googleUserReady) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.connectGoogleFirst),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     if (phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -527,7 +868,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       return;
     }
-    if (password.length < 6) {
+    if (!widget.useGoogleSignUp && password.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -566,11 +907,70 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     try {
       final phoneE164 = toE164(phone);
-      final authEmail = _phoneToAuthEmail(phoneE164);
       final credential = PhoneAuthProvider.credential(
         verificationId: _phoneVerificationId!,
         smsCode: code,
       );
+      if (widget.useGoogleSignUp) {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) {
+          if (mounted) setState(() => _isLoading = false);
+          return;
+        }
+        try {
+          await user.linkWithCredential(credential);
+        } on FirebaseAuthException catch (e) {
+          if (e.code == 'provider-already-linked') {
+            final done = await _completeGoogleRegistrationIfAuthHasPhone(user);
+            if (done) return;
+          }
+          if (!mounted) return;
+          setState(() => _isLoading = false);
+          final String msg;
+          if (e.code == 'credential-already-in-use') {
+            msg = l10n.locale == AppLocale.id
+                ? 'Nomor sudah terdaftar di akun lain. Silakan login.'
+                : 'This number is registered to another account. Please sign in.';
+          } else if (e.code == 'provider-already-linked') {
+            msg = l10n.locale == AppLocale.id
+                ? 'Nomor sudah terhubung ke sesi Google ini. Isi nama lengkap lalu coba «Kirim kode» lagi, atau buka Login.'
+                : 'This number is already linked. Enter your full name and tap «Send code» again, or open Log in.';
+          } else {
+            msg = e.message ??
+                (l10n.locale == AppLocale.id
+                    ? 'Kode salah atau kedaluwarsa.'
+                    : 'Invalid or expired code.');
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(msg), backgroundColor: Colors.red),
+          );
+          return;
+        } catch (_) {
+          if (!mounted) return;
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                l10n.locale == AppLocale.id
+                    ? 'Nomor sudah terdaftar. Silakan login.'
+                    : 'Number already registered. Please log in.',
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
+        await _completeRegistration(
+          user.uid,
+          name: name,
+          role: role,
+          phoneE164: phoneE164,
+          email: user.email,
+        );
+        return;
+      }
+
+      final authEmail = _phoneToAuthEmail(phoneE164);
       await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: authEmail,
         password: password,
@@ -633,40 +1033,83 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final title = widget.type == RegisterType.penumpang
         ? '${l10n.penumpang} – Pendaftaran'
         : '${l10n.driver} – Pendaftaran';
+    final backdrop = context.trakaVisualTokens?.screenBackdropGradient;
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        title: Text(title),
       ),
       resizeToAvoidBottomInset: true,
       body: Stack(
         fit: StackFit.expand,
         children: [
           Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: backdrop ??
+                    LinearGradient(
+                      colors: [cs.surface, cs.surface],
+                    ),
+              ),
+            ),
+          ),
+          Positioned.fill(
             child: SafeArea(
               child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(horizontal: context.responsive.horizontalPadding),
+              padding: EdgeInsets.fromLTRB(
+                context.responsive.horizontalPadding,
+                MediaQuery.paddingOf(context).top + kToolbarHeight + 8,
+                context.responsive.horizontalPadding,
+                24,
+              ),
               child: Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                SizedBox(height: context.responsive.spacing(16)),
+                _RegisterWelcomeHero(
+                  type: widget.type,
+                  isId: l10n.locale == AppLocale.id,
+                ),
+                if (widget.useGoogleSignUp) ...[
+                  SizedBox(height: context.responsive.spacing(16)),
+                  OutlinedButton.icon(
+                    onPressed: _isLoading ? null : _signInWithGoogleForRegister,
+                    icon: const _RegisterGoogleGlyph(size: 22),
+                    label: Text(
+                      _googleUserReady
+                          ? l10n.googleConnectedShort(
+                              FirebaseAuth.instance.currentUser?.email,
+                            )
+                          : l10n.connectGooglePrompt,
+                      style: Theme.of(context).textTheme.labelLarge,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                    ),
+                  ),
+                ],
+                SizedBox(height: context.responsive.spacing(20)),
                 _RegisterUnderlineField(
                   controller: _nameController,
                   hint: l10n.nameHint,
@@ -690,11 +1133,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ? (_isLoading
                           ? const Padding(
                               padding: EdgeInsets.all(8.0),
-                              child: SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
+                              child: TrakaLoadingIndicator(size: 22, strokeWidth: 2.5),
                             )
                           : IconButton(
                               icon: Icon(
@@ -725,22 +1164,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   SizedBox(height: context.responsive.spacing(12)),
                   FilledButton(
                     onPressed: _isLoading ? null : _sendPhoneOtp,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppTheme.radiusXs),
-                      ),
-                    ),
+                    style: AppInteractionStyles.authPrimaryCta(context),
                     child: _isLoading
-                        ? SizedBox(
-                            height: 22,
-                            width: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Theme.of(context).colorScheme.onPrimary,
-                            ),
+                        ? TrakaLoadingIndicator(
+                            size: 24,
+                            strokeWidth: 2.5,
+                            primary: Theme.of(context).colorScheme.onPrimary,
+                            secondary: Theme.of(context)
+                                .colorScheme
+                                .onPrimary
+                                .withValues(alpha: 0.75),
+                            variant: TrakaLoadingVariant.onDimmedBackdrop,
                           )
                         : Row(
                             mainAxisSize: MainAxisSize.min,
@@ -748,79 +1182,81 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             children: [
                               Text(
                                 l10n.locale == AppLocale.id ? 'Kirim kode' : 'Send code',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                style: AppInteractionStyles.authCtaLabelStyle,
                               ),
                               const SizedBox(width: 8),
                               Icon(
-                                Icons.arrow_forward,
-                                size: 20,
+                                Icons.arrow_forward_rounded,
+                                size: 22,
                                 color: Theme.of(context).colorScheme.onPrimary,
                               ),
                             ],
                           ),
                   ),
                 ],
-                SizedBox(height: context.responsive.spacing(20)),
-                _RegisterUnderlineField(
-                  controller: _passwordController,
-                  hint: l10n.passwordHintRegister,
-                  icon: Icons.lock_outline,
-                  obscureText: _obscurePassword,
-                  suffix: IconButton(
-                    icon: Icon(
-                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                      size: 22,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                if (!widget.useGoogleSignUp) ...[
+                  SizedBox(height: context.responsive.spacing(20)),
+                  _RegisterUnderlineField(
+                    controller: _passwordController,
+                    hint: l10n.passwordHintRegister,
+                    icon: Icons.lock_outline,
+                    obscureText: _obscurePassword,
+                    suffix: IconButton(
+                      icon: Icon(
+                        _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                        size: 22,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
                     ),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) {
+                        return l10n.locale == AppLocale.id
+                            ? 'Kata sandi wajib diisi'
+                            : 'Password is required';
+                      }
+                      if (v.length < 6) {
+                        return l10n.locale == AppLocale.id
+                            ? 'Minimal 6 karakter'
+                            : 'Minimum 6 characters';
+                      }
+                      return null;
+                    },
                   ),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) {
-                      return l10n.locale == AppLocale.id
-                          ? 'Kata sandi wajib diisi'
-                          : 'Password is required';
-                    }
-                    if (v.length < 6) {
-                      return l10n.locale == AppLocale.id
-                          ? 'Minimal 6 karakter'
-                          : 'Minimum 6 characters';
-                    }
-                    return null;
-                  },
-                ),
-                SizedBox(height: context.responsive.spacing(20)),
-                _RegisterUnderlineField(
-                  controller: _confirmPasswordController,
-                  hint: l10n.confirmPasswordHint,
-                  icon: Icons.lock_outline,
-                  obscureText: _obscureConfirmPassword,
-                  suffix: IconButton(
-                    icon: Icon(
-                      _obscureConfirmPassword ? Icons.visibility_off : Icons.visibility,
-                      size: 22,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  SizedBox(height: context.responsive.spacing(20)),
+                  _RegisterUnderlineField(
+                    controller: _confirmPasswordController,
+                    hint: l10n.confirmPasswordHint,
+                    icon: Icons.lock_outline,
+                    obscureText: _obscureConfirmPassword,
+                    suffix: IconButton(
+                      icon: Icon(
+                        _obscureConfirmPassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                        size: 22,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      onPressed: () => setState(
+                        () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                      ),
                     ),
-                    onPressed: () =>
-                        setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) {
+                        return l10n.locale == AppLocale.id
+                            ? 'Ulangi kata sandi wajib diisi'
+                            : 'Confirm password is required';
+                      }
+                      if (v != _passwordController.text) {
+                        return l10n.locale == AppLocale.id
+                            ? 'Kata sandi tidak sama'
+                            : 'Passwords do not match';
+                      }
+                      return null;
+                    },
                   ),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) {
-                      return l10n.locale == AppLocale.id
-                          ? 'Ulangi kata sandi wajib diisi'
-                          : 'Confirm password is required';
-                    }
-                    if (v != _passwordController.text) {
-                      return l10n.locale == AppLocale.id
-                          ? 'Kata sandi tidak sama'
-                          : 'Passwords do not match';
-                    }
-                    return null;
-                  },
-                ),
+                ],
                 if (_phoneOtpSent) ...[
                   SizedBox(height: context.responsive.spacing(20)),
                   _RegisterUnderlineField(
@@ -843,35 +1279,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 // Tombol Ajukan – hijau bila agree, abu-abu bila belum
                 FilledButton(
                   onPressed: _agreeToTerms && !_isLoading ? _onSubmit : null,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _agreeToTerms
-                        ? const Color(0xFF22C55E) // Hijau saat setuju terms
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                  style: AppInteractionStyles.registerTermsSubmit(
+                    context,
+                    agreeToTerms: _agreeToTerms,
                   ),
                   child: _isLoading
-                      ? const SizedBox(
-                          height: 22,
-                          width: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
+                      ? TrakaLoadingIndicator(
+                          size: 24,
+                          strokeWidth: 2.5,
+                          primary: Colors.white,
+                          secondary: Colors.white.withValues(alpha: 0.72),
+                          variant: TrakaLoadingVariant.onDimmedBackdrop,
                         )
                       : Text(
                           _phoneOtpSent
-                              ? l10n.submitButton
-                              : (l10n.locale == AppLocale.id
-                                  ? 'Kirim kode'
-                                  : 'Send code'),
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
+                              ? (widget.type == RegisterType.driver
+                                  ? l10n.submitButton
+                                  : l10n.registerFormSubmitButton)
+                              : l10n.registerFormSubmitButton,
+                          style: AppInteractionStyles.authCtaLabelStyle,
                         ),
                 ),
                 const SizedBox(height: 16),
@@ -890,10 +1316,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   onPressed: () => Navigator.of(context).pop(),
                   icon: const Icon(Icons.arrow_back, size: 18),
                   label: Text(l10n.backToLogin),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.primary,
-                    side: BorderSide(color: Theme.of(context).colorScheme.primary),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  style: AppInteractionStyles.outlinedFromTheme(
+                    context,
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 12),
+                    sideColor: Theme.of(context).colorScheme.primary,
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -905,6 +1332,165 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
           AuthLoadingOverlay(visible: _isLoading),
         ],
+      ),
+    );
+  }
+}
+
+/// Ikon pengenal Google untuk tombol sambung (gambar resmi; fallback jaringan gagal).
+class _RegisterGoogleGlyph extends StatelessWidget {
+  const _RegisterGoogleGlyph({this.size = 22});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.network(
+        'https://www.google.com/images/branding/googleg/1x/googleg_standard_color_128dp.png',
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => Icon(
+          Icons.account_circle_outlined,
+          size: size,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+      ),
+    );
+  }
+}
+
+/// Ilustrasi ringan di atas form: masuk halus + denyut ikon (tanpa dependensi ekstra).
+class _RegisterWelcomeHero extends StatefulWidget {
+  const _RegisterWelcomeHero({
+    required this.type,
+    required this.isId,
+  });
+
+  final RegisterType type;
+  final bool isId;
+
+  @override
+  State<_RegisterWelcomeHero> createState() => _RegisterWelcomeHeroState();
+}
+
+class _RegisterWelcomeHeroState extends State<_RegisterWelcomeHero>
+    with TickerProviderStateMixin {
+  late AnimationController _entrance;
+  late AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _entrance = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 780),
+    )..forward();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2600),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _entrance.dispose();
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isPassenger = widget.type == RegisterType.penumpang;
+    final title = widget.isId
+        ? (isPassenger ? 'Bergabung sebagai penumpang' : 'Bergabung sebagai driver')
+        : (isPassenger ? 'Join as a passenger' : 'Join as a driver');
+    final subtitle = widget.isId
+        ? 'Lengkapi langkah di bawah — cepat dan aman.'
+        : 'Complete the steps below — quick and secure.';
+
+    final pulseScale = Tween<double>(begin: 0.96, end: 1.04).animate(
+      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+    );
+    final entranceFade = CurvedAnimation(
+      parent: _entrance,
+      curve: const Interval(0.0, 0.55, curve: Curves.easeOut),
+    );
+    final entranceSlide = Tween<Offset>(
+      begin: const Offset(0, 0.12),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(parent: _entrance, curve: Curves.easeOutCubic),
+    );
+
+    return FadeTransition(
+      opacity: entranceFade,
+      child: SlideTransition(
+        position: entranceSlide,
+        child: RepaintBoundary(
+          child: Column(
+            children: [
+              ScaleTransition(
+                scale: pulseScale,
+                child: Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        cs.primary.withValues(alpha: 0.14),
+                        AppTheme.primaryLight.withValues(alpha: 0.1),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    border: Border.all(
+                      color: cs.primary.withValues(alpha: 0.28),
+                      width: 1.25,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: cs.primary.withValues(alpha: 0.22),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10),
+                        spreadRadius: -6,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    isPassenger ? Icons.hail_rounded : Icons.local_taxi_rounded,
+                    size: 44,
+                    color: cs.primary,
+                  ),
+                ),
+              ),
+              SizedBox(height: context.responsive.spacing(16)),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.2,
+                      color: cs.onSurface,
+                      height: 1.25,
+                    ),
+              ),
+              SizedBox(height: context.responsive.spacing(6)),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.35,
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

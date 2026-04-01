@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../theme/app_interaction_styles.dart';
 import '../models/chat_message_model.dart';
 import '../models/order_model.dart';
 import '../theme/responsive.dart';
@@ -15,11 +16,12 @@ import '../widgets/chat_message_content.dart';
 import '../widgets/full_screen_image_viewer.dart';
 import '../services/audio_recorder_service.dart';
 import '../services/chat_service.dart';
-import '../services/fake_gps_overlay_service.dart';
 import '../services/location_service.dart';
 import '../services/chat_badge_service.dart';
 import '../services/order_service.dart';
 import '../utils/phone_utils.dart';
+import '../widgets/traka_empty_state.dart';
+import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -100,6 +102,12 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
   final Map<String, bool> _audioPlaying = {};
   /// Cegah double-tap «Setujui & Lanjutkan» → dua kali setPassengerAgreed + pesan chat duplikat.
   bool _submittingPassengerSetuju = false;
+  /// Cegah spam SnackBar dari stream lokasi (banyak OEM salah lapor `isMocked`).
+  bool _fakeGpsShareStreamSnackShown = false;
+  /// Cadangan snapshot terakhir yang tidak kosong — cegah daftar chat «hilang» saat event Firestore sementara mengirim [].
+  List<ChatMessageModel> _messagesDisplayCache = [];
+  bool _dismissTravelOperationalInfoBanner = false;
+  bool _dismissTravelActiveTripInfoBanner = false;
 
   @override
   void initState() {
@@ -127,6 +135,31 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
 
   void _onFocusChange() {
     if (mounted) setState(() {});
+  }
+
+  void _snackFakeGpsOnPassengerShareStream() {
+    if (!mounted || _fakeGpsShareStreamSnackShown) return;
+    _fakeGpsShareStreamSnackShown = true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Berbagi lokasi dihentikan sementara (lokasi tidak dianggap valid). '
+          'Jika Anda tidak memakai lokasi palsu, abaikan atau periksa pengaturan lokasi.',
+        ),
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 8),
+      ),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatRoomPenumpangScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.orderId != widget.orderId) {
+      _messagesDisplayCache = [];
+      _dismissTravelOperationalInfoBanner = false;
+      _dismissTravelActiveTripInfoBanner = false;
+    }
   }
 
   /// Kirim sekali pesan jenis pesanan hanya jika ini pesan pertama di chat; selanjutnya pengguna isi manual.
@@ -262,7 +295,8 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
   void _onPassengerSharePosition(Position position) {
     if (!mounted) return;
     if (position.isMocked && !kDisableFakeGpsCheck) {
-      FakeGpsOverlayService.showOverlay();
+      // Jangan pakai overlay global — menutup seluruh app; stream sering salah positif setelah setuju.
+      _snackFakeGpsOnPassengerShareStream();
       return;
     }
     unawaited(_applyShareStreamToOrder(position));
@@ -333,7 +367,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     try {
       final result = await LocationService.getCurrentPositionWithMockCheck();
       if (result.isFakeGpsDetected) {
-        if (mounted) FakeGpsOverlayService.showOverlay();
+        _snackFakeGpsOnPassengerShareStream();
         return;
       }
       final position = result.position;
@@ -362,7 +396,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     try {
       final result = await LocationService.getCurrentPositionWithMockCheck();
       if (result.isFakeGpsDetected) {
-        if (mounted) FakeGpsOverlayService.showOverlay();
+        _snackFakeGpsOnPassengerShareStream();
         return;
       }
       final position = result.position;
@@ -764,7 +798,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
 
   /// Tampilkan dialog pilih gambar atau video
   void _showMediaPicker() {
-    showModalBottomSheet(
+    showTrakaModalBottomSheet(
       context: context,
       builder: (context) => SafeArea(
         child: Column(
@@ -940,7 +974,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
     final hargaFormatted = harga.toStringAsFixed(0).replaceAllMapped(
         RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.');
 
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -1106,7 +1140,8 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                                       _onSetujuiKesepakatan();
                                     }
                                   : null,
-                              style: FilledButton.styleFrom(
+                              style: AppInteractionStyles.filledFromTheme(
+                                sheetCtx,
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 14,
                                 ),
@@ -1222,70 +1257,81 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
       }
 
       final result = await LocationService.getCurrentPositionWithMockCheck();
-    if (result.isFakeGpsDetected) {
-      if (mounted) FakeGpsOverlayService.showOverlay();
-      return;
-    }
-    final position = result.position;
-    if (position == null || !mounted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Tidak dapat memperoleh lokasi. Coba lagi.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-      return;
-    }
-
-    String locationText = '${position.latitude}, ${position.longitude}';
-    try {
-      final placemarks = await GeocodingService.placemarkFromCoordinates(
-        position.latitude,
-        position.longitude,
-      );
-      if (placemarks.isNotEmpty) {
-        final p = placemarks.first;
-        final parts = <String>[];
-        if ((p.name ?? '').isNotEmpty) parts.add(p.name!);
-        if ((p.thoroughfare ?? '').isNotEmpty) parts.add(p.thoroughfare!);
-        if ((p.subLocality ?? '').isNotEmpty) parts.add(p.subLocality!);
-        if ((p.administrativeArea ?? '').isNotEmpty) {
-          parts.add(p.administrativeArea!);
+      if (result.isFakeGpsDetected) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Lokasi tidak valid (mock). Nonaktifkan fake GPS lalu coba setujui lagi.',
+              ),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
         }
-        if (parts.isNotEmpty) locationText = parts.join(', ');
+        return;
       }
-    } catch (_) {}
+      final position = result.position;
+      if (position == null || !mounted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Tidak dapat memperoleh lokasi. Coba lagi.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
 
-    setState(() {});
-    final (ok, _, kirimPesanSetuju) = await OrderService.setPassengerAgreed(
-      _order!.id,
-      passengerLat: position.latitude,
-      passengerLng: position.longitude,
-      passengerLocationText: locationText,
-    );
-    if (!mounted) return;
-    setState(() {});
-    if (ok) {
-      if (kirimPesanSetuju) {
-        await ChatService.sendMessage(
-          _order!.id,
-          'Penumpang sudah mensetujui kesepakatan.',
+      String locationText = '${position.latitude}, ${position.longitude}';
+      try {
+        final placemarks = await GeocodingService.placemarkFromCoordinates(
+          position.latitude,
+          position.longitude,
         );
-      }
-      // Barcode tidak dikirim ke chat. Driver tampilkan barcode di Data Order untuk di-scan penumpang.
+        if (placemarks.isNotEmpty) {
+          final p = placemarks.first;
+          final parts = <String>[];
+          if ((p.name ?? '').isNotEmpty) parts.add(p.name!);
+          if ((p.thoroughfare ?? '').isNotEmpty) parts.add(p.thoroughfare!);
+          if ((p.subLocality ?? '').isNotEmpty) parts.add(p.subLocality!);
+          if ((p.administrativeArea ?? '').isNotEmpty) {
+            parts.add(p.administrativeArea!);
+          }
+          if (parts.isNotEmpty) locationText = parts.join(', ');
+        }
+      } catch (_) {}
+
+      setState(() {});
+      final (ok, _, kirimPesanSetuju) = await OrderService.setPassengerAgreed(
+        _order!.id,
+        passengerLat: position.latitude,
+        passengerLng: position.longitude,
+        passengerLocationText: locationText,
+      );
       if (!mounted) return;
-      if (kirimPesanSetuju) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Kesepakatan berhasil. Pesanan aktif di menu Pesanan.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      setState(() {});
+      if (ok) {
+        if (kirimPesanSetuju) {
+          await ChatService.sendMessage(
+            _order!.id,
+            'Penumpang sudah mensetujui kesepakatan.',
+          );
+        }
+        // Barcode tidak dikirim ke chat. Driver tampilkan barcode di Data Order untuk di-scan penumpang.
+        if (!mounted) return;
+        if (kirimPesanSetuju) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Kesepakatan berhasil. Pesanan aktif di menu Pesanan.',
+              ),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        _loadOrder();
       }
-      _loadOrder();
-    }
     } finally {
       _submittingPassengerSetuju = false;
     }
@@ -1396,7 +1442,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                       ),
                       FilledButton(
                         onPressed: () => Navigator.pop(ctx, true),
-                        style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                        style: AppInteractionStyles.destructive(Theme.of(ctx).colorScheme),
                         child: const Text('Hapus'),
                       ),
                     ],
@@ -1533,7 +1579,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
         child: Container(
           decoration: BoxDecoration(
             image: DecorationImage(
-              image: AssetImage('assets/images/logo_traka.png'),
+              image: AssetImage('assets/images/traka_brand_logo.png'),
               fit: BoxFit.contain,
               opacity:
                   0.05, // Logo semi-transparent agar tidak mengganggu pembacaan pesan
@@ -1542,66 +1588,83 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
           ),
           child: Column(
             children: [
-              if (_order != null &&
+              if (!_dismissTravelOperationalInfoBanner &&
+                  _order != null &&
                   _order!.orderType == OrderModel.typeTravel &&
                   !widget.isReceiver &&
                   (_order!.status == OrderService.statusAgreed ||
                       _order!.status == OrderService.statusPickedUp) &&
                   !_order!.isCompleted)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
+                Dismissible(
+                  key: const ValueKey('passenger_chat_operational_info_strip'),
+                  direction: DismissDirection.horizontal,
+                  onDismissed: (_) => setState(
+                    () => _dismissTravelOperationalInfoBanner = true,
                   ),
-                  color: Colors.blue.shade50,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.location_on_outlined,
-                        color: Colors.blue.shade800,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          TrakaL10n.of(context).pickupOperationalPassengerKeepApp,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.blue.shade900,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    color: Colors.blue.shade50,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.location_on_outlined,
+                          color: Colors.blue.shade800,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            TrakaL10n.of(context).pickupOperationalPassengerKeepApp,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue.shade900,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              if (_order != null && _order!.hasDriverScannedPassenger)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
+              if (!_dismissTravelActiveTripInfoBanner &&
+                  _order != null &&
+                  _order!.hasDriverScannedPassenger)
+                Dismissible(
+                  key: const ValueKey('passenger_chat_active_trip_strip'),
+                  direction: DismissDirection.horizontal,
+                  onDismissed: (_) => setState(
+                    () => _dismissTravelActiveTripInfoBanner = true,
                   ),
-                  color: Colors.green.shade50,
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.directions_car,
-                        color: Colors.green.shade700,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Perjalanan aktif. Saat sampai tujuan, buka Data Order > Driver lalu scan barcode driver.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.green.shade900,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    color: Colors.green.shade50,
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.directions_car,
+                          color: Colors.green.shade700,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Perjalanan aktif. Saat sampai tujuan, buka Data Order > Driver lalu scan barcode driver.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.green.shade900,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               Expanded(
@@ -1609,6 +1672,7 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                   stream: _messagesStream,
                   builder: (context, snap) {
                     if (snap.hasError) {
+                      _messagesDisplayCache = [];
                       return Center(
                         child: Padding(
                           padding: const EdgeInsets.all(24),
@@ -1625,40 +1689,22 @@ class _ChatRoomPenumpangScreenState extends State<ChatRoomPenumpangScreen> {
                       return const Center(child: CircularProgressIndicator());
                     }
 
-                    // Ambil data messages
-                    final messages = snap.data ?? [];
+                    final incoming = snap.data ?? [];
+                    if (incoming.isNotEmpty) {
+                      _messagesDisplayCache =
+                          List<ChatMessageModel>.from(incoming);
+                    }
+                    final messages = incoming.isNotEmpty
+                        ? incoming
+                        : _messagesDisplayCache;
 
                     // Jika belum ada pesan, tampilkan pemberitahuan yang profesional
                     if (messages.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.chat_bubble_outline,
-                              size: 64,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Belum ada pesan.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Mulai obrolan dengan driver.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
+                      return const Center(
+                        child: TrakaEmptyState(
+                          icon: Icons.chat_bubble_outline,
+                          title: 'Belum ada pesan',
+                          subtitle: 'Mulai obrolan dengan driver.',
                         ),
                       );
                     }

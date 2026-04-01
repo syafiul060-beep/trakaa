@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../screens/chat_driver_screen.dart';
+import '../theme/app_interaction_styles.dart';
+import '../theme/app_theme.dart';
 
 /// Overlay compact "Menuju penumpang" di kanan atas peta driver.
 /// Menampilkan jarak, ETA, badge ~1 km lagi, tombol Chat, dan Kembali ke rute.
@@ -52,14 +54,14 @@ class NavigatingToPassengerOverlay extends StatelessWidget {
                           Icon(
                             Icons.person_pin_circle,
                             size: 20,
-                            color: const Color(0xFF00B14F),
+                            color: AppTheme.mapPickupAccent,
                           ),
                           const SizedBox(width: 8),
                           Flexible(
                             child: Text(
                               'Menuju penumpang',
-                              style: const TextStyle(
-                                color: Color(0xFF00B14F),
+                              style: TextStyle(
+                                color: AppTheme.mapPickupAccent,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -71,9 +73,13 @@ class NavigatingToPassengerOverlay extends StatelessWidget {
                     ),
                     TextButton(
                       onPressed: onExitNavigating,
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        minimumSize: Size.zero,
+                      style: AppInteractionStyles.textFromTheme(
+                        context,
+                      ).copyWith(
+                        padding: WidgetStateProperty.all(
+                          const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        minimumSize: WidgetStateProperty.all(Size.zero),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                       child: const Text('Kembali ke rute'),
@@ -86,13 +92,13 @@ class NavigatingToPassengerOverlay extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF00B14F).withValues(alpha: 0.15),
+                      color: AppTheme.mapPickupAccent.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       '~1 km lagi',
-                      style: const TextStyle(
-                        color: Color(0xFF00B14F),
+                      style: TextStyle(
+                        color: AppTheme.mapPickupAccent,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),

@@ -16,11 +16,14 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../l10n/app_localizations.dart';
 import '../utils/app_logger.dart';
+import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../models/order_model.dart';
 import '../services/active_drivers_service.dart';
 import '../services/route_category_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_interaction_styles.dart';
+import '../widgets/traka_empty_state.dart';
 import '../services/app_analytics_service.dart';
 import '../services/locale_service.dart';
 import '../services/favorite_driver_service.dart';
@@ -28,6 +31,7 @@ import '../services/location_service.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/map_style_service.dart';
 import '../services/order_service.dart';
+import '../services/traka_pin_bitmap_service.dart';
 import '../widgets/passenger_duplicate_pending_order_dialog.dart'
     show
         PassengerDuplicatePendingChoice,
@@ -96,6 +100,83 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
   int _carIconZoomBucket =
       CarIconService.passengerMapZoomBucket(MapStyleService.searchZoom);
   Timer? _carIconZoomDebounce;
+  LatLng? _viewerLocation;
+  StreamSubscription<Position>? _viewerPosSub;
+
+  bool _coordUsable(double? lat, double? lng) {
+    if (lat == null || lng == null) return false;
+    if (!lat.isFinite || !lng.isFinite) return false;
+    return lat != 0 || lng != 0;
+  }
+
+  Set<Marker> _travelMapMarkers() {
+    final pinAwal = TrakaPinBitmapService.mapAwal;
+    final pinAhir = TrakaPinBitmapService.mapAhir;
+    return {
+      ..._clusterMarkers,
+      if (_coordUsable(widget.passengerOriginLat, widget.passengerOriginLng))
+        Marker(
+          markerId: const MarkerId('cari_travel_passenger_origin'),
+          position: LatLng(widget.passengerOriginLat!, widget.passengerOriginLng!),
+          icon: pinAwal ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          anchor: const Offset(0.5, 1.0),
+          zIndexInt: 4,
+          infoWindow: const InfoWindow(title: 'Titik awal Anda'),
+        ),
+      if (_coordUsable(widget.passengerDestLat, widget.passengerDestLng))
+        Marker(
+          markerId: const MarkerId('cari_travel_passenger_dest'),
+          position: LatLng(widget.passengerDestLat!, widget.passengerDestLng!),
+          icon: pinAhir ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          anchor: const Offset(0.5, 1.0),
+          zIndexInt: 4,
+          infoWindow: const InfoWindow(title: 'Tujuan Anda'),
+        ),
+      if (_viewerLocation != null)
+        Marker(
+          markerId: const MarkerId('cari_travel_viewer'),
+          position: _viewerLocation!,
+          icon: pinAwal ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          anchor: Offset(0.5, pinAwal != null ? 1.0 : 0.5),
+          zIndexInt: 5,
+          infoWindow: const InfoWindow(title: 'Lokasi Anda'),
+        ),
+    };
+  }
+
+  Future<void> _startViewerLocationForCariTravel() async {
+    if (!mounted) return;
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        return;
+      }
+      final current = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      setState(() {
+        _viewerLocation = LatLng(current.latitude, current.longitude);
+      });
+      await _viewerPosSub?.cancel();
+      _viewerPosSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          distanceFilter: 20,
+          accuracy: LocationAccuracy.medium,
+        ),
+      ).listen((p) {
+        if (!mounted) return;
+        setState(() {
+          _viewerLocation = LatLng(p.latitude, p.longitude);
+        });
+      });
+    } catch (_) {}
+  }
 
   @override
   void initState() {
@@ -110,6 +191,14 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
     );
     _loadCarIcons();
     _loadDrivers();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(() async {
+        await TrakaPinBitmapService.ensureLoaded(context);
+        if (mounted) setState(() {});
+      }());
+      unawaited(_startViewerLocationForCariTravel());
+    });
   }
 
   Future<void> _loadCarIcons() async {
@@ -252,7 +341,7 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
     final s = kIsWeb ? (size / 2).floor() : size;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
-    const color = Color(0xFF2196F3); // Biru Traka
+    final color = AppTheme.primary;
     canvas.drawCircle(Offset(s / 2, s / 2), s / 2.0, Paint()..color = color);
     canvas.drawCircle(Offset(s / 2, s / 2), s / 2.2, Paint()..color = Colors.white);
     canvas.drawCircle(Offset(s / 2, s / 2), s / 2.8, Paint()..color = color);
@@ -280,6 +369,7 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
 
   @override
   void dispose() {
+    _viewerPosSub?.cancel();
     _carIconZoomDebounce?.cancel();
     _asalController.dispose();
     _tujuanController.dispose();
@@ -549,7 +639,7 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
   }
 
   void _onSelectDriver(ActiveDriverRoute driver) {
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -616,7 +706,7 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
   }
 
   void _showPesanTravelSheet(ActiveDriverRoute driver) {
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -761,8 +851,10 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
                 label: Text(
                   driver.hasPassengerCapacity ? 'Pesan Travel' : 'Kursi penuh',
                 ),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                style: AppInteractionStyles.filledFromTheme(
+                  ctx,
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
               const SizedBox(height: 8),
@@ -775,8 +867,10 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
                     : null,
                 icon: const Icon(Icons.send),
                 label: const Text('Kirim permintaan (form asal/tujuan)'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                style: AppInteractionStyles.outlinedFromTheme(
+                  ctx,
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
             ],
@@ -905,37 +999,12 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
               ),
             )
           : _drivers.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.directions_car,
-                      size: 64,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Belum ada driver dengan rute aktif',
-                      style: TextStyle(
-                        fontSize: 16,
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Driver yang sedang "Siap Kerja" dengan rute akan muncul di sini.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
+          ? const Center(
+              child: TrakaEmptyState(
+                icon: Icons.directions_car,
+                title: 'Belum ada driver dengan rute aktif',
+                subtitle:
+                    'Driver yang sedang "Siap Kerja" dengan rute akan muncul di sini.',
               ),
             )
           : Column(
@@ -1016,8 +1085,9 @@ class _CariTravelScreenState extends State<CariTravelScreen> {
                           tilt: MapStyleService.defaultTilt,
                         ),
                         style: style,
-                        markers: _clusterMarkers,
-                        myLocationEnabled: true,
+                        markers: _travelMapMarkers(),
+                        myLocationEnabled: false,
+                        myLocationButtonEnabled: false,
                         zoomControlsEnabled: false,
                         onMapCreated: (controller) {
                           _mapController = controller;
@@ -1274,8 +1344,10 @@ class _RequestFormSheetState extends State<_RequestFormSheet> {
                           ? 'Kirim permintaan'
                           : 'Kursi penuh'),
               ),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+              style: AppInteractionStyles.filledFromTheme(
+                context,
+                padding:
+                    const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
           ],

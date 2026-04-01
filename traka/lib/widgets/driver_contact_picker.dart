@@ -4,6 +4,8 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 
 import '../services/driver_contact_service.dart';
 import '../theme/app_theme.dart';
+import 'traka_bottom_sheet.dart';
+import 'traka_empty_state.dart';
 
 class _ContactPhoneItem {
   final Contact contact;
@@ -22,7 +24,7 @@ void showDriverContactPicker({
   required BuildContext context,
   required void Function(String phone, Map<String, dynamic>? driverData) onSelect,
 }) {
-  showModalBottomSheet<void>(
+  showTrakaModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
@@ -190,26 +192,28 @@ class _DriverContactPickerSheetState extends State<_DriverContactPickerSheet> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                    ? Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(_error!, textAlign: TextAlign.center),
-                            const SizedBox(height: 16),
-                            TextButton(onPressed: _load, child: const Text('Coba lagi')),
-                          ],
+                    ? TrakaEmptyState(
+                        icon: Icons.error_outline,
+                        title: _error!,
+                        action: TextButton(
+                          onPressed: _load,
+                          child: const Text('Coba lagi'),
                         ),
                       )
                     : _items.isEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(
-                              'Tidak ada kontak dengan nomor HP.',
-                              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                            ),
+                        ? const TrakaEmptyState(
+                            icon: Icons.phone_disabled_outlined,
+                            title: 'Tidak ada kontak dengan nomor HP.',
+                            subtitle:
+                                'Pastikan kontak di ponsel memiliki nomor telepon.',
                           )
-                        : ListView.builder(
+                        : _filteredItems.isEmpty
+                            ? const TrakaEmptyState(
+                                icon: Icons.search_off,
+                                title:
+                                    'Tidak ada kontak yang cocok dengan pencarian.',
+                              )
+                            : ListView.builder(
                             shrinkWrap: true,
                             itemCount: _filteredItems.length,
                             itemBuilder: (context, i) {

@@ -19,7 +19,9 @@ import '../config/app_constants.dart';
 import '../config/traka_realtime_config.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_interaction_styles.dart';
 import '../widgets/estimate_loading_dialog.dart';
+import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../theme/responsive.dart';
 import '../services/location_service.dart';
@@ -60,7 +62,7 @@ import '../widgets/kirim_barang_link_receiver_sheet.dart';
 import '../widgets/passenger_duplicate_pending_order_dialog.dart';
 import '../models/driver_track_state.dart';
 import '../widgets/penumpang_driver_detail_sheet.dart';
-import '../widgets/lollipop_pin_widgets.dart';
+import '../widgets/traka_pin_widgets.dart';
 import '../widgets/map_destination_picker_screen.dart';
 import '../widgets/penumpang_route_form_sheet.dart';
 import '../services/traka_pin_bitmap_service.dart';
@@ -1483,28 +1485,21 @@ class _PenumpangScreenState extends State<PenumpangScreen>
   }
 
   /// Menu «tune» di peta penumpang: bantuan lacak (selaras beranda driver).
-  Future<MapPickerResult?> _pickPassengerDestOnMap(BuildContext sheetCtx) async {
+  Future<MapPickerResult?> _pickPassengerDestOnMap(
+    BuildContext sheetCtx, {
+    required String destText,
+    double? destLat,
+    double? destLng,
+  }) async {
     final pos = _currentPosition;
-    final initialFromDest = _passengerDestLat != null &&
-            _passengerDestLng != null
-        ? LatLng(_passengerDestLat!, _passengerDestLng!)
-        : null;
-    final fromText = _destinationController.text.trim();
-    var initial = initialFromDest ??
-        (pos != null
-            ? LatLng(pos.latitude, pos.longitude)
-            : const LatLng(-3.3194, 114.5907));
-    if (initialFromDest == null && fromText.length >= 3) {
-      try {
-        final locs = await GeocodingService.locationFromAddress(
-          '$fromText, Indonesia',
-          appendIndonesia: false,
-        );
-        if (locs.isNotEmpty) {
-          initial = LatLng(locs.first.latitude, locs.first.longitude);
-        }
-      } catch (_) {}
-    }
+    final initial = await initialTargetForDestinationMapPickerWithLoading(
+      context: sheetCtx,
+      destText: destText,
+      destLat: destLat,
+      destLng: destLng,
+      userLocation:
+          pos != null ? LatLng(pos.latitude, pos.longitude) : null,
+    );
     final device =
         pos != null ? LatLng(pos.latitude, pos.longitude) : null;
     if (!mounted || !sheetCtx.mounted) return null;
@@ -1516,7 +1511,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
           initialCameraTarget: initial,
           deviceLocation: device,
           title: pickTitle,
-          pinVariant: LollipopPinVariant.destination,
+          pinVariant: TrakaRoutePinVariant.destination,
         ),
       ),
     );
@@ -1525,7 +1520,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
   Future<void> _showPassengerMapToolsMenu() async {
     if (!mounted) return;
     final l10n = TrakaL10n.of(context);
-    await showModalBottomSheet<void>(
+    await showTrakaModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (ctx) {
@@ -1562,7 +1557,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
 
   /// Buka form pencarian dalam modal bottom sheet (seperti form driver)
   void _showSearchFormSheet() {
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -1579,7 +1574,17 @@ class _PenumpangScreenState extends State<PenumpangScreen>
             ? null
             : _destinationController.text,
         mapController: _mapController,
-        onPickDestinationOnMap: () => _pickPassengerDestOnMap(ctx),
+        onPickDestinationOnMap: ({
+          required String destText,
+          double? destLat,
+          double? destLng,
+        }) =>
+            _pickPassengerDestOnMap(
+              ctx,
+              destText: destText,
+              destLat: destLat,
+              destLng: destLng,
+            ),
         onSearch: (
           String destText,
           double destLat,
@@ -1624,7 +1629,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
       );
       return;
     }
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -1644,7 +1649,17 @@ class _PenumpangScreenState extends State<PenumpangScreen>
             ? null
             : _destinationController.text,
         mapController: _mapController,
-        onPickDestinationOnMap: () => _pickPassengerDestOnMap(ctx),
+        onPickDestinationOnMap: ({
+          required String destText,
+          double? destLat,
+          double? destLng,
+        }) =>
+            _pickPassengerDestOnMap(
+              ctx,
+              destText: destText,
+              destLat: destLat,
+              destLng: destLng,
+            ),
         onSearch: (destText, destLat, destLng) {
           Navigator.pop(ctx);
           _applyDestinationFromGate(destText, destLat, destLng);
@@ -1913,6 +1928,13 @@ class _PenumpangScreenState extends State<PenumpangScreen>
   Future<void> _loadPassengerBlueDotOnce() async {
     if (_passengerBlueDotIcon != null) return;
     if (!mounted) return;
+    await TrakaPinBitmapService.ensureLoaded(context);
+    if (!mounted) return;
+    final pin = TrakaPinBitmapService.mapAwal;
+    if (pin != null) {
+      setState(() => _passengerBlueDotIcon = pin);
+      return;
+    }
     try {
       final sizePx = context.responsive.iconSize(34).round().clamp(28, 40);
       final icon =
@@ -1954,13 +1976,15 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     final radiusM = 12.0 + pulse * 32.0;
     final strokeA = (70 + pulse * 160).round().clamp(0, 255);
     final fillA = (10 + pulse * 36).round().clamp(0, 255);
+    // Aksen selaras pin awal (bukan biru Google Maps).
     return {
       Circle(
         circleId: const CircleId('passenger_blue_dot_pulse'),
         center: latLng,
         radius: radiusM,
-        fillColor: Color.fromARGB(fillA, 66, 133, 244),
-        strokeColor: Color.fromARGB(strokeA, 255, 255, 255),
+        fillColor:
+            TrakaRoutePinPalette.originHead.withValues(alpha: fillA / 255),
+        strokeColor: Colors.white.withValues(alpha: strokeA / 255),
         strokeWidth: 2,
         zIndex: 0,
       ),
@@ -1974,7 +1998,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
   }) {
     final markers = <Marker>{};
 
-    // Marker lokasi penumpang — titik biru + cincin putih (gaya Google Maps), bukan pin default.
+    // Marker lokasi penumpang — pin default Maps (hijau).
     if (_currentPosition != null) {
       final pinAwal = TrakaPinBitmapService.mapAwal;
       markers.add(
@@ -2248,7 +2272,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
         }
       });
     }
-    showModalBottomSheet(
+    showTrakaModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -2381,7 +2405,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
   void _showPilihanPesanTravel(ActiveDriverRoute driver) {
     Navigator.pop(context); // Tutup bottom sheet profil driver
     if (!mounted) return;
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
@@ -2791,7 +2815,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
         : 'Tujuan';
 
     // Step 1: Pilih jenis barang (Dokumen / Kargo)
-    final barangData = await showModalBottomSheet<Map<String, dynamic>>(
+    final barangData = await showTrakaModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -2803,7 +2827,7 @@ class _PenumpangScreenState extends State<PenumpangScreen>
     if (!mounted || barangData == null) return;
 
     // Step 2: Tautkan penerima
-    await showModalBottomSheet<void>(
+    await showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -3052,8 +3076,8 @@ class _PenumpangScreenState extends State<PenumpangScreen>
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppTheme.primary,
+                          style: AppInteractionStyles.filledFromTheme(
+                            context,
                             padding: const EdgeInsets.symmetric(
                               horizontal: 20,
                               vertical: 12,
@@ -3220,7 +3244,6 @@ class _PenumpangScreenState extends State<PenumpangScreen>
         PenumpangQuickActionsRow(
           visible: _isFormVisible,
           onDriverSekitarTap: _onDriverSekitarTap,
-          onPesanNantiTap: () => _onTabTapped(1),
           nearbyRadiusKm: _driverSekitarRadiusKmLabel,
           driverSekitarLoading: _isSearchingDrivers && _lastSearchWasNearby,
         ),

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'traka_bottom_sheet.dart';
 import 'package:flutter/services.dart';
 
 import '../config/traka_api_config.dart';
@@ -22,7 +24,7 @@ class PassengerPaymentBeforeScanSheet extends StatefulWidget {
     required OrderModel order,
     bool forReceiver = false,
   }) {
-    return showModalBottomSheet<bool>(
+    return showTrakaModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -375,7 +377,7 @@ class _PassengerPaymentBeforeScanSheetState
       });
       return;
     }
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(

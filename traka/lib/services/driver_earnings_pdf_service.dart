@@ -67,9 +67,9 @@ class DriverEarningsPdfService {
     PdfGraphics currentGraphics = page.graphics;
 
     // Aksen merek (biru Traka) — strip tipis di atas halaman pertama
-    final brandBlue = PdfColor(37, 99, 235);
+    final brandAccent = PdfColor(217, 119, 6);
     currentGraphics.drawRectangle(
-      brush: PdfSolidBrush(brandBlue),
+      brush: PdfSolidBrush(brandAccent),
       bounds: Rect.fromLTWH(0, 0, pageWidth, 3),
     );
     // Font mesin ketik (Courier) agar ringkas dan profesional
@@ -93,7 +93,7 @@ class DriverEarningsPdfService {
       y = logoTop + logoSize + logoToNameGap;
     } catch (_) {
       try {
-        final data = await rootBundle.load('assets/images/logo_traka.png');
+        final data = await rootBundle.load('assets/images/traka_brand_logo.png');
         final bytes = data.buffer.asUint8List();
         final image = PdfBitmap(bytes);
         currentGraphics.drawImage(image, Rect.fromLTWH(0, logoTop, logoSize, logoSize));

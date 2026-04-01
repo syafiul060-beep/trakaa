@@ -15,14 +15,18 @@ import '../models/order_model.dart';
 import '../services/car_icon_service.dart';
 import '../services/marker_icon_service.dart';
 import '../services/chat_service.dart';
+import '../theme/app_interaction_styles.dart';
 import '../theme/responsive.dart';
+import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../utils/app_logger.dart';
 import '../services/driver_contribution_service.dart';
 import '../services/map_style_service.dart';
 import '../services/route_notification_service.dart';
 import '../widgets/styled_google_map_builder.dart';
+import '../services/traka_pin_bitmap_service.dart';
 import '../widgets/shimmer_loading.dart';
+import '../widgets/traka_empty_state.dart';
 import '../widgets/kirim_barang_driver_ongkos_banner.dart';
 import '../widgets/pindah_jadwal_sheet.dart';
 import '../services/driver_status_service.dart';
@@ -669,37 +673,12 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
             .toList()
           ..sort();
         if (dates.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.schedule,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Belum ada pesanan terjadwal',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Pesanan terjadwal dari Jadwal & Rute akan muncul di sini.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+          return const Center(
+            child: TrakaEmptyState(
+              icon: Icons.schedule,
+              title: 'Belum ada pesanan terjadwal',
+              subtitle:
+                  'Pesanan terjadwal dari Jadwal & Rute akan muncul di sini.',
             ),
           );
         }
@@ -964,35 +943,19 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
   Widget _buildPemesananTab() {
     if (_routeJourneyNumber == null || _routeJourneyNumber!.isEmpty) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.route, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
-              const SizedBox(height: 16),
-              Text(
-                'Belum ada rute aktif',
-                style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Aktifkan rute dari Beranda (Siap Kerja) agar pesanan penumpang muncul di sini. Setelah ganti project Firebase, buka Beranda > Siap Kerja lalu kembali ke sini.',
-                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed: () async {
-                  setState(() => _routeJourneyNumber = null);
-                  await _loadActiveRoute();
-                  if (mounted) setState(() {});
-                },
-                icon: const Icon(Icons.refresh, size: 20),
-                label: const Text('Muat ulang'),
-              ),
-            ],
+        child: TrakaEmptyState(
+          icon: Icons.route,
+          title: 'Belum ada rute aktif',
+          subtitle:
+              'Aktifkan rute dari Beranda (Siap Kerja) agar pesanan penumpang muncul di sini. Setelah ganti project Firebase, buka Beranda > Siap Kerja lalu kembali ke sini.',
+          action: FilledButton.icon(
+            onPressed: () async {
+              setState(() => _routeJourneyNumber = null);
+              await _loadActiveRoute();
+              if (mounted) setState(() {});
+            },
+            icon: const Icon(Icons.refresh, size: 20),
+            label: const Text('Muat ulang'),
           ),
         ),
       );
@@ -1054,26 +1017,12 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
           );
         }
         if (orders.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.inbox, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Belum ada pesanan',
-                    style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Pesanan dari penumpang akan muncul di sini setelah penumpang mengirim permintaan.',
-                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+          return const Center(
+            child: TrakaEmptyState(
+              icon: Icons.inbox,
+              title: 'Belum ada pesanan',
+              subtitle:
+                  'Pesanan dari penumpang akan muncul di sini setelah penumpang mengirim permintaan.',
             ),
           );
         }
@@ -1479,10 +1428,14 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                       onPressed: () => _onSOS(context, order),
                       icon: const Icon(Icons.emergency, size: 20),
                       label: const Text('SOS Darurat'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        side: const BorderSide(color: Colors.red),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      style: AppInteractionStyles.outlinedFromTheme(
+                        context,
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 12),
+                        sideColor: Colors.red,
+                      ).copyWith(
+                        foregroundColor:
+                            WidgetStateProperty.all(Colors.red),
                       ),
                     ),
                   ),
@@ -1500,10 +1453,14 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                       onPressed: () => _onSOS(context, order),
                       icon: const Icon(Icons.emergency, size: 20),
                       label: const Text('SOS Darurat'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        side: const BorderSide(color: Colors.red),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      style: AppInteractionStyles.outlinedFromTheme(
+                        context,
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 12),
+                        sideColor: Colors.red,
+                      ).copyWith(
+                        foregroundColor:
+                            WidgetStateProperty.all(Colors.red),
                       ),
                     ),
                   ),
@@ -1895,7 +1852,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: AppInteractionStyles.destructive(Theme.of(ctx).colorScheme),
             child: Text(isConfirming ? 'Konfirmasi' : 'Iya'),
           ),
         ],
@@ -2123,7 +2080,16 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
         : pointLatLng;
     final driverMarkerIcon = await _createDriverMarkerIcon();
     if (!mounted) return;
-    showModalBottomSheet<void>(
+    await TrakaPinBitmapService.ensureLoaded(context);
+    if (!mounted) return;
+    final pinAwal = TrakaPinBitmapService.mapAwal;
+    final pinAhir = TrakaPinBitmapService.mapAhir;
+    final partyIcon = isPengirim
+        ? (pinAwal ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange))
+        : (pinAhir ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet));
+    showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -2177,9 +2143,8 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                       Marker(
                         markerId: MarkerId(isPengirim ? 'pengirim' : 'penerima'),
                         position: pointLatLng,
-                        icon: BitmapDescriptor.defaultMarkerWithHue(
-                          isPengirim ? BitmapDescriptor.hueOrange : BitmapDescriptor.hueViolet,
-                        ),
+                        icon: partyIcon,
+                        anchor: const Offset(0.5, 1.0),
                         infoWindow: InfoWindow(
                           title: isPengirim ? 'Pengirim' : 'Penerima',
                           snippet: pointLabel,
@@ -2256,7 +2221,7 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
 
     if (!mounted) return;
 
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       isDismissible: true,
@@ -2268,175 +2233,20 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
         maxChildSize: 0.95,
         minChildSize: 0.5,
         expand: false,
-        builder: (_, scrollController) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  // Foto penumpang
-                  if (order.passengerPhotoUrl != null &&
-                      order.passengerPhotoUrl!.isNotEmpty)
-                    CircleAvatar(
-                      radius: 24,
-                      backgroundImage: CachedNetworkImageProvider(
-                        order.passengerPhotoUrl!,
-                      ),
-                    )
-                  else
-                    CircleAvatar(
-                      radius: 24,
-                      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      child: Icon(Icons.person, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FutureBuilder<Map<String, dynamic>>(
-                      future: ChatService.getUserInfo(order.passengerUid),
-                      builder: (context, snap) {
-                        final verified = snap.data?['verified'] == true;
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Lokasi Driver & Penumpang',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    order.passengerName,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      color: Theme.of(context).colorScheme.onSurface,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                if (verified) ...[
-                                  const SizedBox(width: 4),
-                                  Icon(
-                                    Icons.verified,
-                                    size: 16,
-                                    color: Colors.green.shade700,
-                                  ),
-                                ],
-                                if (order.isPassengerEnglish) ...[
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue.shade100,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      TrakaL10n.of(context).touristBadge,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.blue.shade800,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                            Text(
-                              'Driver: ${driverPosition != null ? "Terdeteksi" : "Tidak terdeteksi"}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
-              ),
-            ),
-            if (widget.onNavigateToPassenger != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      widget.onNavigateToPassenger!(order);
-                    },
-                    icon: const Icon(Icons.directions, size: 20),
-                    label: const Text('Ya, arahkan'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ),
-            Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16),
-                ),
-                child: StyledGoogleMapBuilder(
-                  builder: (style, _) => GoogleMap(
-                    buildingsEnabled: true,
-                    indoorViewEnabled: true,
-                    mapToolbarEnabled: false,
-                    initialCameraPosition: CameraPosition(
-                      target: driverPosition != null
-                          ? LatLng(
-                              (driverLatLng.latitude + passengerLatLng.latitude) / 2,
-                              (driverLatLng.longitude + passengerLatLng.longitude) / 2,
-                            )
-                          : passengerLatLng,
-                      zoom: MapStyleService.defaultZoom,
-                      tilt: MapStyleService.defaultTilt,
-                    ),
-                    style: style,
-                    markers: {
-                        // Marker penumpang (pin + foto profil)
-                        Marker(
-                          markerId: const MarkerId('penumpang'),
-                          position: passengerLatLng,
-                          icon: passengerMarkerIcon!,
-                          anchor: const Offset(0.5, 1.0),
-                          infoWindow: InfoWindow(
-                            title: order.passengerName,
-                            snippet: 'Penumpang',
-                          ),
-                        ),
-                        // Marker driver (jika posisi tersedia)
-                        if (driverPosition != null)
-                          Marker(
-                            markerId: const MarkerId('driver'),
-                            position: driverLatLng,
-                            icon: driverMarkerIcon!,
-                            infoWindow: const InfoWindow(
-                              title: 'Driver',
-                              snippet: 'Posisi Anda',
-                            ),
-                          ),
-                      },
-                      myLocationEnabled: driverPosition == null,
-                      myLocationButtonEnabled: driverPosition == null,
-                    ),
-                ),
-              ),
-            ),
-          ],
+        builder: (_, scrollController) => _LokasiDriverPenumpangSheet(
+          order: order,
+          driverSnapshot: driverPosition,
+          passengerLatLng: passengerLatLng,
+          driverMarkerAtSnapshot: driverLatLng,
+          passengerMarkerIcon: passengerMarkerIcon!,
+          driverCarIcon: driverMarkerIcon!,
+          onClose: () => Navigator.pop(ctx),
+          onNavigateToPassenger: widget.onNavigateToPassenger == null
+              ? null
+              : (o) {
+                  Navigator.pop(ctx);
+                  widget.onNavigateToPassenger!(o);
+                },
         ),
       ),
     );
@@ -2514,35 +2324,19 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
   Widget _buildPenumpangTab() {
     if (_routeJourneyNumber == null || _routeJourneyNumber!.isEmpty) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.people, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
-              const SizedBox(height: 16),
-              Text(
-                'Belum ada rute aktif',
-                style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Aktifkan rute dari Beranda (Siap Kerja) agar pesanan muncul.',
-                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed: () async {
-                  setState(() => _routeJourneyNumber = null);
-                  await _loadActiveRoute();
-                  if (mounted) setState(() {});
-                },
-                icon: const Icon(Icons.refresh, size: 20),
-                label: const Text('Muat ulang'),
-              ),
-            ],
+        child: TrakaEmptyState(
+          icon: Icons.people,
+          title: 'Belum ada rute aktif',
+          subtitle:
+              'Aktifkan rute dari Beranda (Siap Kerja) agar pesanan muncul.',
+          action: FilledButton.icon(
+            onPressed: () async {
+              setState(() => _routeJourneyNumber = null);
+              await _loadActiveRoute();
+              if (mounted) setState(() {});
+            },
+            icon: const Icon(Icons.refresh, size: 20),
+            label: const Text('Muat ulang'),
           ),
         ),
       );
@@ -2580,30 +2374,12 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
           return bt.compareTo(at);
         });
         if (orders.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.people_outline,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Belum ada penumpang dijemput',
-                    style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Setelah Anda scan barcode penumpang, pesanan akan pindah ke sini.',
-                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+          return const Center(
+            child: TrakaEmptyState(
+              icon: Icons.people_outline,
+              title: 'Belum ada penumpang dijemput',
+              subtitle:
+                  'Setelah Anda scan barcode penumpang, pesanan akan pindah ke sini.',
             ),
           );
         }
@@ -2632,26 +2408,12 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
         }
         final transfers = snapshot.data ?? [];
         if (transfers.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.swap_horiz, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Tidak ada oper menunggu',
-                    style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Driver lain akan mengirim notifikasi saat ingin mengoper penumpang ke Anda.',
-                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+          return const Center(
+            child: TrakaEmptyState(
+              icon: Icons.swap_horiz,
+              title: 'Tidak ada oper menunggu',
+              subtitle:
+                  'Driver lain akan mengirim notifikasi saat ingin mengoper penumpang ke Anda.',
             ),
           );
         }
@@ -2783,9 +2545,10 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
                 },
                 icon: const Icon(Icons.qr_code_scanner, size: 20),
                 label: const Text('Scan Barcode & Verifikasi'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                style: AppInteractionStyles.filledFromTheme(
+                  context,
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
             ),
@@ -2799,39 +2562,19 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
   Widget _buildPemesananSelesaiTab() {
     if (_routeJourneyNumber == null || _routeJourneyNumber!.isEmpty) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.check_circle_outline,
-                size: 64,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Belum ada rute aktif',
-                style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Aktifkan rute dari Beranda (Siap Kerja) agar pesanan muncul.',
-                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed: () async {
-                  setState(() => _routeJourneyNumber = null);
-                  await _loadActiveRoute();
-                  if (mounted) setState(() {});
-                },
-                icon: const Icon(Icons.refresh, size: 20),
-                label: const Text('Muat ulang'),
-              ),
-            ],
+        child: TrakaEmptyState(
+          icon: Icons.check_circle_outline,
+          title: 'Belum ada rute aktif',
+          subtitle:
+              'Aktifkan rute dari Beranda (Siap Kerja) agar pesanan muncul.',
+          action: FilledButton.icon(
+            onPressed: () async {
+              setState(() => _routeJourneyNumber = null);
+              await _loadActiveRoute();
+              if (mounted) setState(() {});
+            },
+            icon: const Icon(Icons.refresh, size: 20),
+            label: const Text('Muat ulang'),
           ),
         ),
       );
@@ -2847,30 +2590,12 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
             .where((o) => o.status == OrderService.statusCompleted)
             .toList();
         if (completedOrders.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.check_circle_outline,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Belum ada pesanan selesai',
-                    style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Setelah penumpang scan barcode driver, pesanan akan pindah ke sini.',
-                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+          return const Center(
+            child: TrakaEmptyState(
+              icon: Icons.check_circle_outline,
+              title: 'Belum ada pesanan selesai',
+              subtitle:
+                  'Setelah penumpang scan barcode driver, pesanan akan pindah ke sini.',
             ),
           );
         }
@@ -2903,55 +2628,40 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
         final completedOrders = orderSnap.data ?? [];
         if (completedOrders.isEmpty) {
           return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+            child: TrakaEmptyState(
+              icon: Icons.history,
+              title: 'Belum ada riwayat rute',
+              subtitle:
+                  'Pesanan yang sudah selesai (penumpang scan barcode di tujuan) akan muncul di sini.',
+              action: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  Icon(Icons.history, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Belum ada riwayat rute',
-                    style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    textAlign: TextAlign.center,
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              const PaymentHistoryScreen(isDriver: true),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.receipt_long, size: 18),
+                    label: Text(TrakaL10n.of(context).paymentHistory),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Pesanan yang sudah selesai (penumpang scan barcode di tujuan) akan muncul di sini.',
-                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      TextButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const PaymentHistoryScreen(isDriver: true),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.receipt_long, size: 18),
-                        label: Text(TrakaL10n.of(context).paymentHistory),
-                      ),
-                      TextButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const DriverEarningsScreen(),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.account_balance_wallet, size: 18),
-                        label: Text(TrakaL10n.of(context).driverEarningsTitle),
-                      ),
-                    ],
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DriverEarningsScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.account_balance_wallet, size: 18),
+                    label: Text(TrakaL10n.of(context).driverEarningsTitle),
                   ),
                 ],
               ),
@@ -3241,6 +2951,348 @@ class _DataOrderDriverScreenState extends State<DataOrderDriverScreen>
         }
         return const SizedBox.shrink();
       },
+    );
+  }
+}
+
+/// Sheet lokasi: header + peta; status GPS driver ikut streaming dari [_DriverPassengerOrderMap].
+class _LokasiDriverPenumpangSheet extends StatefulWidget {
+  const _LokasiDriverPenumpangSheet({
+    required this.order,
+    required this.driverSnapshot,
+    required this.passengerLatLng,
+    required this.driverMarkerAtSnapshot,
+    required this.passengerMarkerIcon,
+    required this.driverCarIcon,
+    required this.onClose,
+    required this.onNavigateToPassenger,
+  });
+
+  final OrderModel order;
+  final Position? driverSnapshot;
+  final LatLng passengerLatLng;
+  final LatLng driverMarkerAtSnapshot;
+  final BitmapDescriptor passengerMarkerIcon;
+  final BitmapDescriptor driverCarIcon;
+  final VoidCallback onClose;
+  final void Function(OrderModel order)? onNavigateToPassenger;
+
+  @override
+  State<_LokasiDriverPenumpangSheet> createState() =>
+      _LokasiDriverPenumpangSheetState();
+}
+
+class _LokasiDriverPenumpangSheetState extends State<_LokasiDriverPenumpangSheet> {
+  late bool _driverLocated = widget.driverSnapshot != null;
+
+  @override
+  Widget build(BuildContext context) {
+    final order = widget.order;
+    final driverPosition = widget.driverSnapshot;
+    final passengerLatLng = widget.passengerLatLng;
+    final driverLatLng = widget.driverMarkerAtSnapshot;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              if (order.passengerPhotoUrl != null &&
+                  order.passengerPhotoUrl!.isNotEmpty)
+                CircleAvatar(
+                  radius: 24,
+                  backgroundImage: CachedNetworkImageProvider(
+                    order.passengerPhotoUrl!,
+                  ),
+                )
+              else
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: Icon(
+                    Icons.person,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FutureBuilder<Map<String, dynamic>>(
+                  future: ChatService.getUserInfo(order.passengerUid),
+                  builder: (context, snap) {
+                    final verified = snap.data?['verified'] == true;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Lokasi Driver & Penumpang',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                order.passengerName,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (verified) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.verified,
+                                size: 16,
+                                color: Colors.green.shade700,
+                              ),
+                            ],
+                            if (order.isPassengerEnglish) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade100,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  TrakaL10n.of(context).touristBadge,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue.shade800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        Text(
+                          'Driver: ${_driverLocated ? "Terdeteksi" : "Tidak terdeteksi"}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: widget.onClose,
+              ),
+            ],
+          ),
+        ),
+        if (widget.onNavigateToPassenger != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => widget.onNavigateToPassenger!(order),
+                icon: const Icon(Icons.directions, size: 20),
+                label: const Text('Ya, arahkan'),
+                style: AppInteractionStyles.filledFromTheme(
+                  context,
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(16),
+            ),
+            child: _DriverPassengerOrderMap(
+              initialCameraTarget: driverPosition != null
+                  ? LatLng(
+                      (driverLatLng.latitude + passengerLatLng.latitude) / 2,
+                      (driverLatLng.longitude + passengerLatLng.longitude) / 2,
+                    )
+                  : passengerLatLng,
+              passengerLatLng: passengerLatLng,
+              passengerName: order.passengerName,
+              passengerMarkerIcon: widget.passengerMarkerIcon,
+              driverGpsSnapshot: driverPosition,
+              driverMarkerAtSnapshot: driverLatLng,
+              driverCarIcon: widget.driverCarIcon,
+              onDriverGpsAcquired: driverPosition != null
+                  ? null
+                  : () {
+                      if (!mounted) return;
+                      setState(() => _driverLocated = true);
+                    },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Peta lokasi order: penumpang + driver; tanpa layer myLocation Google.
+/// Jika GPS sekali gagal, posisi perangkat di-update lewat stream dengan pin awal Traka.
+class _DriverPassengerOrderMap extends StatefulWidget {
+  const _DriverPassengerOrderMap({
+    required this.initialCameraTarget,
+    required this.passengerLatLng,
+    required this.passengerName,
+    required this.passengerMarkerIcon,
+    required this.driverGpsSnapshot,
+    required this.driverMarkerAtSnapshot,
+    required this.driverCarIcon,
+    this.onDriverGpsAcquired,
+  });
+
+  final LatLng initialCameraTarget;
+  final LatLng passengerLatLng;
+  final String passengerName;
+  final BitmapDescriptor passengerMarkerIcon;
+  final Position? driverGpsSnapshot;
+  final LatLng driverMarkerAtSnapshot;
+  final BitmapDescriptor driverCarIcon;
+  final VoidCallback? onDriverGpsAcquired;
+
+  @override
+  State<_DriverPassengerOrderMap> createState() =>
+      _DriverPassengerOrderMapState();
+}
+
+class _DriverPassengerOrderMapState extends State<_DriverPassengerOrderMap> {
+  LatLng? _driverLive;
+  StreamSubscription<Position>? _posSub;
+  bool _firedGpsAcquiredCallback = false;
+
+  void _notifyDriverGpsAcquiredOnce() {
+    if (_firedGpsAcquiredCallback || widget.driverGpsSnapshot != null) {
+      return;
+    }
+    _firedGpsAcquiredCallback = true;
+    widget.onDriverGpsAcquired?.call();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.driverGpsSnapshot != null) {
+      _driverLive = widget.driverMarkerAtSnapshot;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(() async {
+        await TrakaPinBitmapService.ensureLoaded(context);
+        if (mounted) setState(() {});
+      }());
+      if (widget.driverGpsSnapshot == null) {
+        unawaited(_subscribeLiveDriverGps());
+      }
+    });
+  }
+
+  Future<void> _subscribeLiveDriverGps() async {
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        return;
+      }
+      final p = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      setState(() {
+        _driverLive = LatLng(p.latitude, p.longitude);
+      });
+      _notifyDriverGpsAcquiredOnce();
+      await _posSub?.cancel();
+      _posSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          distanceFilter: 12,
+          accuracy: LocationAccuracy.medium,
+        ),
+      ).listen((e) {
+        if (!mounted) return;
+        setState(() {
+          _driverLive = LatLng(e.latitude, e.longitude);
+        });
+        _notifyDriverGpsAcquiredOnce();
+      });
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _posSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pinAwal = TrakaPinBitmapService.mapAwal;
+    final hadSnapshot = widget.driverGpsSnapshot != null;
+    final Set<Marker> markers = {
+      Marker(
+        markerId: const MarkerId('penumpang'),
+        position: widget.passengerLatLng,
+        icon: widget.passengerMarkerIcon,
+        anchor: const Offset(0.5, 1.0),
+        infoWindow: InfoWindow(
+          title: widget.passengerName,
+          snippet: 'Penumpang',
+        ),
+      ),
+      if (_driverLive != null)
+        Marker(
+          markerId: const MarkerId('driver'),
+          position: _driverLive!,
+          icon: hadSnapshot
+              ? widget.driverCarIcon
+              : (pinAwal ??
+                  BitmapDescriptor.defaultMarkerWithHue(
+                    BitmapDescriptor.hueAzure,
+                  )),
+          anchor: Offset(
+            0.5,
+            hadSnapshot ? 0.5 : (pinAwal != null ? 1.0 : 0.5),
+          ),
+          infoWindow: const InfoWindow(
+            title: 'Driver',
+            snippet: 'Posisi Anda',
+          ),
+        ),
+    };
+
+    return StyledGoogleMapBuilder(
+      builder: (style, _) => GoogleMap(
+        buildingsEnabled: true,
+        indoorViewEnabled: true,
+        mapToolbarEnabled: false,
+        initialCameraPosition: CameraPosition(
+          target: widget.initialCameraTarget,
+          zoom: MapStyleService.defaultZoom,
+          tilt: MapStyleService.defaultTilt,
+        ),
+        style: style,
+        markers: markers,
+        myLocationEnabled: false,
+        myLocationButtonEnabled: false,
+      ),
     );
   }
 }

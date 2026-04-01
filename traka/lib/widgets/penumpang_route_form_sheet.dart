@@ -4,9 +4,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../services/destination_autocomplete_service.dart';
 import '../services/geocoding_service.dart';
-import '../theme/app_theme.dart';
 import '../utils/placemark_formatter.dart';
-import 'lollipop_pin_widgets.dart';
+import 'traka_pin_widgets.dart';
 import 'map_destination_picker_screen.dart';
 import 'traka_l10n_scope.dart';
 
@@ -46,7 +45,7 @@ class PenumpangRouteFormSheet extends StatefulWidget {
   final void Function(String destText, double destLat, double destLng) onSearch;
 
   /// Sama seperti form driver: pilih titik tujuan akhir di peta.
-  final Future<MapPickerResult?> Function()? onPickDestinationOnMap;
+  final PickDestinationOnMapCallback? onPickDestinationOnMap;
 
   @override
   State<PenumpangRouteFormSheet> createState() =>
@@ -262,20 +261,36 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    const LollipopPinFormIcon(
-                      variant: LollipopPinVariant.origin,
+                    const TrakaPinFormIcon(
+                      variant: TrakaRoutePinVariant.origin,
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      'Dari (lokasi Anda)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    Expanded(
+                      child: Text(
+                        'Dari (lokasi Anda)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
+                Padding(
+                  padding: const EdgeInsets.only(left: 30, top: 2),
+                  child: Text(
+                    'Otomatis dari lokasi perangkat. Tidak perlu pilih di peta.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.3,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withValues(alpha: 0.88),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -296,8 +311,8 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    const LollipopPinFormIcon(
-                      variant: LollipopPinVariant.destination,
+                    const TrakaPinFormIcon(
+                      variant: TrakaRoutePinVariant.destination,
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -352,27 +367,40 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                 if (widget.onPickDestinationOnMap != null) ...[
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: () async {
-                        final r = await widget.onPickDestinationOnMap!.call();
-                        if (!mounted || r == null) return;
-                        setState(() {
-                          _destController.text = r.label;
-                          _showAutocomplete = false;
-                          _autocompleteResults = [];
-                          _autocompleteLocations = [];
-                          _selectedDestLat = r.lat;
-                          _selectedDestLng = r.lng;
-                        });
-                        widget.mapController?.animateCamera(
-                          CameraUpdate.newLatLngZoom(
-                            LatLng(r.lat, r.lng),
-                            15,
+                    child: Semantics(
+                      hint: TrakaL10n.of(context).pickOnMapTooltip,
+                      child: Tooltip(
+                        message: TrakaL10n.of(context).pickOnMapTooltip,
+                        excludeFromSemantics: true,
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            final r = await widget.onPickDestinationOnMap!(
+                              destText: _destController.text,
+                              destLat: _selectedDestLat,
+                              destLng: _selectedDestLng,
+                            );
+                            if (!mounted || r == null) return;
+                            setState(() {
+                              _destController.text = r.label;
+                              _showAutocomplete = false;
+                              _autocompleteResults = [];
+                              _autocompleteLocations = [];
+                              _selectedDestLat = r.lat;
+                              _selectedDestLng = r.lng;
+                            });
+                            widget.mapController?.animateCamera(
+                              CameraUpdate.newLatLngZoom(
+                                LatLng(r.lat, r.lng),
+                                15,
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.map_outlined, size: 20),
+                          label: Text(
+                            TrakaL10n.of(context).pickOnMapActionLabel,
                           ),
-                        );
-                      },
-                      icon: const Icon(Icons.map_outlined, size: 20),
-                      label: Text(TrakaL10n.of(context).pickOnMapActionLabel),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -412,10 +440,8 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                           final p = _autocompleteResults[index];
                           return ListTile(
                             dense: true,
-                            leading: Icon(
-                              Icons.place_outlined,
-                              size: 20,
-                              color: AppTheme.primary,
+                            leading: const TrakaPinFormIcon(
+                              variant: TrakaRoutePinVariant.destination,
                             ),
                             title: Text(
                               PlacemarkFormatter.formatDetail(p),
@@ -441,14 +467,6 @@ class _PenumpangRouteFormSheetState extends State<PenumpangRouteFormSheet> {
                   },
                   icon: Icon(widget.primaryButtonIcon ?? Icons.search, size: 20),
                   label: Text(widget.primaryButtonLabel ?? 'Cari'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: AppTheme.onPrimary,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
                 ),
               ],
             ),

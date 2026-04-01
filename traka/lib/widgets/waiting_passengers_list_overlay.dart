@@ -4,9 +4,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/order_model.dart';
+import '../theme/app_interaction_styles.dart';
+import '../theme/app_theme.dart';
 
-/// Warna hijau untuk penjemputan (beda dengan oranye pengantaran).
-const Color _penjemputanColor = Color(0xFF00B14F); // Grab green
+/// Warna penjemputan (amber Traka; pengantaran oranye).
+const Color _penjemputanColor = AppTheme.mapPickupAccent;
 
 /// Daftar penumpang/barang yang sudah kesepakatan dan menunggu dijemput.
 /// Tampil di bawah zoom in/out (kanan atas). Tombol "Arahkan ke penumpang" → navigasi ke lokasi jemput.
@@ -231,10 +233,19 @@ class _PassengerCard extends StatelessWidget {
                 onPressed: onArahkan,
                 icon: const Icon(Icons.person_pin_circle, size: 16),
                 label: const Text('Arahkan'),
-                style: FilledButton.styleFrom(
-                  foregroundColor: _penjemputanColor,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  minimumSize: Size.zero,
+                style: AppInteractionStyles.elevatedPrimary(
+                  backgroundColor: _penjemputanColor,
+                  foregroundColor: Colors.white,
+                  shadowTint: _penjemputanColor,
+                ).copyWith(
+                  elevation: WidgetStateProperty.resolveWith((s) {
+                    if (s.contains(WidgetState.pressed)) return 0.0;
+                    return 2.0;
+                  }),
+                  padding: WidgetStateProperty.all(
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
+                  minimumSize: WidgetStateProperty.all(Size.zero),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),

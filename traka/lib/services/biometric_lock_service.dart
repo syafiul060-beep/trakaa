@@ -169,4 +169,17 @@ class BiometricLockService {
 
   /// Apakah saat ini terkunci dan perlu unlock.
   static bool get needsUnlock => _isLocked;
+
+  /// Kunci aktif tapi pengguna menonaktifkan semua biometric di HP — matikan kunci agar tidak terkunci permanen.
+  /// Return `true` jika preferensi kunci baru saja dimatikan.
+  static Future<bool> disableLockIfBiometricsUnavailable() async {
+    if (!_isMobile) return false;
+    final enabled = await isEnabled;
+    if (!enabled) return false;
+    final enrolled = await hasEnrolledBiometrics;
+    if (enrolled) return false;
+    await setEnabled(false);
+    forceUnlock();
+    return true;
+  }
 }

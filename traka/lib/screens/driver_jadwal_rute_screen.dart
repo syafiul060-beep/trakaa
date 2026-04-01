@@ -28,9 +28,12 @@ import '../services/hybrid_foreground_recovery.dart';
 import '../services/driver_hybrid_diagnostics.dart';
 import '../services/app_analytics_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_interaction_styles.dart';
 import '../widgets/shimmer_loading.dart';
+import '../widgets/traka_empty_state.dart';
+import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
-import '../widgets/lollipop_pin_widgets.dart';
+import '../widgets/traka_pin_widgets.dart';
 import '../widgets/map_destination_picker_screen.dart';
 import '../services/traka_pin_bitmap_service.dart';
 import 'package:geolocator/geolocator.dart';
@@ -1302,7 +1305,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
       editScheduleId = pair.$1;
       editLegacyScheduleId = pair.$2;
     }
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -1386,7 +1389,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
   void _showKategoriRuteSheet(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final grouped = _groupedByDate();
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -1556,36 +1559,13 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
                             ? ListView(
                                 physics: const AlwaysScrollableScrollPhysics(),
                                 children: [
-                                  const SizedBox(height: 48),
-                                  Icon(
-                                    Icons.calendar_month_rounded,
-                                    size: 64,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant
-                                        .withValues(alpha: 0.5),
-                                  ),
-                                  const SizedBox(height: 20),
-                                  Text(
-                                    _loading ? 'Memuat jadwal...' : 'Belum ada jadwal tersimpan',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: Theme.of(context).colorScheme.onSurface,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                                    child: Text(
-                                      'Tap tombol + untuk menambah jadwal. Maks. 4 jadwal per tanggal; tanggal hanya 7 hari ke depan (WIB).',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
+                                  TrakaEmptyState(
+                                    icon: Icons.calendar_month_rounded,
+                                    title: _loading
+                                        ? 'Memuat jadwal...'
+                                        : TrakaL10n.of(context).noScheduleYet,
+                                    subtitle:
+                                        'Tap tombol + untuk menambah jadwal. Maks. 4 jadwal per tanggal; tanggal hanya 7 hari ke depan (WIB).',
                                   ),
                                   const SizedBox(height: 10),
                                   Padding(
@@ -1649,8 +1629,11 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
                                     },
                                     icon: const Icon(Icons.cleaning_services_outlined, size: 18),
                                     label: const Text('Bersihkan jadwal lewat'),
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    style: AppInteractionStyles.textFromTheme(
+                                      context,
+                                      foregroundColor: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
                                     ),
                                   ),
                                 ],
@@ -2442,7 +2425,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: AppInteractionStyles.destructive(Theme.of(ctx).colorScheme),
             child: const Text('Hapus'),
           ),
         ],
@@ -2581,7 +2564,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     String? legacyScheduleId,
   }) {
     final uid = _auth.currentUser?.uid ?? '';
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -2601,7 +2584,7 @@ class _DriverJadwalRuteScreenState extends State<DriverJadwalRuteScreen>
     String? legacyScheduleId,
   }) {
     final uid = _auth.currentUser?.uid ?? '';
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -2798,15 +2781,12 @@ class _ScheduledPassengersSheetState extends State<_ScheduledPassengersSheet> {
                 }
                 final orders = snapshot.data ?? [];
                 if (orders.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
                     child: Center(
-                      child: Text(
-                        'Belum ada yang pesan',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                      child: TrakaEmptyState(
+                        icon: Icons.people_outline,
+                        title: 'Belum ada yang pesan',
                       ),
                     ),
                   );
@@ -3140,7 +3120,14 @@ class _JadwalRoutePreviewScreenState extends State<_JadwalRoutePreviewScreen> {
     if (widget.alternatives.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Pilih rute')),
-        body: const Center(child: Text('Rute tidak ditemukan.')),
+        body: const Center(
+          child: TrakaEmptyState(
+            icon: Icons.map_outlined,
+            title: 'Rute tidak ditemukan',
+            subtitle:
+                'Tutup lalu coba buat ulang rute atau periksa asal dan tujuan.',
+          ),
+        ),
       );
     }
     final firstPts = _mapDrawPoints.isNotEmpty ? _mapDrawPoints.first : widget.alternatives.first.points;
@@ -3456,8 +3443,12 @@ class _JadwalRoutePreviewScreenState extends State<_JadwalRoutePreviewScreen> {
                             width: 100,
                             child: OutlinedButton(
                               onPressed: () => Navigator.pop(context),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                              style: AppInteractionStyles.outlinedFromTheme(
+                                context,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 12,
+                                ),
                               ),
                               child: const Text('Kembali', overflow: TextOverflow.ellipsis, maxLines: 1),
                             ),
@@ -3735,23 +3726,17 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
 
   Future<void> _pickTujuanAwalOnMap() async {
     final t = _originController.text.trim();
-    var initial = const LatLng(-6.2088, 106.8456);
-    if (t.length >= 3) {
-      try {
-        final locs = await GeocodingService.locationFromAddress(
-          '$t, Indonesia',
-          appendIndonesia: false,
-        );
-        if (locs.isNotEmpty) {
-          initial = LatLng(locs.first.latitude, locs.first.longitude);
-        }
-      } catch (_) {}
-    }
     LatLng? device;
     try {
       final pos = await Geolocator.getCurrentPosition();
       device = LatLng(pos.latitude, pos.longitude);
     } catch (_) {}
+    if (!mounted) return;
+    final initial = await initialTargetForDestinationMapPickerWithLoading(
+      context: context,
+      destText: t,
+      userLocation: device,
+    );
     if (!mounted) return;
     final r = await Navigator.of(context).push<MapPickerResult>(
       MaterialPageRoute(
@@ -3760,7 +3745,7 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
           initialCameraTarget: initial,
           deviceLocation: device,
           title: TrakaL10n.of(context).pickOriginOnMapActionLabel,
-          pinVariant: LollipopPinVariant.origin,
+          pinVariant: TrakaRoutePinVariant.origin,
         ),
       ),
     );
@@ -3776,23 +3761,17 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
 
   Future<void> _pickTujuanAkhirOnMap() async {
     final t = _destController.text.trim();
-    var initial = const LatLng(-6.2088, 106.8456);
-    if (t.length >= 3) {
-      try {
-        final locs = await GeocodingService.locationFromAddress(
-          '$t, Indonesia',
-          appendIndonesia: false,
-        );
-        if (locs.isNotEmpty) {
-          initial = LatLng(locs.first.latitude, locs.first.longitude);
-        }
-      } catch (_) {}
-    }
     LatLng? device;
     try {
       final pos = await Geolocator.getCurrentPosition();
       device = LatLng(pos.latitude, pos.longitude);
     } catch (_) {}
+    if (!mounted) return;
+    final initial = await initialTargetForDestinationMapPickerWithLoading(
+      context: context,
+      destText: t,
+      userLocation: device,
+    );
     if (!mounted) return;
     final r = await Navigator.of(context).push<MapPickerResult>(
       MaterialPageRoute(
@@ -3801,7 +3780,7 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
           initialCameraTarget: initial,
           deviceLocation: device,
           title: TrakaL10n.of(context).pickOnMapActionLabel,
-          pinVariant: LollipopPinVariant.destination,
+          pinVariant: TrakaRoutePinVariant.destination,
         ),
       ),
     );
@@ -3943,8 +3922,8 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                     isDense: true,
                     prefixIcon: const Padding(
                       padding: EdgeInsets.only(left: 8, right: 4),
-                      child: LollipopPinFormIcon(
-                        variant: LollipopPinVariant.origin,
+                      child: TrakaPinFormIcon(
+                        variant: TrakaRoutePinVariant.origin,
                       ),
                     ),
                     prefixIconConstraints: const BoxConstraints(
@@ -4063,8 +4042,8 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                     isDense: true,
                     prefixIcon: const Padding(
                       padding: EdgeInsets.only(left: 8, right: 4),
-                      child: LollipopPinFormIcon(
-                        variant: LollipopPinVariant.destination,
+                      child: TrakaPinFormIcon(
+                        variant: TrakaRoutePinVariant.destination,
                       ),
                     ),
                     prefixIconConstraints: const BoxConstraints(
@@ -4105,8 +4084,10 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                   },
                   icon: const Icon(Icons.access_time, size: 20),
                   label: Text(widget.formatTime(_jam)),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  style: AppInteractionStyles.outlinedFromTheme(
+                    context,
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -4163,8 +4144,10 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                       ],
                     ],
                   ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  style: AppInteractionStyles.outlinedFromTheme(
+                    context,
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
                 if (_selectedRoutePolyline != null)
@@ -4213,13 +4196,21 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
                               _selectedRoutePolyline != null;
                           return FilledButton(
                             onPressed: (saving || !canSave) ? null : _onSimpan,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: canSave
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withValues(alpha: 0.5),
+                            style: AppInteractionStyles.filledFromTheme(
+                              context,
+                            ).copyWith(
+                              backgroundColor:
+                                  WidgetStateProperty.resolveWith((states) {
+                                final p =
+                                    Theme.of(context).colorScheme.primary;
+                                if (states.contains(WidgetState.disabled)) {
+                                  if (canSave) {
+                                    return p;
+                                  }
+                                  return p.withValues(alpha: 0.5);
+                                }
+                                return p;
+                              }),
                             ),
                             child: saving
                                 ? const SizedBox(
@@ -4460,7 +4451,7 @@ class _AturJadwalFormContentState extends State<_AturJadwalFormContent> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: AppInteractionStyles.destructive(Theme.of(ctx).colorScheme),
             child: const Text('Hapus'),
           ),
         ],

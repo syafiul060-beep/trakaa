@@ -3,10 +3,10 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 /// Mengatur follow kamera agar selaras dengan marker interpolasi (Grab-style).
 ///
 /// Masalah klasik: `animateCamera` dipanggil tiap tick (~120 ms) dengan durasi panjang
-/// (250–1100 ms) sehingga banyak animasi bersamaan → kamera "nyusul" atau "ketinggalan"
-/// dari marker. Engine ini:
-/// - throttle interval (~380 ms) agar satu animasi selesai sebelum jadwal berikutnya
-/// - membatasi durasi animasi agar tidak melebihi interval (anti overlap)
+/// sehingga banyak animasi bersamaan → kamera "nyusul" atau "ketinggalan" dari marker.
+/// Engine ini:
+/// - throttle interval (~480 ms) agar satu tween tidak bertumpuk
+/// - durasi tween dibatasi sedikit di bawah interval agar halus tanpa overlap
 /// - [resetThrottle] saat user tap fokus / resume tracking
 class CameraFollowEngine {
   GoogleMapController? _controller;
@@ -14,10 +14,11 @@ class CameraFollowEngine {
   DateTime? _lastScheduledAt;
 
   /// Minimal jeda antar pemanggilan `animateCamera` (ms).
-  static const int minIntervalMs = 380;
+  /// Sedikit lebih renggang agar satu tween bisa lebih panjang → pergerakan kamera terasa halus.
+  static const int minIntervalMs = 480;
 
   /// Durasi animasi maksimum — harus < [minIntervalMs] agar tidak bertumpuk.
-  static const int maxAnimationMs = 340;
+  static const int maxAnimationMs = 430;
 
   void attach(GoogleMapController? controller) {
     _controller = controller;
@@ -29,7 +30,7 @@ class CameraFollowEngine {
 
   /// Membatasi durasi yang dipilih screen (proporsional jarak/bearing).
   static Duration clampDuration(Duration preferred) {
-    final ms = preferred.inMilliseconds.clamp(120, maxAnimationMs);
+    final ms = preferred.inMilliseconds.clamp(200, maxAnimationMs);
     return Duration(milliseconds: ms);
   }
 

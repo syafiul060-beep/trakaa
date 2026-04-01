@@ -6,6 +6,7 @@ import '../services/chat_service.dart';
 import '../services/driver_transfer_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/responsive.dart';
+import 'traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import 'driver_contact_picker.dart';
 import 'traka_loading_indicator.dart';
@@ -17,12 +18,9 @@ Future<void> showOperDriverSheet(
   required List<OrderModel> orders,
   required void Function(List<(String, String)> transfers) onTransfersCreated,
 }) {
-  return showModalBottomSheet<void>(
+  return showTrakaModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-    ),
     builder: (ctx) => _OperDriverSheet(
       orders: orders,
       onTransfersCreated: (transfers) {
@@ -276,10 +274,6 @@ class _OperDriverSheetState extends State<_OperDriverSheet> {
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: (_loading || !_capacityOk) ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
                 child: _loading
                     ? trakaLoadingOnDarkSurface(size: 24)
                     : Text(

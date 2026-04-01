@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
+import '../widgets/traka_bottom_nav_glyph.dart';
 import '../widgets/traka_l10n_scope.dart';
 
 /// Ikon tab Jadwal: penumpang pakai kalender, driver pakai jam/jadwal.
@@ -28,44 +29,69 @@ class TrakaMainBottomNavigationBar extends StatelessWidget {
   String _selectedHint(AppLocalizations l10n) =>
       l10n.locale == AppLocale.id ? 'dipilih' : 'selected';
 
+  /// Ikon sedikit lebih besar — lebih dekat tampilan bottom bar klasik (pra-M3).
+  static const double _iconSize = 28;
+
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final bnb = theme.bottomNavigationBarTheme;
     final l10n = TrakaL10n.of(context);
     final selected = _selectedHint(l10n);
+    final selectedColor = bnb.selectedItemColor ?? cs.primary;
+    final unselectedColor = bnb.unselectedItemColor ?? cs.onSurfaceVariant;
+    final barBg = bnb.backgroundColor ?? cs.surface;
 
     Widget homeIcon() {
       final on = currentIndex == 0;
       return Semantics(
-        label: '${l10n.navHome}${on ? ', $selected' : ''}',
+        label: l10n.locale == AppLocale.id
+            ? '${l10n.navTrakaTab}, ${l10n.navHome.toLowerCase()}${on ? ', $selected' : ''}'
+            : '${l10n.navTrakaTab}, ${l10n.navHome}${on ? ', $selected' : ''}',
         button: true,
-        child: Icon(
-          on ? Icons.home : Icons.home_outlined,
-          color: on ? cs.primary : cs.onSurfaceVariant,
+        child: TrakaBottomNavGlyph(
+          icon: Icons.directions_car_rounded,
+          outlinedIcon: Icons.directions_car_outlined,
+          selected: on,
+          selectedColor: selectedColor,
+          unselectedColor: unselectedColor,
+          size: _iconSize,
         ),
       );
     }
 
     Widget scheduleIcon() {
       final on = currentIndex == 1;
-      final icon = scheduleTabIcon == TrakaScheduleTabIcon.calendar
-          ? (on ? Icons.calendar_month : Icons.calendar_month_outlined)
-          : (on ? Icons.schedule : Icons.schedule_outlined);
+      final filled = scheduleTabIcon == TrakaScheduleTabIcon.calendar
+          ? Icons.calendar_month_rounded
+          : Icons.schedule_rounded;
+      final outline = scheduleTabIcon == TrakaScheduleTabIcon.calendar
+          ? Icons.calendar_month_outlined
+          : Icons.schedule_outlined;
       return Semantics(
         label: '${l10n.navSchedule}${on ? ', $selected' : ''}',
         button: true,
-        child: Icon(
-          icon,
-          color: on ? cs.primary : cs.onSurfaceVariant,
+        child: TrakaBottomNavGlyph(
+          icon: filled,
+          outlinedIcon: outline,
+          selected: on,
+          selectedColor: selectedColor,
+          unselectedColor: unselectedColor,
+          size: _iconSize,
         ),
       );
     }
 
     Widget chatIcon() {
       final on = currentIndex == 2;
-      final base = Icon(
-        on ? Icons.chat_bubble : Icons.chat_bubble_outline,
-        color: on ? cs.primary : cs.onSurfaceVariant,
+      final base = TrakaBottomNavGlyph(
+        icon: Icons.chat_bubble_rounded,
+        outlinedIcon: Icons.chat_bubble_outline_rounded,
+        selected: on,
+        selectedColor: selectedColor,
+        unselectedColor: unselectedColor,
+        size: _iconSize,
       );
       final label = chatUnreadCount > 0
           ? (l10n.locale == AppLocale.id
@@ -86,9 +112,13 @@ class TrakaMainBottomNavigationBar extends StatelessWidget {
 
     Widget ordersIcon() {
       final on = currentIndex == 3;
-      final base = Icon(
-        on ? Icons.receipt_long : Icons.receipt_long_outlined,
-        color: on ? cs.primary : cs.onSurfaceVariant,
+      final base = TrakaBottomNavGlyph(
+        icon: Icons.receipt_long_rounded,
+        outlinedIcon: Icons.receipt_long_outlined,
+        selected: on,
+        selectedColor: selectedColor,
+        unselectedColor: unselectedColor,
+        size: _iconSize,
       );
       final label = ordersAttentionCount > 0
           ? (l10n.locale == AppLocale.id
@@ -112,9 +142,13 @@ class TrakaMainBottomNavigationBar extends StatelessWidget {
       return Semantics(
         label: '${l10n.navProfile}${on ? ', $selected' : ''}',
         button: true,
-        child: Icon(
-          on ? Icons.person : Icons.person_outline,
-          color: on ? cs.primary : cs.onSurfaceVariant,
+        child: TrakaBottomNavGlyph(
+          icon: Icons.person_rounded,
+          outlinedIcon: Icons.person_outline_rounded,
+          selected: on,
+          selectedColor: selectedColor,
+          unselectedColor: unselectedColor,
+          size: _iconSize,
         ),
       );
     }
@@ -124,35 +158,56 @@ class TrakaMainBottomNavigationBar extends StatelessWidget {
       label: l10n.locale == AppLocale.id
           ? 'Navigasi utama lima tab'
           : 'Main navigation, five tabs',
-      child: BottomNavigationBar(
-        currentIndex: currentIndex,
-        onTap: (i) {
-          HapticFeedback.selectionClick();
-          onTap(i);
-        },
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: cs.primary,
-        unselectedItemColor: cs.onSurfaceVariant,
-        backgroundColor: cs.surface,
-        selectedLabelStyle: const TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 10,
+      child: Material(
+        elevation: bnb.elevation ?? 8,
+        shadowColor: Colors.black.withValues(alpha: 0.12),
+        surfaceTintColor: Colors.transparent,
+        color: barBg,
+        child: BottomNavigationBar(
+          currentIndex: currentIndex,
+          onTap: (i) {
+            HapticFeedback.selectionClick();
+            onTap(i);
+          },
+          type: BottomNavigationBarType.fixed,
+          selectedItemColor: selectedColor,
+          unselectedItemColor: unselectedColor,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          showSelectedLabels: true,
+          showUnselectedLabels: true,
+          selectedFontSize: 11,
+          unselectedFontSize: 11,
+          selectedLabelStyle: bnb.selectedLabelStyle ??
+              const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 11,
+                height: 1.15,
+              ),
+          unselectedLabelStyle: bnb.unselectedLabelStyle ??
+              TextStyle(
+                fontWeight: FontWeight.w500,
+                fontSize: 11,
+                height: 1.15,
+                color: unselectedColor,
+              ),
+          items: [
+            BottomNavigationBarItem(
+              icon: homeIcon(),
+              label: l10n.navTrakaTab,
+            ),
+            BottomNavigationBarItem(
+              icon: scheduleIcon(),
+              label: l10n.navSchedule,
+            ),
+            BottomNavigationBarItem(icon: chatIcon(), label: l10n.navChat),
+            BottomNavigationBarItem(icon: ordersIcon(), label: l10n.navOrders),
+            BottomNavigationBarItem(
+              icon: profileIcon(),
+              label: l10n.navProfile,
+            ),
+          ],
         ),
-        unselectedLabelStyle: TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 10,
-          color: cs.onSurfaceVariant,
-        ),
-        items: [
-          BottomNavigationBarItem(icon: homeIcon(), label: l10n.navHome),
-          BottomNavigationBarItem(
-            icon: scheduleIcon(),
-            label: l10n.navSchedule,
-          ),
-          BottomNavigationBarItem(icon: chatIcon(), label: l10n.navChat),
-          BottomNavigationBarItem(icon: ordersIcon(), label: l10n.navOrders),
-          BottomNavigationBarItem(icon: profileIcon(), label: l10n.navProfile),
-        ],
       ),
     );
   }

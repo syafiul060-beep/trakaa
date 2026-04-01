@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import 'traka_loading_indicator.dart';
 
 /// Dialog non-dismissible sementara [action] berjalan (hitung estimasi jarak/kontribusi).
 Future<T> runWithEstimateLoading<T>(
@@ -17,12 +18,18 @@ Future<T> runWithEstimateLoading<T>(
       child: Semantics(
         label: l10n.calculatingEstimate,
         child: AlertDialog(
+          shape: Theme.of(ctx).dialogTheme.shape,
           content: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const CircularProgressIndicator(),
+              const TrakaLoadingIndicator(size: 40),
               const SizedBox(width: 20),
-              Expanded(child: Text(l10n.calculatingEstimate)),
+              Expanded(
+                child: Text(
+                  l10n.calculatingEstimate,
+                  style: Theme.of(ctx).textTheme.bodyLarge,
+                ),
+              ),
             ],
           ),
         ),

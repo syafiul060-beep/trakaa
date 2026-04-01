@@ -35,6 +35,7 @@ dependencies:
     sdk: flutter
   firebase_core: ^4.6.0
   firebase_auth: ^6.3.0
+  google_sign_in: ^6.2.2
   firebase_messaging: ^16.1.3
   cloud_firestore: ^6.2.0
   cloud_functions: ^6.1.0
@@ -100,6 +101,7 @@ dependencies:
   sensors_plus: ^7.0.0
 
   rxdart: ^0.28.0
+  lottie: ^3.3.2
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -119,16 +121,26 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/icon_traka.png"
+  image_path: "assets/images/traka_brand_logo.png"
   min_sdk_android: 21
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/images/traka_brand_logo.png"
+  # Nilai lebih kecil = artwork adaptive icon terlihat lebih besar (default 16).
+  adaptive_icon_foreground_inset: 0
+  # PNG transparan: App Store tidak mengizinkan alpha pada ikon; isi putih di belakang.
+  remove_alpha_ios: true
 
 # Native splash — tampil segera saat app dibuka (sebelum Flutter siap)
 flutter_native_splash:
   color: "#000000"
-  image: "assets/images/logo_traka.png"
+  image: "assets/images/traka_brand_logo.png"
+  android_gravity: center
+  ios_content_mode: scaleAspectFit
+  fullscreen: true
   android_12:
     color: "#000000"
-    image: "assets/images/logo_traka.png"
+    image: "assets/images/traka_brand_logo.png"
+    icon_background_color: "#000000"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -143,10 +155,13 @@ flutter:
 
   assets:
     - assets/images/
+    # Subfolder tidak ikut ke `assets/images/` — wajib daftar eksplisit.
+    - assets/images/pin/
     - assets/images/traka_map_icons/
     - assets/images/traka_car_icons_premium/
     - assets/map_styles/
     - assets/sounds/
+    - assets/lottie/rangkong_loader.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

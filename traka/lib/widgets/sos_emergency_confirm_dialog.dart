@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_interaction_styles.dart';
 import '../services/admin_contact_config_service.dart';
 import 'traka_l10n_scope.dart';
 
@@ -23,7 +24,7 @@ Future<bool?> showSosEmergencyConfirmDialog(BuildContext context) async {
         ),
         FilledButton(
           onPressed: () => Navigator.pop(ctx, true),
-          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+          style: AppInteractionStyles.destructive(Theme.of(ctx).colorScheme),
           child: Text(l10n.sosConfirmSendAction),
         ),
       ],

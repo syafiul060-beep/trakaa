@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 import '../models/order_model.dart';
+import '../theme/app_interaction_styles.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../services/app_analytics_service.dart';
 import '../services/lacak_barang_payment_service.dart';
@@ -364,9 +365,14 @@ class _LacakBarangPaymentScreenState extends State<LacakBarangPaymentScreen> {
                               ? 'Bayar ${_products.first.price} via Google Play'
                               : 'Bayar via Google Play',
                     ),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    style: AppInteractionStyles.elevatedPrimary(
                       backgroundColor: Colors.orange.shade700,
+                      foregroundColor: Colors.white,
+                      shadowTint: Colors.orange.shade700,
+                    ).copyWith(
+                      padding: WidgetStateProperty.all(
+                        const EdgeInsets.symmetric(vertical: 16),
+                      ),
                     ),
                   ),
                 ],

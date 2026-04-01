@@ -6,6 +6,7 @@ import 'package:open_filex/open_filex.dart';
 import '../models/order_model.dart';
 import '../screens/reverify_face_screen.dart';
 import '../utils/app_logger.dart';
+import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import 'passenger_receipt_pdf_service.dart';
 import 'public_receipt_proof_service.dart';
@@ -134,7 +135,7 @@ class OrderReceiptPdfFlow {
       final file =
           await PassengerReceiptPdfService.savePdfToFile(doc, name: name);
       if (!context.mounted) return;
-      await showModalBottomSheet<void>(
+      await showTrakaModalBottomSheet<void>(
         context: context,
         showDragHandle: true,
         builder: (ctx) => SafeArea(

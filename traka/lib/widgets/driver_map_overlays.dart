@@ -2,15 +2,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
 import 'traka_l10n_scope.dart';
 
-/// Warna per rute: Rute 1=biru, 2=hijau, 3=oranye, 4=ungu.
+/// Warna per rute: Rute 1=biru merek, 2=hijau, 3=oranye, 4=ungu.
 const List<Color> _routeColors = [
-  Color(0xFF1976D2), // biru
-  Color(0xFF43A047), // hijau
-  Color(0xFFFB8C00), // oranye
-  Color(0xFF7B1FA2), // ungu
-  Color(0xFF0097A7), // teal (rute 5+)
+  AppTheme.primary,
+  AppTheme.mapDeliveryAccent,
+  AppTheme.mapRouteOrange,
+  AppTheme.mapRoutePurple,
+  AppTheme.mapRouteTeal,
 ];
 
 Color routeColorForIndex(int index) {
@@ -322,7 +323,7 @@ class DriverScheduledReminder extends StatelessWidget {
   }
 }
 
-/// Tombol Siap Kerja / Selesai Bekerja - pill gradient.
+/// Tombol Siap Kerja / Selesai Bekerja — pill Material 3 + bayangan tema merek.
 class DriverWorkToggleButton extends StatelessWidget {
   const DriverWorkToggleButton({
     super.key,
@@ -339,87 +340,116 @@ class DriverWorkToggleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Tap selalu aktif: saat rute sudah dipilih, parent memanggil _onStartButtonTap (sama seperti "Mulai Rute ini").
-    // Selaras jarak vertikal dengan [TurnByTurnBanner] (_workPillTopInset).
+    final cs = Theme.of(context).colorScheme;
     final topInset = MediaQuery.paddingOf(context).top + 4;
+
+    final blockedFinish = isDriverWorking && hasActiveOrder;
+    final showFinish = isDriverWorking && !hasActiveOrder;
+    final showRouteSelected = !isDriverWorking && routeSelected;
+    final showReady = !isDriverWorking && !routeSelected;
+
+    late final List<Color> gradientColors;
+    late final Color fg;
+    late final Color shadowTint;
+    late final double shadowOpacity;
+    late final double blur;
+    late final Color borderColor;
+
+    if (blockedFinish) {
+      gradientColors = [cs.surfaceContainerHighest, cs.surfaceContainerHigh];
+      fg = cs.onSurfaceVariant;
+      shadowTint = cs.shadow;
+      shadowOpacity = 0.12;
+      blur = 10;
+      borderColor = cs.outline.withValues(alpha: 0.5);
+    } else if (showFinish) {
+      final hi = Color.lerp(cs.error, Colors.white, 0.12) ?? cs.error;
+      gradientColors = [cs.error, hi];
+      fg = cs.onError;
+      shadowTint = cs.error;
+      shadowOpacity = 0.38;
+      blur = 20;
+      borderColor = Colors.white.withValues(alpha: 0.28);
+    } else if (showRouteSelected) {
+      gradientColors = [cs.surfaceContainerHigh, cs.surfaceContainer];
+      fg = cs.onSurface;
+      shadowTint = cs.primary;
+      shadowOpacity = 0.14;
+      blur = 14;
+      borderColor = cs.outline.withValues(alpha: 0.45);
+    } else {
+      gradientColors = [AppTheme.primary, AppTheme.primaryLight];
+      fg = AppTheme.onPrimary;
+      shadowTint = AppTheme.primaryDark;
+      shadowOpacity = 0.42;
+      blur = 22;
+      borderColor = Colors.white.withValues(alpha: 0.32);
+    }
+
     return Positioned(
       top: topInset,
       left: 16,
       child: Tooltip(
-        message: isDriverWorking && hasActiveOrder
+        message: blockedFinish
             ? TrakaL10n.of(context).driverFinishWorkBlockedTooltip
             : '',
         child: Material(
           color: Colors.transparent,
+          elevation: 0,
+          shadowColor: Colors.transparent,
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(24),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+            splashColor: fg.withValues(alpha: 0.14),
+            highlightColor: fg.withValues(alpha: 0.08),
+            child: Ink(
               decoration: BoxDecoration(
-                gradient: isDriverWorking
-                    ? (hasActiveOrder
-                        ? LinearGradient(
-                            colors: [
-                              Colors.grey.shade600,
-                              Colors.grey.shade700,
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          )
-                        : const LinearGradient(
-                            colors: [Color(0xFFE53935), Color(0xFFEF5350)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ))
-                    : (routeSelected
-                        ? LinearGradient(
-                            colors: [
-                              Colors.grey.shade500,
-                              Colors.grey.shade600,
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          )
-                        : const LinearGradient(
-                            colors: [Color(0xFF1976D2), Color(0xFF42A5F5)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          )),
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+                gradient: LinearGradient(
+                  colors: gradientColors,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.25),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
+                    color: shadowTint.withValues(alpha: shadowOpacity),
+                    blurRadius: blur,
+                    offset: const Offset(0, 8),
+                    spreadRadius: -3,
                   ),
                 ],
+                border: Border.all(color: borderColor, width: 1),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isDriverWorking ? Icons.stop_circle : Icons.play_circle_filled,
-                    color: Colors.white,
-                    size: 22,
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    isDriverWorking
-                        ? TrakaL10n.of(context).finishWork
-                        : (routeSelected
-                            ? TrakaL10n.of(context).routeSelected
-                            : TrakaL10n.of(context).readyToWork),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 22, vertical: 15),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isDriverWorking
+                          ? Icons.stop_circle_outlined
+                          : Icons.play_circle_rounded,
+                      color: fg,
+                      size: 24,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Text(
+                      isDriverWorking
+                          ? TrakaL10n.of(context).finishWork
+                          : (routeSelected
+                              ? TrakaL10n.of(context).routeSelected
+                              : TrakaL10n.of(context).readyToWork),
+                      style: TextStyle(
+                        color: fg,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15.5,
+                        letterSpacing: 0.25,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -542,7 +572,15 @@ class DriverStartRouteButton extends StatelessWidget {
                 gradient: LinearGradient(
                   colors: isLoading
                       ? [Colors.grey.shade600, Colors.grey.shade700]
-                      : const [Color(0xFF43A047), Color(0xFF66BB6A)],
+                      : [
+                          AppTheme.mapDeliveryAccent,
+                          Color.lerp(
+                                AppTheme.mapDeliveryAccent,
+                                Colors.white,
+                                0.22,
+                              ) ??
+                              AppTheme.mapDeliveryAccent,
+                        ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -631,7 +669,8 @@ class CarOverlayWidget extends StatelessWidget {
         return Transform.rotate(angle: rotationRad, child: child);
       },
       errorBuilder: (context, error, stackTrace) {
-        final color = isMoving ? const Color(0xFF43A047) : const Color(0xFFE53935);
+        final color =
+            isMoving ? AppTheme.mapDeliveryAccent : AppTheme.mapStopRed;
         return Transform.rotate(
           angle: rotationRad,
           child: Icon(Icons.directions_car, size: size * 0.85, color: color),

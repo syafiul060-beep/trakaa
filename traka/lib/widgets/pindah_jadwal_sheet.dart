@@ -6,6 +6,9 @@ import '../services/app_config_service.dart';
 import '../services/chat_service.dart';
 import '../services/driver_schedule_service.dart';
 import '../services/order_service.dart';
+import '../theme/app_theme.dart';
+import 'traka_bottom_sheet.dart';
+import 'traka_empty_state.dart';
 
 /// Sheet pilih jadwal target untuk pindah pesanan terjadwal.
 void showPindahJadwalSheet(
@@ -14,10 +17,10 @@ void showPindahJadwalSheet(
   required String currentScheduleId,
   required String driverUid,
 }) {
-  showModalBottomSheet<void>(
+  showTrakaModalBottomSheet<void>(
     context: context,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(AppTheme.radiusMd)),
     ),
     builder: (ctx) => _PindahJadwalSheet(
       order: order,
@@ -177,17 +180,12 @@ class _PindahJadwalSheetState extends State<_PindahJadwalSheet> {
             if (_loading)
               const Center(child: CircularProgressIndicator())
             else if (_otherSchedules.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Center(
-                  child: Text(
-                    'Tidak ada jadwal lain. Buat jadwal baru di kalender.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: TrakaEmptyState(
+                  icon: Icons.event_busy,
+                  title: 'Tidak ada jadwal lain',
+                  subtitle: 'Buat jadwal baru di kalender.',
                 ),
               )
             else

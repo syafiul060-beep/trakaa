@@ -5,6 +5,7 @@ import '../services/app_analytics_service.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../services/chat_filter_service.dart';
 import '../services/feedback_service.dart';
+import '../theme/app_interaction_styles.dart';
 
 /// Form saran/masukan ke admin. Data disimpan di Firestore app_feedback.
 class SaranKeAdminScreen extends StatefulWidget {
@@ -166,8 +167,10 @@ class _SaranKeAdminScreenState extends State<SaranKeAdminScreen> {
                       )
                     : const Icon(Icons.send),
                 label: Text(_sending ? 'Mengirim...' : 'Kirim ke Admin'),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                style: AppInteractionStyles.filledFromTheme(
+                  context,
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 16),
                 ),
               ),
             ],

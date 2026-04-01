@@ -7,14 +7,21 @@ import 'package:face_verification/face_verification.dart';
 import '../services/verification_log_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../theme/responsive.dart';
+import '../theme/traka_visual_tokens.dart';
+import '../widgets/auth_loading_overlay.dart';
+import '../widgets/traka_loading_indicator.dart';
 import '../utils/phone_utils.dart';
 import '../widgets/traka_l10n_scope.dart';
+import '../services/biometric_login_service.dart';
 import '../services/device_service.dart';
 import '../services/permission_service.dart';
+import '../utils/app_logger.dart';
 import 'active_liveness_screen.dart';
 
 /// Langkah alur lupa kata sandi.
@@ -50,6 +57,36 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   bool _loading = false;
   String? _phoneVerificationId;
   String? _resetUid; // UID setelah sign in dengan phone (untuk face + update password)
+  bool _faceVerifyBusy = false;
+  String? _faceVerifyLastError;
+
+  /// Foto acuan: Storage path utama, lalu URL di Firestore (download URL) jika perlu.
+  Future<List<int>?> _loadFaceReferenceBytes(String uid) async {
+    try {
+      final ref =
+          FirebaseStorage.instance.ref().child('users/$uid/face_verification.jpg');
+      final maxBytes = 15 * 1024 * 1024;
+      final bytes = await ref.getData(maxBytes);
+      if (bytes != null && bytes.isNotEmpty) return bytes;
+    } catch (e, st) {
+      logError('ForgotPassword.loadFaceRef.storage', e, st);
+    }
+    try {
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final url = (doc.data()?['faceVerificationUrl'] as String?)?.trim();
+      if (url == null || url.isEmpty) return null;
+      final resp = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 30));
+      if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
+        return resp.bodyBytes;
+      }
+    } catch (e, st) {
+      logError('ForgotPassword.loadFaceRef.url', e, st);
+    }
+    return null;
+  }
 
   @override
   void dispose() {
@@ -127,6 +164,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         _resetUid = uid;
         _step = _ForgotStep.faceVerify;
         _loading = false;
+        _faceVerifyBusy = true;
+        _faceVerifyLastError = null;
       });
       await _runFaceVerification(uid);
     } on FirebaseFunctionsException catch (e) {
@@ -197,6 +236,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         _resetUid = uid;
         _step = _ForgotStep.faceVerify;
         _loading = false;
+        _faceVerifyBusy = true;
+        _faceVerifyLastError = null;
       });
       await _runFaceVerification(uid);
     } catch (_) {
@@ -228,38 +269,79 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   Future<void> _runFaceVerification(String uid) async {
+    if (!mounted) return;
+    setState(() {
+      _faceVerifyBusy = true;
+      _faceVerifyLastError = null;
+    });
     File? tempStored;
     try {
-      final ref = FirebaseStorage.instance.ref().child('users/$uid/face_verification.jpg');
-      final bytes = await ref.getData();
-      if (bytes == null || bytes.isEmpty) {
-        if (mounted) _showSnack(TrakaL10n.of(context).faceDataNotFound, isError: true);
+      final rawBytes = await _loadFaceReferenceBytes(uid);
+      if (rawBytes == null || rawBytes.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _faceVerifyBusy = false;
+          _faceVerifyLastError = TrakaL10n.of(context).faceDataNotFound;
+        });
+        _showSnack(TrakaL10n.of(context).faceDataNotFound, isError: true);
         return;
       }
       final tempDir = await getTemporaryDirectory();
       tempStored = File('${tempDir.path}/reset_verify_$uid.jpg');
-      await tempStored.writeAsBytes(bytes);
-      await FaceVerification.instance.registerFromImagePath(
-        id: uid,
-        imagePath: tempStored.path,
-        imageId: 'reset_verify',
-      );
+      await tempStored.writeAsBytes(rawBytes);
+      try {
+        await FaceVerification.instance.registerFromImagePath(
+          id: uid,
+          imagePath: tempStored.path,
+          imageId: 'reset_verify',
+        );
+      } catch (e, st) {
+        logError('ForgotPassword.registerFromImagePath', e, st);
+        VerificationLogService.log(
+          userId: uid,
+          success: false,
+          source: VerificationLogSource.forgotPassword,
+          errorMessage: 'Gagal memuat template wajah: $e',
+        );
+        if (!mounted) return;
+        setState(() {
+          _faceVerifyBusy = false;
+          _faceVerifyLastError = kDebugMode
+              ? 'Gagal memproses foto acuan: $e'
+              : 'Gagal memproses foto acuan. Ketuk Coba lagi atau hubungi support.';
+        });
+        _showSnack(TrakaL10n.of(context).faceVerificationFailed, isError: true);
+        return;
+      }
+
       if (!mounted) return;
       final cameraOk = await PermissionService.requestCameraPermission(context);
       if (!cameraOk) {
         if (mounted) {
+          setState(() {
+            _faceVerifyBusy = false;
+            _faceVerifyLastError =
+                TrakaL10n.of(context).cameraPermissionRequired;
+          });
           _showSnack(TrakaL10n.of(context).cameraPermissionRequired, isError: true);
         }
         return;
       }
       if (!mounted) return;
+      setState(() => _faceVerifyBusy = false);
       final file = await Navigator.of(context).push<File>(
         MaterialPageRoute<File>(builder: (_) => const ActiveLivenessScreen()),
       );
+      if (!mounted) return;
       if (file == null || file.path.isEmpty) {
-        if (mounted) _showSnack(TrakaL10n.of(context).faceVerificationCancelled, isError: true);
+        setState(() {
+          _faceVerifyLastError =
+              TrakaL10n.of(context).faceVerificationCancelled;
+        });
+        _showSnack(TrakaL10n.of(context).faceVerificationCancelled, isError: true);
         return;
       }
+      setState(() => _faceVerifyBusy = true);
       final matchId = await FaceVerification.instance.verifyFromImagePath(
         imagePath: file.path,
         threshold: 0.7,
@@ -275,23 +357,41 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         source: VerificationLogSource.forgotPassword,
         errorMessage: verified ? null : 'Wajah tidak cocok.',
       );
-      if (verified && mounted) {
+      if (!mounted) return;
+      setState(() => _faceVerifyBusy = false);
+      if (verified) {
         setState(() => _step = _ForgotStep.newPassword);
-      } else if (mounted) {
+      } else {
+        setState(() {
+          _faceVerifyLastError =
+              TrakaL10n.of(context).faceNotMatch;
+        });
         _showSnack(TrakaL10n.of(context).faceNotMatch, isError: true);
       }
-    } catch (e) {
+    } catch (e, st) {
+      logError('ForgotPassword._runFaceVerification', e, st);
       VerificationLogService.log(
         userId: uid,
         success: false,
         source: VerificationLogSource.forgotPassword,
         errorMessage: 'Verifikasi wajah gagal: $e',
       );
-      if (mounted) _showSnack(TrakaL10n.of(context).faceVerificationFailed, isError: true);
+      if (mounted) {
+        setState(() {
+          _faceVerifyBusy = false;
+          _faceVerifyLastError = kDebugMode
+              ? e.toString()
+              : 'Terjadi kesalahan. Periksa jaringan dan izin, lalu coba lagi.';
+        });
+        _showSnack(TrakaL10n.of(context).faceVerificationFailed, isError: true);
+      }
     } finally {
       try {
         tempStored?.deleteSync();
       } catch (_) {}
+      if (mounted && _faceVerifyBusy) {
+        setState(() => _faceVerifyBusy = false);
+      }
     }
   }
 
@@ -320,6 +420,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('Not signed in');
       await user.updatePassword(newPass);
+      await BiometricLoginService.clearCredentials();
 
       final currentDeviceId = await DeviceService.getDeviceId();
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
@@ -361,15 +462,44 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final backdrop = context.trakaVisualTokens?.screenBackdropGradient;
     return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
         title: Text(TrakaL10n.of(context).forgotPasswordTitle),
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(context.responsive.horizontalPadding),
-          child: _buildStepContent(),
-        ),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: backdrop ??
+                    LinearGradient(colors: [cs.surface, cs.surface]),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: SafeArea(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  context.responsive.horizontalPadding,
+                  MediaQuery.paddingOf(context).top + kToolbarHeight + 8,
+                  context.responsive.horizontalPadding,
+                  context.responsive.horizontalPadding,
+                ),
+                child: _buildStepContent(),
+              ),
+            ),
+          ),
+          AuthLoadingOverlay(visible: _loading),
+        ],
       ),
     );
   }
@@ -449,13 +579,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         SizedBox(height: context.responsive.spacing(24)),
         FilledButton(
           onPressed: _loading ? null : _sendEmailOtp,
-          child: _loading
-              ? const SizedBox(
-                  height: 22,
-                  width: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Kirim kode'),
+          child: const Text('Kirim kode'),
         ),
       ],
     );
@@ -485,13 +609,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         SizedBox(height: context.responsive.spacing(24)),
         FilledButton(
           onPressed: _loading ? null : _verifyEmailOtpAndContinue,
-          child: _loading
-              ? const SizedBox(
-                  height: 22,
-                  width: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Verifikasi'),
+          child: const Text('Verifikasi'),
         ),
         TextButton(
           onPressed: () => setState(() {
@@ -521,13 +639,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         SizedBox(height: context.responsive.spacing(24)),
         FilledButton(
           onPressed: _loading ? null : _sendPhoneOtp,
-          child: _loading
-              ? const SizedBox(
-                  height: 22,
-                  width: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Kirim kode SMS'),
+          child: const Text('Kirim kode SMS'),
         ),
       ],
     );
@@ -552,13 +664,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         SizedBox(height: context.responsive.spacing(24)),
         FilledButton(
           onPressed: _loading ? null : _verifyOtpAndContinue,
-          child: _loading
-              ? const SizedBox(
-                  height: 22,
-                  width: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Verifikasi'),
+          child: const Text('Verifikasi'),
         ),
         TextButton(
           onPressed: () => setState(() {
@@ -573,17 +679,81 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   Widget _buildFaceVerifyPrompt() {
+    final uid = _resetUid ?? FirebaseAuth.instance.currentUser?.uid;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(height: context.responsive.spacing(24)),
-        const Center(
-          child: CircularProgressIndicator(),
-        ),
-        const SizedBox(height: 16),
-        const Center(
-          child: Text('Membuka verifikasi wajah...'),
-        ),
+        if (_faceVerifyBusy) ...[
+          Center(
+            child: TrakaLoadingIndicator(
+              size: 44,
+              primary: Theme.of(context).colorScheme.primary,
+              secondary: Theme.of(context).colorScheme.secondary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: Text(
+              'Mempersiapkan verifikasi wajah…',
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ] else ...[
+          if (_faceVerifyLastError != null) ...[
+            Icon(
+              Icons.info_outline_rounded,
+              size: 40,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _faceVerifyLastError!,
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Pastikan izin kamera di pengaturan aplikasi diaktifkan, lalu coba lagi.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: context.responsive.spacing(20)),
+          ] else ...[
+            Text(
+              'Langkah berikutnya: verifikasi wajah (kedip di depan kamera).',
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+          ],
+          if (uid != null) ...[
+            FilledButton(
+              onPressed: _faceVerifyBusy ? null : () => _runFaceVerification(uid),
+              child: const Text('Coba verifikasi wajah'),
+            ),
+          ],
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: _faceVerifyBusy
+                ? null
+                : () async {
+                    await FirebaseAuth.instance.signOut();
+                    if (!mounted) return;
+                    setState(() {
+                      _step = _ForgotStep.chooseMethod;
+                      _resetUid = null;
+                      _faceVerifyLastError = null;
+                      _phoneVerificationId = null;
+                      _otpController.clear();
+                    });
+                  },
+            child: const Text('Batalkan & mulai dari awal'),
+          ),
+        ],
       ],
     );
   }
@@ -629,13 +799,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         SizedBox(height: context.responsive.spacing(24)),
         FilledButton(
           onPressed: _loading ? null : _saveNewPassword,
-          child: _loading
-              ? const SizedBox(
-                  height: 22,
-                  width: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Simpan'),
+          child: const Text('Simpan'),
         ),
       ],
     );

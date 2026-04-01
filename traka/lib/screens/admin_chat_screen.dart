@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../models/support_message_model.dart';
 import '../models/support_ticket_model.dart';
 import '../services/support_chat_service.dart';
+import '../theme/app_interaction_styles.dart';
+import '../widgets/traka_empty_state.dart';
 
 /// Halaman live chat support: auto-reply bot, antrian, sambungan ke admin.
 /// Menampilkan nama admin saat terhubung.
@@ -412,47 +414,22 @@ class _AdminChatScreenState extends State<AdminChatScreen> {
   }
 
   Widget _buildEmptyState(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.chat_bubble_outline,
-              size: 56,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Belum ada pesan',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Ketik pesan untuk memulai. Anda akan mendapat balasan otomatis terlebih dahulu.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.4,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Atau tap "Hubungi Admin" di bawah untuk berbicara dengan tim kami.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
+      child: TrakaEmptyState(
+        icon: Icons.chat_bubble_outline,
+        title: 'Belum ada pesan',
+        subtitle:
+            'Ketik pesan untuk memulai. Anda akan mendapat balasan otomatis terlebih dahulu.',
+        action: Text(
+          'Atau tap "Hubungi Admin" di bawah untuk berbicara dengan tim kami.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 13,
+            color: cs.primary,
+            fontWeight: FontWeight.w500,
+            height: 1.35,
+          ),
         ),
       ),
     );
@@ -523,9 +500,15 @@ class _AdminChatScreenState extends State<AdminChatScreen> {
                       onPressed: _requestAdmin,
                       icon: const Icon(Icons.person_outline, size: 18),
                       label: const Text('Hubungi Admin'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        foregroundColor: Theme.of(context).colorScheme.primary,
+                      style: AppInteractionStyles.outlinedFromTheme(
+                        context,
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 10),
+                        sideColor: Theme.of(context).colorScheme.primary,
+                      ).copyWith(
+                        foregroundColor: WidgetStateProperty.all(
+                          Theme.of(context).colorScheme.primary,
+                        ),
                       ),
                     ),
                   ),
@@ -573,7 +556,8 @@ class _AdminChatScreenState extends State<AdminChatScreen> {
                         }
                       },
                       icon: const Icon(Icons.send_rounded),
-                      style: IconButton.styleFrom(
+                      style: AppInteractionStyles.iconButtonFromTheme(
+                        context,
                         minimumSize: const Size(48, 48),
                       ),
                     ),

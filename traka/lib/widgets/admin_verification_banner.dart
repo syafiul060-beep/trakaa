@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/verification_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_interaction_styles.dart';
 
 /// Banner saat admin meminta data verifikasi tambahan + pembatasan fitur.
 class AdminVerificationBanner extends StatefulWidget {
@@ -185,9 +186,8 @@ class _AdminVerificationBannerState extends State<AdminVerificationBanner> {
           const SizedBox(height: 12),
           FilledButton(
             onPressed: _loading ? null : _markSubmitted,
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
+            style: AppInteractionStyles.destructive(
+              Theme.of(context).colorScheme,
             ),
             child: _loading
                 ? SizedBox(

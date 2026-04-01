@@ -4,7 +4,7 @@ Dokumen ini untuk QA dan pengguna internal: apa yang perlu GPS + data, dan apa y
 
 ## Lacak Driver (penumpang travel)
 
-- **Ikon**: lolipop oranye = lokasi Anda sesuai pesanan (bukan titik biru GPS perangkat); mobil = posisi driver.
+- **Ikon**: pin oranye = lokasi Anda sesuai pesanan (bukan titik biru GPS perangkat); mobil = posisi driver.
 - **Kamera**: otomatis membingkai Anda dan driver (zoom mengikuti jarak).
 - **Data & API**: lokasi driver lewat Firestore; garis rute biru via Directions API; teks alamat driver boleh tertunda saat **hemat data** (lihat bawah).
 - **Lokasi tidak segar**: pastikan driver membuka aplikasi, izin lokasi aktif, dan jaringan stabil. Tombol **Muat ulang** di peta memaksa refresh snapshot driver.

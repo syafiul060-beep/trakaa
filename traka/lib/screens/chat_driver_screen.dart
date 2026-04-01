@@ -17,12 +17,15 @@ import '../services/chat_service.dart';
 import '../services/driver_contribution_service.dart';
 import '../services/order_service.dart';
 import '../utils/phone_utils.dart';
+import '../widgets/traka_empty_state.dart';
+import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/app_interaction_styles.dart';
 import 'contribution_driver_screen.dart';
 import 'voice_call_screen.dart';
 
@@ -873,7 +876,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
 
   /// Tampilkan dialog pilih gambar atau video
   void _showMediaPicker() {
-    showModalBottomSheet(
+    showTrakaModalBottomSheet(
       context: context,
       builder: (context) => SafeArea(
         child: Column(
@@ -1201,7 +1204,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                       ),
                       FilledButton(
                         onPressed: () => Navigator.pop(ctx, true),
-                        style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                        style: AppInteractionStyles.destructive(Theme.of(ctx).colorScheme),
                         child: const Text('Hapus'),
                       ),
                     ],
@@ -1226,7 +1229,7 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
         child: Container(
           decoration: const BoxDecoration(
             image: DecorationImage(
-              image: AssetImage('assets/images/logo_traka.png'),
+              image: AssetImage('assets/images/traka_brand_logo.png'),
               fit: BoxFit.contain,
               opacity:
                   0.05, // Logo semi-transparent agar tidak mengganggu pembacaan pesan
@@ -1282,35 +1285,11 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
 
                           // Jika belum ada pesan, tampilkan pemberitahuan yang profesional
                           if (messages.isEmpty) {
-                            return Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.chat_bubble_outline,
-                                    size: 64,
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'Belum ada pesan.',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Mulai obrolan dengan penumpang.',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
+                            return const Center(
+                              child: TrakaEmptyState(
+                                icon: Icons.chat_bubble_outline,
+                                title: 'Belum ada pesan',
+                                subtitle: 'Mulai obrolan dengan penumpang.',
                               ),
                             );
                           }
@@ -1494,10 +1473,14 @@ class _ChatDriverScreenState extends State<ChatDriverScreen> {
                           onPressed: _showDialogKesepakatanHarga,
                           icon: const Icon(Icons.handshake, size: 20),
                           label: const Text('Kesepakatan dan harga travel'),
-                          style: FilledButton.styleFrom(
+                          style: AppInteractionStyles.elevatedPrimary(
                             backgroundColor: Colors.green,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shadowTint: Colors.green,
+                          ).copyWith(
+                            padding: WidgetStateProperty.all(
+                              const EdgeInsets.symmetric(vertical: 12),
+                            ),
                           ),
                         ),
                       ),

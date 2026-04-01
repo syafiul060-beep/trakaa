@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/traka_empty_state.dart';
+import '../theme/app_interaction_styles.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../models/order_model.dart';
 import '../services/chat_service.dart';
@@ -209,7 +211,7 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: AppInteractionStyles.destructive(Theme.of(ctx).colorScheme),
             child: const Text('Hapus'),
           ),
         ],
@@ -409,33 +411,12 @@ class _ChatListDriverScreenState extends State<ChatListDriverScreen> {
             }
 
             if (orders.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.chat_bubble_outline,
-                      size: 64,
-                      color: AppTheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Belum ada obrolan',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: AppTheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Obrolan akan muncul setelah\nada pesanan dari penumpang.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppTheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+              return const Center(
+                child: TrakaEmptyState(
+                  icon: Icons.chat_bubble_outline,
+                  title: 'Belum ada obrolan',
+                  subtitle:
+                      'Obrolan akan muncul setelah ada pesanan dari penumpang.',
                 ),
               );
             }

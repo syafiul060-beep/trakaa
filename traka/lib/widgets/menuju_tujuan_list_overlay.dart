@@ -4,9 +4,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/order_model.dart';
+import '../theme/app_interaction_styles.dart';
+import '../theme/app_theme.dart';
 
-/// Warna oranye untuk pengantaran (beda dengan hijau penjemputan).
-const Color _menujuTujuanColor = Color(0xFFE65100); // Orange 900
+/// Warna oranye untuk pengantaran (token Traka).
+const Color _menujuTujuanColor = AppTheme.mapDropoffAccent;
 
 /// Daftar penumpang/barang yang sudah dijemput dan menunggu diantar ke tujuan.
 /// Tampil di Beranda driver. Tombol "Arahkan ke tujuan" → navigasi in-app ke destLat/destLng.
@@ -169,7 +171,11 @@ class MenujuTujuanListOverlay extends StatelessWidget {
               Navigator.of(ctx).pop();
               onConfirm();
             },
-            style: FilledButton.styleFrom(backgroundColor: _menujuTujuanColor),
+            style: AppInteractionStyles.elevatedPrimary(
+              backgroundColor: _menujuTujuanColor,
+              foregroundColor: Colors.white,
+              shadowTint: _menujuTujuanColor,
+            ),
             child: const Text('Ya, arahkan ke tujuan'),
           ),
         ],
@@ -276,10 +282,19 @@ class _DestinationCard extends StatelessWidget {
                 onPressed: onArahkan,
                 icon: const Icon(Icons.flag, size: 16),
                 label: const Text('Arahkan'),
-                style: FilledButton.styleFrom(
-                  foregroundColor: _menujuTujuanColor,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  minimumSize: Size.zero,
+                style: AppInteractionStyles.elevatedPrimary(
+                  backgroundColor: _menujuTujuanColor,
+                  foregroundColor: Colors.white,
+                  shadowTint: _menujuTujuanColor,
+                ).copyWith(
+                  elevation: WidgetStateProperty.resolveWith((s) {
+                    if (s.contains(WidgetState.pressed)) return 0.0;
+                    return 2.0;
+                  }),
+                  padding: WidgetStateProperty.all(
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
+                  minimumSize: WidgetStateProperty.all(Size.zero),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),

@@ -17,7 +17,7 @@ class PrivacyTermsExportService {
   <title>%TITLE%</title>
   <style>
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 700px; margin: 0 auto; padding: 24px; }
-    h1 { font-size: 22px; color: #111; border-bottom: 2px solid #2563eb; padding-bottom: 8px; margin-top: 28px; }
+    h1 { font-size: 22px; color: #111; border-bottom: 2px solid #D97706; padding-bottom: 8px; margin-top: 28px; }
     h2 { font-size: 16px; font-weight: 600; color: #111; margin-top: 20px; margin-bottom: 8px; }
     p { margin: 0 0 12px 0; text-align: justify; }
     .intro { margin-bottom: 20px; }

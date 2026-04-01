@@ -22,15 +22,18 @@ import '../services/verification_log_service.dart';
 import '../services/verification_service.dart';
 import '../services/face_duplicate_check_service.dart';
 import '../services/account_deletion_service.dart';
+import '../services/biometric_login_service.dart';
 import '../services/app_analytics_service.dart';
 import '../services/auth_redirect_state.dart';
 import '../services/low_ram_warning_service.dart';
 import '../services/lite_mode_service.dart';
 import '../services/image_compression_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_interaction_styles.dart';
 import '../theme/traka_ui_helpers.dart';
 import '../l10n/app_localizations.dart';
 import '../services/locale_service.dart';
+import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../theme/responsive.dart';
 import '../utils/phone_utils.dart';
@@ -728,7 +731,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
     final String email = user.email ?? '';
     final String phone = ((_userData['phoneNumber'] as String?) ?? '').trim();
 
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -865,7 +868,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
 
   void _showLanguageSelector() {
     final l10n = TrakaL10n.of(context);
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(
@@ -1032,7 +1035,12 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
                 );
                 await user.reauthenticateWithCredential(cred);
                 await user.updatePassword(newP);
-                if (mounted) _showSnackBar('Password berhasil diubah.');
+                await BiometricLoginService.clearCredentials();
+                if (mounted) {
+                  _showSnackBar(
+                    TrakaL10n.of(context).passwordChangedProfileWithBiometricClear,
+                  );
+                }
               } on FirebaseAuthException catch (e) {
                 if (e.code == 'wrong-password' ||
                     e.code == 'invalid-credential') {
@@ -1064,7 +1072,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: AppInteractionStyles.destructive(Theme.of(ctx).colorScheme),
             child: const Text('Hapus akun'),
           ),
         ],
@@ -1108,7 +1116,7 @@ class _ProfilePenumpangScreenState extends State<ProfilePenumpangScreen> {
   }
 
   void _showBiometricSheet() {
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Padding(

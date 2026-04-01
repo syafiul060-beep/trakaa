@@ -63,7 +63,7 @@ Salam, Tim Traka
 <!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="font-family:Arial;line-height:1.6;color:#333;max-width:600px;margin:0 auto;padding:20px">
   <div style="background:#f9f9f9;padding:30px;border-radius:8px">
     <h2>Kode Verifikasi Traka</h2>
-    <p>Kode Anda: <strong style="background:#2563EB;color:white;font-size:24px;padding:10px 20px;border-radius:8px;letter-spacing:4px">${code}</strong></p>
+    <p>Kode Anda: <strong style="background:#D97706;color:white;font-size:24px;padding:10px 20px;border-radius:8px;letter-spacing:4px">${code}</strong></p>
     <p>Berlaku 10 menit.</p>
     <p style="color:#999;font-size:12px">Jika tidak meminta, abaikan.</p>
     <p>Salam,<br>Tim Traka</p>
@@ -497,6 +497,30 @@ exports.checkPhoneExists = callable.onCall(async (data) => {
   };
 });
 
+// --- Daftar Google: email sudah ada di profil Firestore milik uid lain (bentrok data / dua akun) ---
+exports.checkGoogleEmailConflictForRegister = callable.onCall(async (data) => {
+  const email = data?.email;
+  const currentUid = (data?.currentUid || "").toString().trim();
+  if (!email || typeof email !== "string" || !currentUid) {
+    return { conflict: false };
+  }
+  const trimmed = email.trim().toLowerCase();
+  if (!/^[\w.-]+@[\w.-]+\.\w+$/.test(trimmed)) {
+    return { conflict: false };
+  }
+  const snap = await admin.firestore()
+      .collection("users")
+      .where("email", "==", trimmed)
+      .limit(10)
+      .get();
+  for (const doc of snap.docs) {
+    if (doc.id !== currentUid) {
+      return { conflict: true };
+    }
+  }
+  return { conflict: false };
+});
+
 // --- Login terpadu: dapatkan authEmail untuk login phone+password (user baru pakai email+password) ---
 // User lama (phone OTP only): legacy=true, pakai OTP. User baru (phone+password): authEmail untuk signInWithEmailAndPassword.
 function normalizePhoneForAuth(phone) {
@@ -527,22 +551,42 @@ exports.getPhoneLoginEmail = callable.onCall(async (data) => {
 
   try {
     const fbUser = await admin.auth().getUser(uid);
+    const providers = fbUser.providerData || [];
+    const hasPassword = providers.some((p) => p.providerId === "password");
+    const hasPhoneProvider = providers.some((p) => p.providerId === "phone");
+    const hasGoogle = providers.some((p) => p.providerId === "google.com");
+
+    // Daftar Google + verifikasi nomor: tidak ada penyedia "password" di Auth.
+    // Jangan kembalikan email Google untuk signInWithEmailAndPassword (akan "sandi salah").
+    if (!hasPassword) {
+      if (hasPhoneProvider) {
+        return {exists: true, legacy: true};
+      }
+      if (hasGoogle) {
+        return {exists: true, oauthGoogle: true};
+      }
+      return {exists: true, legacy: true};
+    }
+
     const isNewPhonePassword = fbUser.email === authEmail;
-    const isPhoneOnly = fbUser.providerData?.some((p) => p.providerId === "phone") && !fbUser.email;
+    const isPhoneOnly = hasPhoneProvider && !fbUser.email;
 
     if (isNewPhonePassword) {
-      return { exists: true, authEmail };
+      return {exists: true, authEmail};
     }
     // User sudah tambah/ubah email (bukan @traka.phone) → login pakai email+password
     if (fbUser.email && fbUser.email.trim()) {
-      return { exists: true, authEmail: fbUser.email.trim().toLowerCase() };
+      return {
+        exists: true,
+        authEmail: fbUser.email.trim().toLowerCase(),
+      };
     }
     if (isPhoneOnly) {
-      return { exists: true, legacy: true };
+      return {exists: true, legacy: true};
     }
-    return { exists: true, legacy: true };
+    return {exists: true, legacy: true};
   } catch (_) {
-    return { exists: true, legacy: true };
+    return {exists: true, legacy: true};
   }
 });
 
@@ -832,7 +876,7 @@ Tim Traka
   <div style="background:#f9f9f9;padding:30px;border-radius:8px;">
     <h2>Lupa kata sandi</h2>
     <p>Kode verifikasi Anda:</p>
-    <div style="background:#2563EB;color:white;font-size:32px;font-weight:bold;text-align:center;padding:20px;border-radius:8px;letter-spacing:5px;">${code}</div>
+    <div style="background:#D97706;color:white;font-size:32px;font-weight:bold;text-align:center;padding:20px;border-radius:8px;letter-spacing:5px;">${code}</div>
     <p>Berlaku 10 menit. Masukkan di aplikasi, lalu verifikasi wajah dan buat kata sandi baru.</p>
     <p style="color:#999;font-size:12px;">Jika Anda tidak meminta ini, abaikan email ini.</p>
     <p>Salam,<br>Tim Traka</p>
@@ -921,7 +965,7 @@ Tim Traka
   <div style="background:#f9f9f9;padding:30px;border-radius:8px;">
     <h2>Verifikasi login</h2>
     <p>Kode verifikasi Anda:</p>
-    <div style="background:#2563EB;color:white;font-size:32px;font-weight:bold;text-align:center;padding:20px;border-radius:8px;letter-spacing:5px;">${code}</div>
+    <div style="background:#D97706;color:white;font-size:32px;font-weight:bold;text-align:center;padding:20px;border-radius:8px;letter-spacing:5px;">${code}</div>
     <p>Berlaku 10 menit.</p>
     <p style="color:#999;font-size:12px;">Jika Anda tidak meminta ini, abaikan email ini.</p>
     <p>Salam,<br>Tim Traka</p>

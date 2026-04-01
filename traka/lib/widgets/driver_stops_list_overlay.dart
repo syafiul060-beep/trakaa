@@ -4,10 +4,12 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/order_model.dart';
+import '../theme/app_interaction_styles.dart';
+import '../theme/app_theme.dart';
 
 /// Warna untuk penjemputan dan pengantaran.
-const Color _penjemputanColor = Color(0xFF00B14F); // Grab green
-const Color _menujuTujuanColor = Color(0xFFE65100); // Orange 900
+const Color _penjemputanColor = AppTheme.mapPickupAccent;
+const Color _menujuTujuanColor = AppTheme.mapDropoffAccent;
 
 /// Panel list penumpang/barang di beranda driver (#6 + #7).
 /// Urutan: greedy optimal (#7) jika [optimizedStops] disediakan, else pickup→dropoff.
@@ -281,7 +283,11 @@ class DriverStopsListOverlay extends StatelessWidget {
               Navigator.of(ctx).pop();
               onSelectDropoff(order);
             },
-            style: FilledButton.styleFrom(backgroundColor: _menujuTujuanColor),
+            style: AppInteractionStyles.elevatedPrimary(
+              backgroundColor: _menujuTujuanColor,
+              foregroundColor: Colors.white,
+              shadowTint: _menujuTujuanColor,
+            ),
             child: const Text('Ya, arahkan ke tujuan'),
           ),
         ],

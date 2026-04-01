@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../services/directions_service.dart';
+import '../theme/app_theme.dart';
 
-/// Overlay arah belok HUD (arrow besar + jarak + nama jalan) di atas peta. Gaya Grab.
+/// Overlay arah belok HUD (arrow besar + jarak + nama jalan) di atas peta.
 class DriverTurnDirectionOverlay extends StatelessWidget {
   const DriverTurnDirectionOverlay({
     super.key,
@@ -56,7 +57,7 @@ class DriverTurnDirectionOverlay extends StatelessWidget {
         child: Material(
           elevation: 8,
           borderRadius: BorderRadius.circular(16),
-          color: const Color(0xFF00B14F).withValues(alpha: 0.95),
+          color: AppTheme.mapPickupAccent.withValues(alpha: 0.95),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             child: Column(

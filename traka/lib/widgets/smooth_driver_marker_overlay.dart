@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../theme/app_theme.dart';
+
 /// Overlay marker driver dengan animasi: morph dot→arrow, pulse idle.
 /// Pakai overlay Flutter (bukan Marker) agar bisa animasi halus.
 class DriverMarkerOverlay extends StatefulWidget {
@@ -143,7 +145,7 @@ class SmoothDriverMarker extends StatelessWidget {
   final String streetName;
   final AnimationController pulseController;
 
-  static const Color _movingColor = Color(0xFF2F80ED);
+  Color get _movingColor => AppTheme.primary;
   static const Color _idleColor = Color(0xFFEB5757);
 
   @override
@@ -161,10 +163,10 @@ class SmoothDriverMarker extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             streetName.length > 14 ? '${streetName.substring(0, 13)}…' : streetName,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF212121),
+              color: AppTheme.onSurface,
               shadows: [
                 Shadow(color: Colors.white, blurRadius: 2),
                 Shadow(color: Colors.white, blurRadius: 4),

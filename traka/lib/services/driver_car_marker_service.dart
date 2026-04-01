@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../config/marker_assets.dart';
+import '../theme/app_theme.dart';
 
 /// Marker lokasi driver: dot (diam) + cone (bergerak).
 /// Pakai MarkerAssets (central config) + kecepatan untuk dot vs cone.
@@ -13,7 +14,7 @@ class DriverCarMarkerService {
   DriverCarMarkerService._();
 
   /// Naikkan saat ubah ukuran layout agar cache marker di driver_screen tidak pakai bitmap lama.
-  static const int layoutVersion = 6;
+  static const int layoutVersion = 7;
 
   /// Ukuran icon dot/arrow di peta (travel jauh / zoom tinggi tetap terbaca).
   static const double _iconSize = 92.0;
@@ -169,7 +170,7 @@ class DriverCarMarkerService {
         text: TextSpan(
           text: displayName,
           style: const TextStyle(
-            color: Color(0xFF212121),
+            color: AppTheme.onSurface,
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -196,7 +197,8 @@ class DriverCarMarkerService {
   }
 
   static void _drawFallback(Canvas canvas, double cx, double cy, bool isMoving) {
-    final color = isMoving ? const Color(0xFF2F80ED) : const Color(0xFFEB5757);
+    final color =
+        isMoving ? AppTheme.primary : const Color(0xFFEB5757);
     if (isMoving) {
       final path = Path();
       final w = 41.0;

@@ -4,7 +4,9 @@ import 'package:share_plus/share_plus.dart';
 import '../services/driver_contribution_service.dart';
 import '../services/payment_history_service.dart';
 import '../widgets/contribution_tariff_dialog.dart';
+import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
+import '../widgets/traka_empty_state.dart';
 import 'contribution_driver_screen.dart';
 import 'driver_earnings_screen.dart';
 
@@ -115,7 +117,7 @@ $detailSection${record.orderNumber != null ? 'No. Pesanan: ${record.orderNumber}
 
 Pembayaran via Google Play
 ''';
-    showModalBottomSheet(
+    showTrakaModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
         child: Padding(
@@ -246,70 +248,51 @@ Pembayaran via Google Play
                 )
               : _records.isEmpty
                   ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.receipt_long,
-                              size: 64,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Belum ada riwayat pembayaran',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              widget.isDriver
-                                  ? TrakaL10n.of(context).paymentHistoryEmptyDriver
-                                  : TrakaL10n.of(context).paymentHistoryEmptyPassenger,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            if (widget.isDriver) ...[
-                              const SizedBox(height: 12),
-                              InkWell(
-                                onTap: () => showContributionTariffDialog(context),
+                      child: TrakaEmptyState(
+                        icon: Icons.receipt_long,
+                        title: 'Belum ada riwayat pembayaran',
+                        subtitle: widget.isDriver
+                            ? TrakaL10n.of(context).paymentHistoryEmptyDriver
+                            : TrakaL10n.of(context).paymentHistoryEmptyPassenger,
+                        action: widget.isDriver
+                            ? InkWell(
+                                onTap: () =>
+                                    showContributionTariffDialog(context),
                                 borderRadius: BorderRadius.circular(8),
                                 child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                    horizontal: 16,
+                                  ),
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
-                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.center,
                                     children: [
-                                      Icon(Icons.info_outline, size: 20, color: Theme.of(context).colorScheme.primary),
+                                      Icon(
+                                        Icons.info_outline,
+                                        size: 20,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                      ),
                                       const SizedBox(width: 8),
                                       Text(
-                                        TrakaL10n.of(context).contributionTariffButtonLabel,
+                                        TrakaL10n.of(context)
+                                            .contributionTariffButtonLabel,
                                         style: TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w600,
-                                          color: Theme.of(context).colorScheme.primary,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
-                              ),
-                            ],
-                          ],
-                        ),
+                              )
+                            : null,
                       ),
                     )
                   : Column(

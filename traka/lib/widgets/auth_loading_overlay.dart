@@ -1,56 +1,82 @@
 import 'package:flutter/material.dart';
 
-/// Overlay semi-transparan + indikator saat login/daftar memproses (umpan balik jelas, anti tap ganda).
+import '../config/traka_lottie_assets.dart';
+import 'traka_loading_indicator.dart';
+
+/// Overlay semi-transparan + indikator bermerek saat login/daftar memproses.
+/// Tanpa kartu putih di tengah — hanya spinner di atas scrim.
 class AuthLoadingOverlay extends StatelessWidget {
   const AuthLoadingOverlay({
     super.key,
     required this.visible,
     this.message,
+    this.useLottieCenter = false,
+    this.lottieAssetPath,
   });
 
   final bool visible;
   final String? message;
 
+  /// `true` → pusat loader memakai [TrakaLoadingIndicator.lottie] (file [lottieAssetPath] atau default).
+  final bool useLottieCenter;
+
+  /// Opsional; jika null dan [useLottieCenter], dipakai [TrakaLottieAssets.rangkongLoader].
+  final String? lottieAssetPath;
+
   @override
   Widget build(BuildContext context) {
     if (!visible) return const SizedBox.shrink();
     final cs = Theme.of(context).colorScheme;
+    final msgStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: Colors.white.withValues(alpha: 0.92),
+          height: 1.35,
+          shadows: [
+            Shadow(
+              color: cs.scrim.withValues(alpha: 0.85),
+              blurRadius: 8,
+            ),
+          ],
+        );
     return Positioned.fill(
       child: AbsorbPointer(
-        child: Material(
-          color: cs.scrim.withValues(alpha: 0.38),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                cs.scrim.withValues(alpha: 0.42),
+                cs.scrim.withValues(alpha: 0.52),
+              ],
+            ),
+          ),
           child: Center(
-            child: Card(
-              elevation: 8,
-              shadowColor: Colors.black26,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 3,
-                        color: cs.primary,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                useLottieCenter
+                    ? TrakaLoadingIndicator.lottie(
+                        size: 58,
+                        variant: TrakaLoadingVariant.onDimmedBackdrop,
+                        assetPath:
+                            lottieAssetPath ?? TrakaLottieAssets.rangkongLoader,
+                      )
+                    : const TrakaLoadingIndicator(
+                        size: 58,
+                        variant: TrakaLoadingVariant.onDimmedBackdrop,
                       ),
+                if (message != null && message!.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(
+                      message!,
+                      textAlign: TextAlign.center,
+                      style: msgStyle,
                     ),
-                    if (message != null && message!.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      Text(
-                        message!,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 14,
-                          height: 1.35,
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+                  ),
+                ],
+              ],
             ),
           ),
         ),

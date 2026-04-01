@@ -14,6 +14,7 @@ import '../widgets/traka_l10n_scope.dart';
 import '../services/permission_service.dart';
 import '../services/verification_service.dart';
 import 'active_liveness_screen.dart';
+import '../theme/app_interaction_styles.dart';
 import '../services/performance_trace_service.dart';
 
 /// Layar verifikasi wajah ulang: pengguna lama wajib verifikasi setiap 6 bulan.
@@ -308,8 +309,12 @@ class _ReverifyFaceScreenState extends State<ReverifyFaceScreen> {
                   onPressed: _startVerification,
                   icon: const Icon(Icons.camera_alt),
                   label: const Text('Verifikasi Sekarang'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  style: AppInteractionStyles.filledFromTheme(
+                    context,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 16,
+                    ),
                   ),
                 ),
             ],

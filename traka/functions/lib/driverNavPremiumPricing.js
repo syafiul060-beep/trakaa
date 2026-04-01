@@ -159,8 +159,8 @@ function snapToNearest(raw, allowed) {
  */
 function computeNavPremiumRupiah({ scope, distanceMeters, settings }) {
   const d = settings || {};
-  const enabled = d.driverNavPremiumDistancePricingEnabled;
-  const useDist = enabled !== false &&
+  const enabled = d.driverNavPremiumDistancePricingEnabled === true;
+  const useDist = enabled &&
     distanceMeters != null &&
     !isNaN(distanceMeters) &&
     distanceMeters > 0 &&

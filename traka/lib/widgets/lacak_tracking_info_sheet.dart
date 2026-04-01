@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/app_analytics_service.dart';
+import 'traka_bottom_sheet.dart';
 
 /// Konteks penjelasan lokasi & lacak (dipakai analytics + teks).
 enum LacakTrackingAudience {
@@ -15,7 +16,7 @@ Future<void> showLacakTrackingInfoSheet(
   required LacakTrackingAudience audience,
 }) async {
   AppAnalyticsService.logLacakHelpOpen(audience: audience.name);
-  await showModalBottomSheet<void>(
+  await showTrakaModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,

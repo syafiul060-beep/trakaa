@@ -8,6 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/geocoding_service.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/app_interaction_styles.dart';
 import '../widgets/receiver_contact_picker.dart';
 import '../widgets/kirim_barang_pilih_jenis_sheet.dart';
 import '../utils/placemark_formatter.dart';
@@ -21,6 +22,8 @@ import '../services/recent_destination_service.dart';
 import '../services/location_service.dart';
 import '../l10n/app_localizations.dart';
 import '../services/locale_service.dart';
+import '../widgets/traka_empty_state.dart';
+import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../services/app_config_service.dart';
 import '../services/jarak_kontribusi_schedule_estimate.dart';
@@ -37,7 +40,7 @@ import '../widgets/passenger_duplicate_pending_order_dialog.dart'
         passengerDuplicatePendingChoiceAnalyticsValue,
         showPassengerDuplicatePendingOrderDialog;
 import '../widgets/shimmer_loading.dart';
-import '../widgets/lollipop_pin_widgets.dart';
+import '../widgets/traka_pin_widgets.dart';
 import '../widgets/map_destination_picker_screen.dart';
 import 'chat_room_penumpang_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -476,7 +479,7 @@ class _PesanScreenState extends State<PesanScreen> {
   }
 
   void _openCariRuteForm({required DateTime initialDate}) {
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (ctx) {
@@ -538,7 +541,7 @@ class _PesanScreenState extends State<PesanScreen> {
     if (!mounted) return;
     if (!context.mounted) return;
 
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (ctx) => _PesanJadwalSheet(
@@ -808,35 +811,12 @@ class _PesanScreenState extends State<PesanScreen> {
                   child: Center(child: ShimmerLoading()),
                 )
               else if (_recommendationList == null || _recommendationList!.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.event_available_outlined,
-                        size: 48,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Tidak ada jadwal rekomendasi di dekat Anda',
-                        style: TextStyle(
-                          fontSize: context.responsive.fontSize(15),
-                          fontWeight: FontWeight.w500,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Cari jadwal di rute atau tanggal lain.',
-                        style: TextStyle(
-                          fontSize: context.responsive.fontSize(13),
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: TrakaEmptyState(
+                    icon: Icons.event_available_outlined,
+                    title: 'Tidak ada jadwal rekomendasi di dekat Anda',
+                    subtitle: 'Cari jadwal di rute atau tanggal lain.',
                   ),
                 )
               else
@@ -883,8 +863,10 @@ class _PesanScreenState extends State<PesanScreen> {
                 onPressed: _showCariRuteLain,
                 icon: const Icon(Icons.search, size: 20),
                 label: const Text('Cari rute lain'),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                style: AppInteractionStyles.filledFromTheme(
+                  context,
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
               const SizedBox(height: 24),
@@ -1243,18 +1225,6 @@ class _FormCariTravelState extends State<_FormCariTravel> {
 
   Future<void> _pickTujuanAwalOnMap() async {
     final t = _originController.text.trim();
-    var initial = const LatLng(-6.2088, 106.8456);
-    if (t.length >= 3) {
-      try {
-        final locs = await GeocodingService.locationFromAddress(
-          '$t, Indonesia',
-          appendIndonesia: false,
-        );
-        if (locs.isNotEmpty) {
-          initial = LatLng(locs.first.latitude, locs.first.longitude);
-        }
-      } catch (_) {}
-    }
     LatLng? device;
     try {
       final hasPermission = await LocationService.requestPermission();
@@ -1269,6 +1239,12 @@ class _FormCariTravelState extends State<_FormCariTravel> {
       }
     } catch (_) {}
     if (!mounted) return;
+    final initial = await initialTargetForDestinationMapPickerWithLoading(
+      context: context,
+      destText: t,
+      userLocation: device,
+    );
+    if (!mounted) return;
     final r = await Navigator.of(context).push<MapPickerResult>(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -1276,7 +1252,7 @@ class _FormCariTravelState extends State<_FormCariTravel> {
           initialCameraTarget: initial,
           deviceLocation: device,
           title: TrakaL10n.of(context).pickOriginOnMapActionLabel,
-          pinVariant: LollipopPinVariant.origin,
+          pinVariant: TrakaRoutePinVariant.origin,
         ),
       ),
     );
@@ -1291,18 +1267,6 @@ class _FormCariTravelState extends State<_FormCariTravel> {
 
   Future<void> _pickTujuanAkhirOnMap() async {
     final t = _destController.text.trim();
-    var initial = const LatLng(-6.2088, 106.8456);
-    if (t.length >= 3) {
-      try {
-        final locs = await GeocodingService.locationFromAddress(
-          '$t, Indonesia',
-          appendIndonesia: false,
-        );
-        if (locs.isNotEmpty) {
-          initial = LatLng(locs.first.latitude, locs.first.longitude);
-        }
-      } catch (_) {}
-    }
     LatLng? device;
     try {
       final hasPermission = await LocationService.requestPermission();
@@ -1317,6 +1281,12 @@ class _FormCariTravelState extends State<_FormCariTravel> {
       }
     } catch (_) {}
     if (!mounted) return;
+    final initial = await initialTargetForDestinationMapPickerWithLoading(
+      context: context,
+      destText: t,
+      userLocation: device,
+    );
+    if (!mounted) return;
     final r = await Navigator.of(context).push<MapPickerResult>(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -1324,7 +1294,7 @@ class _FormCariTravelState extends State<_FormCariTravel> {
           initialCameraTarget: initial,
           deviceLocation: device,
           title: TrakaL10n.of(context).pickOnMapActionLabel,
-          pinVariant: LollipopPinVariant.destination,
+          pinVariant: TrakaRoutePinVariant.destination,
         ),
       ),
     );
@@ -1503,8 +1473,8 @@ class _FormCariTravelState extends State<_FormCariTravel> {
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
                   prefixIcon: const Padding(
                     padding: EdgeInsets.only(left: 8, right: 4),
-                    child: LollipopPinFormIcon(
-                      variant: LollipopPinVariant.origin,
+                    child: TrakaPinFormIcon(
+                      variant: TrakaRoutePinVariant.origin,
                     ),
                   ),
                   prefixIconConstraints: const BoxConstraints(
@@ -1603,8 +1573,8 @@ class _FormCariTravelState extends State<_FormCariTravel> {
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusSm)),
                   prefixIcon: const Padding(
                     padding: EdgeInsets.only(left: 8, right: 4),
-                    child: LollipopPinFormIcon(
-                      variant: LollipopPinVariant.destination,
+                    child: TrakaPinFormIcon(
+                      variant: TrakaRoutePinVariant.destination,
                     ),
                   ),
                   prefixIconConstraints: const BoxConstraints(
@@ -1630,10 +1600,6 @@ class _FormCariTravelState extends State<_FormCariTravel> {
                 height: 48,
                 child: ElevatedButton(
                   onPressed: _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.white,
-                  ),
                   child: const Text('Cari Jadwal'),
                 ),
               ),
@@ -1955,7 +1921,7 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
     }
 
     // Step 1: Pilih jenis barang (Dokumen / Kargo)
-    final barangData = await showModalBottomSheet<Map<String, dynamic>>(
+    final barangData = await showTrakaModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -1967,7 +1933,7 @@ class _PesanJadwalSheetState extends State<_PesanJadwalSheet> {
     if (!mounted || barangData == null) return;
 
     // Step 2: Tautkan penerima
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -2743,32 +2709,14 @@ class _BuildJadwalListPage extends StatelessWidget {
     }
     if (list.isEmpty) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+        child: TrakaEmptyState(
+          icon: Icons.event_busy,
+          title: 'Tidak ada driver untuk tanggal ini',
+          subtitle:
+              'Coba ubah tanggal atau asal/tujuan untuk mencari driver lain.',
+          action: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.event_busy, size: 48, color: Theme.of(context).colorScheme.onSurfaceVariant),
-              const SizedBox(height: 16),
-              Text(
-                'Tidak ada driver untuk tanggal ini',
-                style: TextStyle(
-                  fontSize: context.responsive.fontSize(16),
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Coba ubah tanggal atau asal/tujuan untuk mencari driver lain.',
-                style: TextStyle(
-                  fontSize: context.responsive.fontSize(13),
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
               if (onCariTanggalLain != null)
                 FilledButton.icon(
                   onPressed: onCariTanggalLain,
@@ -2954,10 +2902,6 @@ class _BuildJadwalListPage extends StatelessWidget {
                           ),
                           icon: const Icon(Icons.chat_bubble_outline, size: 18),
                           label: const Text('Pesan'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppTheme.primary,
-                            foregroundColor: Colors.white,
-                          ),
                         ),
                       ),
                     ),

@@ -324,17 +324,26 @@ class ChatService {
 
   /// Stream pesan untuk satu order (untuk tampilan chat room).
   /// Dibatasi 100 pesan terakhir. Pesan terbaru di bawah seperti WhatsApp standar.
+  ///
+  /// Urutkan menurut [FieldPath.documentId] (bukan `createdAt`): di Firestore,
+  /// `orderBy('createdAt')` **mengecualikan** dokumen tanpa field/timestamp itu —
+  /// riwayat chat bisa tiba-tiba kosong padahal pesan ada (mis. legacy atau
+  /// `serverTimestamp` belum ter-resolve di klien).
   static Stream<List<ChatMessageModel>> streamMessages(String orderId) {
     return FirebaseFirestore.instance
         .collection(_collectionOrders)
         .doc(orderId)
         .collection(_subcollectionMessages)
-        .orderBy('createdAt', descending: true)
+        .orderBy(FieldPath.documentId, descending: true)
         .limit(streamMessagesLimit)
         .snapshots()
         .map((snap) {
           final list = snap.docs.map((d) => ChatMessageModel.fromFirestore(d)).toList();
-          list.sort((a, b) => (a.createdAt ?? DateTime(0)).compareTo(b.createdAt ?? DateTime(0)));
+          list.sort((a, b) {
+            final c = (a.createdAt ?? DateTime(0)).compareTo(b.createdAt ?? DateTime(0));
+            if (c != 0) return c;
+            return a.id.compareTo(b.id);
+          });
           return list;
         });
   }

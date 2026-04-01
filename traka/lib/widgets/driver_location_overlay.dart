@@ -2,7 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-/// Overlay lokasi driver: titik biru (diam) atau segitiga biru dalam oval putih (bergerak).
+import '../theme/app_theme.dart';
+
+/// Overlay lokasi driver: titik merek (diam) atau segitiga dalam oval putih (bergerak).
 /// Icon tetap di bawah tengah; peta bergerak menurun (jalan lurus) atau berputar (belok).
 class DriverLocationOverlayWidget extends StatelessWidget {
   const DriverLocationOverlayWidget({
@@ -22,8 +24,6 @@ class DriverLocationOverlayWidget extends StatelessWidget {
   /// Ukuran oval + segitiga (bergerak).
   final double triangleSize;
 
-  static const Color _blue = Color(0xFF4285F4);
-
   @override
   Widget build(BuildContext context) {
     if (isMoving) {
@@ -38,7 +38,7 @@ class DriverLocationOverlayWidget extends StatelessWidget {
       width: dotSize,
       height: dotSize,
       decoration: BoxDecoration(
-        color: _blue,
+        color: AppTheme.primary,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
@@ -71,7 +71,7 @@ class DriverLocationOverlayWidget extends StatelessWidget {
         child: Center(
           child: CustomPaint(
             size: Size(triangleSize * 0.5, triangleSize * 0.4),
-            painter: _TrianglePainter(color: _blue),
+            painter: _TrianglePainter(color: AppTheme.primary),
           ),
         ),
       ),

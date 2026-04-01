@@ -3,17 +3,19 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-/// Service untuk icon lokasi: titik biru gaya Google Maps (halus, bukan raster [image] bergerigi).
+import '../theme/app_theme.dart';
+
+/// Service untuk icon lokasi: titik biru merek (halus, bukan raster [image] bergerigi).
 class DriverLocationIconService {
   DriverLocationIconService._();
 
   static BitmapDescriptor? _cachedBlueDot;
   static int? _cachedSize;
   /// Naikkan jika format berubah (bust cache).
-  static const int _bitmapVersion = 4;
+  static const int _bitmapVersion = 5;
   static int? _cachedBitmapVersion;
 
-  /// Titik biru untuk posisi di peta: cincin putih + isi #4285F4, tepi anti-alias.
+  /// Titik untuk posisi di peta: cincin putih + isi [AppTheme.primary], tepi anti-alias.
   /// [sizePx] lebar/tinggi bitmap output (device px); lebih kecil = marker lebih kecil di peta.
   static Future<BitmapDescriptor> loadBlueDotDescriptor({
     int sizePx = 36,
@@ -42,7 +44,7 @@ class DriverLocationIconService {
       final bluePaint = Paint()
         ..isAntiAlias = true
         ..filterQuality = FilterQuality.high
-        ..color = const Color(0xFF4285F4)
+        ..color = AppTheme.primary
         ..style = PaintingStyle.fill;
 
       canvas.drawCircle(Offset(c, c), outerR, whitePaint);

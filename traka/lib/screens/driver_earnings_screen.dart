@@ -7,6 +7,8 @@ import '../services/driver_earnings_pdf_service.dart';
 import '../theme/app_theme.dart';
 import '../services/driver_earnings_service.dart';
 import '../widgets/contribution_tariff_dialog.dart';
+import '../widgets/traka_empty_state.dart';
+import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import 'payment_history_screen.dart';
 
@@ -149,7 +151,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
       final file = await DriverEarningsPdfService.savePdfToFile(doc, name: filename);
       if (!mounted) return;
       final l10n = TrakaL10n.of(context);
-      await showModalBottomSheet<void>(
+      await showTrakaModalBottomSheet<void>(
         context: context,
         showDragHandle: true,
         builder: (ctx) => SafeArea(
@@ -287,50 +289,35 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
 
     if (!hasActivity) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 48),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.account_balance_wallet_outlined,
-                size: 64,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                TrakaL10n.of(context).driverEarningsEmpty,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              InkWell(
-                onTap: () => showContributionTariffDialog(context),
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.info_outline, size: 20, color: Theme.of(context).colorScheme.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Jenis harga kontribusi',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                    ],
+        child: TrakaEmptyState(
+          icon: Icons.account_balance_wallet_outlined,
+          title: TrakaL10n.of(context).driverEarningsEmpty,
+          action: InkWell(
+            onTap: () => showContributionTariffDialog(context),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Jenis harga kontribusi',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       );
@@ -618,14 +605,14 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen> {
           const SizedBox(height: 16),
         ],
 
-        if (_monthlyEarnings.isEmpty && _monthlyContributions.isEmpty && _monthlyViolations.isEmpty)
+        if (_monthlyEarnings.isEmpty &&
+            _monthlyContributions.isEmpty &&
+            _monthlyViolations.isEmpty)
           Card(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                'Tidak ada data untuk ${_monthNames[_selectedMonth - 1]} $_selectedYear.',
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-              ),
+            child: TrakaEmptyState(
+              icon: Icons.event_note_outlined,
+              title:
+                  'Tidak ada data untuk ${_monthNames[_selectedMonth - 1]} $_selectedYear.',
             ),
           ),
         ],

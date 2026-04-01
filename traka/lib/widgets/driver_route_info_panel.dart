@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../l10n/app_localizations.dart';
+import '../theme/app_interaction_styles.dart';
+import '../theme/app_theme.dart';
 import 'traka_l10n_scope.dart';
 
 /// Panel informasi rute driver: collapsible, atau tampilan "Menuju penumpang".
@@ -121,13 +123,53 @@ class DriverRouteInfoPanel extends StatelessWidget {
                     ],
                   ),
                   label: Text(TrakaL10n.of(context).operDriver),
-                  style: ElevatedButton.styleFrom(
+                  style: AppInteractionStyles.elevatedPrimary(
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    disabledForegroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shadowTint: Theme.of(context).colorScheme.primary,
+                  ).copyWith(
+                    padding: WidgetStateProperty.all(
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    backgroundColor:
+                        WidgetStateProperty.resolveWith((states) {
+                      final cs = Theme.of(context).colorScheme;
+                      if (states.contains(WidgetState.disabled)) {
+                        return cs.surfaceContainerHighest;
+                      }
+                      return cs.primary;
+                    }),
+                    foregroundColor:
+                        WidgetStateProperty.resolveWith((states) {
+                      final cs = Theme.of(context).colorScheme;
+                      if (states.contains(WidgetState.disabled)) {
+                        return cs.onSurfaceVariant;
+                      }
+                      return Colors.white;
+                    }),
+                    shadowColor:
+                        WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.disabled)) {
+                        return Colors.transparent;
+                      }
+                      return Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.42);
+                    }),
+                    elevation:
+                        WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.disabled)) {
+                        return 0.0;
+                      }
+                      if (states.contains(WidgetState.pressed)) {
+                        return 1.0;
+                      }
+                      if (states.contains(WidgetState.hovered)) {
+                        return 5.0;
+                      }
+                      return 3.5;
+                    }),
                   ),
                 ),
               ),
@@ -203,12 +245,12 @@ class DriverRouteInfoPanel extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(Icons.person_pin_circle, size: 20, color: const Color(0xFF00B14F)),
+            Icon(Icons.person_pin_circle, size: 20, color: AppTheme.mapPickupAccent),
             const SizedBox(width: 8),
             Text(
               TrakaL10n.of(context).headingToPassenger,
-              style: const TextStyle(
-                color: Color(0xFF00B14F),
+              style: TextStyle(
+                color: AppTheme.mapPickupAccent,
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),

@@ -2,22 +2,31 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:traka/services/driver_nav_premium_pricing.dart';
 
 void main() {
-  test('distance tier + nasional multiplier snaps to allowed SKU', () {
+  test('distance tier + nasional multiplier snaps to allowed SKU when enabled', () {
+    final fee = DriverNavPremiumPricing.computeRupiah(
+      scope: 'dalamNegara',
+      distanceMeters: 600 * 1000,
+      settings: const {'driverNavPremiumDistancePricingEnabled': true},
+    );
+    expect(fee, 50000);
+  });
+
+  test('short dalam provinsi uses lower band when distance pricing enabled', () {
+    final fee = DriverNavPremiumPricing.computeRupiah(
+      scope: 'dalamProvinsi',
+      distanceMeters: 50 * 1000,
+      settings: const {'driverNavPremiumDistancePricingEnabled': true},
+    );
+    expect(fee, 10000);
+  });
+
+  test('missing distance flag uses legacy even with distance (nasional default)', () {
     final fee = DriverNavPremiumPricing.computeRupiah(
       scope: 'dalamNegara',
       distanceMeters: 600 * 1000,
       settings: null,
     );
-    expect(fee, 50000);
-  });
-
-  test('short dalam provinsi uses lower band', () {
-    final fee = DriverNavPremiumPricing.computeRupiah(
-      scope: 'dalamProvinsi',
-      distanceMeters: 50 * 1000,
-      settings: null,
-    );
-    expect(fee, 10000);
+    expect(fee, 100000);
   });
 
   test('driverNavPremiumDistancePricingEnabled false uses legacy scope fee', () {

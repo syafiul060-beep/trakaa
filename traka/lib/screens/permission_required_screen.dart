@@ -127,27 +127,33 @@ class _PermissionRequiredScreenState extends State<PermissionRequiredScreen>
                   onPressed: _retryPermissionCheck,
                   icon: const Icon(Icons.refresh, size: 20),
                   label: const Text('Coba Lagi'),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                  ),
+                  style: Theme.of(context).filledButtonTheme.style?.copyWith(
+                        minimumSize: WidgetStateProperty.all(
+                          const Size.fromHeight(48),
+                        ),
+                      ),
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
                   onPressed: _openSettings,
                   icon: const Icon(Icons.settings, size: 20),
                   label: const Text('Buka Pengaturan'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                  ),
+                  style: Theme.of(context).outlinedButtonTheme.style?.copyWith(
+                        minimumSize: WidgetStateProperty.all(
+                          const Size.fromHeight(48),
+                        ),
+                      ),
                 ),
                 const SizedBox(height: 12),
                 TextButton.icon(
                   onPressed: _logoutAndGoToLogin,
                   icon: const Icon(Icons.logout, size: 20),
                   label: const Text('Keluar'),
-                  style: TextButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                  ),
+                  style: Theme.of(context).textButtonTheme.style?.copyWith(
+                        minimumSize: WidgetStateProperty.all(
+                          const Size.fromHeight(48),
+                        ),
+                      ),
                 ),
               ],
             ],

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_interaction_styles.dart';
 import '../services/app_analytics_service.dart';
 import '../services/directions_service.dart';
 import 'traka_l10n_scope.dart';
@@ -200,9 +201,11 @@ class _DriverEtaRowState extends State<DriverEtaRow> {
                   padding: const EdgeInsets.only(left: 24, top: 4),
                   child: TextButton(
                     onPressed: _retry,
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
+                    style: AppInteractionStyles.textFromTheme(
+                      context,
+                    ).copyWith(
+                      padding: WidgetStateProperty.all(EdgeInsets.zero),
+                      minimumSize: WidgetStateProperty.all(Size.zero),
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     child: Text(l.retry),

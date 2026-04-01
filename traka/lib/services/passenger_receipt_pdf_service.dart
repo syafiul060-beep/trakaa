@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -72,9 +73,9 @@ class PassengerReceiptPdfService {
     const margin = 28.0;
     double y = margin;
 
-    final brandBlue = PdfColor(37, 99, 235);
+    final brandAccent = PdfColor(217, 119, 6);
     g.drawRectangle(
-      brush: PdfSolidBrush(brandBlue),
+      brush: PdfSolidBrush(brandAccent),
       bounds: Rect.fromLTWH(0, 0, pageW, 3),
     );
 
@@ -86,15 +87,28 @@ class PassengerReceiptPdfService {
     final grey = PdfSolidBrush(PdfColor(90, 90, 90));
 
     y = margin + 8;
+    const logoSize = 52.0;
+    var titleLeft = margin;
+    try {
+      final logoBytes =
+          (await rootBundle.load('assets/images/traka_brand_logo.png')).buffer.asUint8List();
+      final logoBmp = PdfBitmap(logoBytes);
+      g.drawImage(
+        logoBmp,
+        Rect.fromLTWH(margin, y - 2, logoSize, logoSize),
+      );
+      titleLeft = margin + logoSize + 10;
+    } catch (_) {}
+
     g.drawString(
       issuerIsDriver
           ? 'BUKTI PERJALANAN / KIRIM BARANG — TRAKA (DRIVER)'
           : 'BUKTI PERJALANAN / KIRIM BARANG — TRAKA',
       fontTitle,
       brush: black,
-      bounds: Rect.fromLTWH(margin, y, pageW - 2 * margin, 22),
+      bounds: Rect.fromLTWH(titleLeft, y, pageW - margin - titleLeft, 44),
     );
-    y += 26;
+    y = titleLeft > margin ? margin + logoSize + 14 : margin + 42;
 
     if (issuerIsDriver) {
       g.drawString(

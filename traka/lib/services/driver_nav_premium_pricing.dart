@@ -3,7 +3,8 @@ import '../config/driver_iap_catalog.dart';
 /// Tarif navigasi premium: tier jarak (travel jauh) × pengali jenis rute, lalu snap ke SKU Play.
 ///
 /// Firestore `app_config/settings` (opsional):
-/// - [driverNavPremiumDistancePricingEnabled]: `false` = hanya tarif per-scope lama.
+/// - [driverNavPremiumDistancePricingEnabled]: **hanya jika `true`** — tier jarak + snap ke SKU;
+///   jika tidak ada field atau `false`, pakai tarif per-scope lama (sesuai field fee / default).
 /// - [driverNavPremiumTierMaxKm]: daftar batas atas km per pita (naik), mis. [75,200,450,900,1500,1e9].
 /// - [driverNavPremiumTierBaseFeesRupiah]: biaya dasar per pita (sama panjang dengan tier max km).
 /// - [driverNavPremiumScopeMultBpsDalam] / …Antar / …Nasional: basis poin (100 = 1.00).
@@ -95,8 +96,8 @@ class DriverNavPremiumPricing {
     required double? distanceMeters,
     required Map<String, dynamic>? settings,
   }) {
-    final enabled = settings?['driverNavPremiumDistancePricingEnabled'];
-    final useDist = enabled != false &&
+    final enabled = settings?['driverNavPremiumDistancePricingEnabled'] == true;
+    final useDist = enabled &&
         distanceMeters != null &&
         distanceMeters > 0 &&
         distanceMeters <= maxTrustedDistanceMeters;

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,6 +11,37 @@ String driverNavPremiumProductId(int amountRupiah) =>
 /// Hutang tercermin di `users` (untuk gabung verifikasi kontribusi) + prefs (offline UI).
 class DriverNavPremiumService {
   DriverNavPremiumService._();
+
+  static bool? _phoneExemptCached;
+  static DateTime? _phoneExemptCachedAt;
+
+  /// Apakah nomor HP profil user ada di [driverNavPremiumExemptPhones] (app_config/settings).
+  /// Hasil di-cache singkat untuk mengurangi panggilan Cloud Function.
+  static Future<bool> fetchPhoneExempt({bool forceRefresh = false}) async {
+    if (!forceRefresh &&
+        _phoneExemptCached != null &&
+        _phoneExemptCachedAt != null &&
+        DateTime.now().difference(_phoneExemptCachedAt!) <
+            const Duration(minutes: 5)) {
+      return _phoneExemptCached!;
+    }
+    try {
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('checkDriverNavPremiumPhoneExempt');
+      final res = await callable.call<Map<String, dynamic>>({});
+      final exempt = res.data['exempt'] == true;
+      _phoneExemptCached = exempt;
+      _phoneExemptCachedAt = DateTime.now();
+      return exempt;
+    } catch (_) {
+      return _phoneExemptCached ?? false;
+    }
+  }
+
+  static void clearPhoneExemptCache() {
+    _phoneExemptCached = null;
+    _phoneExemptCachedAt = null;
+  }
 
   static const _kOwed = 'driver_nav_premium_owed';
   static const _kOwedJourney = 'driver_nav_premium_owed_journey';

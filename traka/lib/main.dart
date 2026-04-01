@@ -29,6 +29,7 @@ import 'services/theme_service.dart';
 import 'l10n/app_localizations.dart';
 import 'services/locale_service.dart';
 import 'theme/app_theme.dart';
+import 'theme/traka_layout.dart';
 import 'widgets/app_update_wrapper.dart';
 import 'widgets/fake_gps_overlay.dart';
 import 'widgets/traka_l10n_scope.dart';
@@ -285,6 +286,8 @@ class TrakaApp extends StatelessWidget {
           navigatorKey: appNavigatorKey,
           title: 'Traka Travel Kalimantan',
           debugShowCheckedModeBanner: false,
+          themeAnimationDuration: TrakaLayout.themeSwitchDuration,
+          themeAnimationCurve: TrakaLayout.themeSwitchCurve,
           supportedLocales: const [Locale('id', 'ID'), Locale('en')],
           locale: LocaleService.materialLocale,
           localizationsDelegates: const [

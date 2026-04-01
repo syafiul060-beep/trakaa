@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../theme/app_theme.dart';
+
 /// Gambar icon mobil 3D secara programatik untuk marker peta.
 /// Gaya referensi: glossy, pseudo-3D dengan highlight, headlight, roof rails.
 ///
@@ -11,10 +13,10 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 class CarIcon3dPainter {
   CarIcon3dPainter._();
 
-  /// Warna untuk set premium penumpang (sinkron semantik hijau/merah/biru).
-  static const Color passengerCarAvailableGreen = Color(0xFF43A047);
-  static const Color passengerCarFullRed = Color(0xFFE53935);
-  static const Color passengerCarRecommendedBlue = Color(0xFF1E88E5);
+  /// Warna untuk set premium penumpang (sinkron token peta / merek).
+  static const Color passengerCarAvailableGreen = AppTheme.mapDeliveryAccent;
+  static const Color passengerCarFullRed = AppTheme.mapStopRed;
+  static const Color passengerCarRecommendedBlue = AppTheme.primary;
 
   /// Gambar mobil 3D dan return BitmapDescriptor.
   /// Orientasi: depan mobil = bawah (selatan), untuk rotasi bearing (+180 vs PNG premium).

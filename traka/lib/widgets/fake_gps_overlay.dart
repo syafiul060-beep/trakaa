@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/fake_gps_overlay_service.dart';
+import '../theme/app_interaction_styles.dart';
 import '../services/location_service.dart';
 
 /// Overlay full-screen merah saat Fake GPS terdeteksi.
@@ -56,10 +57,17 @@ class FakeGpsOverlay extends StatelessWidget {
                 },
                 icon: const Icon(Icons.refresh),
                 label: const Text('Coba lagi (setelah nonaktifkan lokasi palsu)'),
-                style: FilledButton.styleFrom(
+                style: AppInteractionStyles.elevatedPrimary(
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.red.shade900,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  shadowTint: Colors.red.shade900,
+                ).copyWith(
+                  padding: WidgetStateProperty.all(
+                    const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
+                  ),
                 ),
               ),
             ],

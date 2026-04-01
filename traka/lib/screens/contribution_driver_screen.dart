@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 import '../services/app_config_service.dart';
+import '../theme/app_interaction_styles.dart';
 import '../services/payment_context_service.dart';
 import '../widgets/contribution_tariff_dialog.dart';
 import '../widgets/traka_l10n_scope.dart';
@@ -740,8 +741,10 @@ class _ContributionDriverScreenState extends State<ContributionDriverScreen> {
                               ? l10n.contributionPayWithPrice(_products.first.price)
                               : l10n.contributionPayGeneric,
                     ),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    style: AppInteractionStyles.filledFromTheme(
+                      context,
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 16),
                     ),
                   ),
                 ],

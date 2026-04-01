@@ -66,6 +66,12 @@ export default function Settings() {
   const [newLacakExemptInput, setNewLacakExemptInput] = useState('')
   const [fakeGpsAllowedUserUids, setFakeGpsAllowedUserUids] = useState([])
   const [newFakeGpsInput, setNewFakeGpsInput] = useState('')
+  const [navPremiumDistEnabled, setNavPremiumDistEnabled] = useState(false)
+  const [navPremiumFeeDalam, setNavPremiumFeeDalam] = useState(50000)
+  const [navPremiumFeeAntar, setNavPremiumFeeAntar] = useState(75000)
+  const [navPremiumFeeNasional, setNavPremiumFeeNasional] = useState(100000)
+  const [navPremiumExemptPhones, setNavPremiumExemptPhones] = useState([])
+  const [newNavPremiumExemptPhone, setNewNavPremiumExemptPhone] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -106,6 +112,12 @@ export default function Settings() {
         if (d.tarifBarangDokumenDalamProvinsiPerKm != null) setTarifBarangDokumenDalamProvinsiPerKm(d.tarifBarangDokumenDalamProvinsiPerKm)
         if (d.tarifBarangDokumenBedaProvinsiPerKm != null) setTarifBarangDokumenBedaProvinsiPerKm(d.tarifBarangDokumenBedaProvinsiPerKm)
         if (d.tarifBarangDokumenLebihDari1ProvinsiPerKm != null) setTarifBarangDokumenLebihDari1ProvinsiPerKm(d.tarifBarangDokumenLebihDari1ProvinsiPerKm)
+        setNavPremiumDistEnabled(d.driverNavPremiumDistancePricingEnabled === true)
+        if (d.driverNavPremiumFeeDalamProvinsiRupiah != null) setNavPremiumFeeDalam(Number(d.driverNavPremiumFeeDalamProvinsiRupiah))
+        if (d.driverNavPremiumFeeAntarProvinsiRupiah != null) setNavPremiumFeeAntar(Number(d.driverNavPremiumFeeAntarProvinsiRupiah))
+        if (d.driverNavPremiumFeeNasionalRupiah != null) setNavPremiumFeeNasional(Number(d.driverNavPremiumFeeNasionalRupiah))
+        const npex = d.driverNavPremiumExemptPhones
+        setNavPremiumExemptPhones(Array.isArray(npex) ? npex.map((p) => String(p).trim()).filter(Boolean) : [])
       }
 
       if (contactSnap.exists() && contactSnap.data()) {
@@ -208,6 +220,11 @@ export default function Settings() {
           tarifBarangDokumenDalamProvinsiPerKm: td1,
           tarifBarangDokumenBedaProvinsiPerKm: td2,
           tarifBarangDokumenLebihDari1ProvinsiPerKm: td3,
+          driverNavPremiumDistancePricingEnabled: navPremiumDistEnabled,
+          driverNavPremiumFeeDalamProvinsiRupiah: Math.max(3000, Number(navPremiumFeeDalam) || 50000),
+          driverNavPremiumFeeAntarProvinsiRupiah: Math.max(3000, Number(navPremiumFeeAntar) || 75000),
+          driverNavPremiumFeeNasionalRupiah: Math.max(3000, Number(navPremiumFeeNasional) || 100000),
+          driverNavPremiumExemptPhones: navPremiumExemptPhones,
         },
         { merge: true }
       )
@@ -319,6 +336,33 @@ export default function Settings() {
     setNewExemptInput('')
     setMessage('Driver ditambahkan. Klik Simpan untuk menyimpan.')
     setMessageType('success')
+  }
+
+  const normalizeNavPremiumPhone = (raw) => {
+    const e164 = toE164(String(raw || '').trim())
+    return e164 ? e164.replace(/\D/g, '') : ''
+  }
+
+  const addNavPremiumExemptPhone = () => {
+    const norm = normalizeNavPremiumPhone(newNavPremiumExemptPhone)
+    if (!norm || norm.length < 10) {
+      setMessage('Nomor tidak valid. Contoh: 6282218115551')
+      setMessageType('error')
+      return
+    }
+    if (navPremiumExemptPhones.includes(norm)) {
+      setMessage('Nomor sudah ada di daftar.')
+      setMessageType('error')
+      return
+    }
+    setNavPremiumExemptPhones([...navPremiumExemptPhones, norm])
+    setNewNavPremiumExemptPhone('')
+    setMessage('Nomor ditambahkan. Klik Simpan untuk menyimpan ke Firestore.')
+    setMessageType('success')
+  }
+
+  const removeNavPremiumExemptPhone = (phone) => {
+    setNavPremiumExemptPhones(navPremiumExemptPhones.filter((p) => p !== phone))
   }
 
   const removeExemptDriver = async (uid) => {
@@ -731,6 +775,95 @@ export default function Settings() {
           </ul>
         ) : (
           <p className="text-sm text-gray-500 py-2">Belum ada driver bebas kontribusi.</p>
+        )}
+      </SettingsCard>
+
+      <SettingsCard title="Navigasi premium driver" icon="🧭">
+        <p className="text-sm text-gray-600 mb-4">
+          Tarif IAP per jenis rute (Firestore + app). ID produk Google Play:{' '}
+          <code className="text-xs bg-gray-100 px-1 rounded">traka_driver_nav_premium_&lt;nominal&gt;</code>{' '}
+          — nominal harus sama dengan yang dihitung app (tersnap ke langkah SKU Anda di Play Console).
+        </p>
+        <div className="flex items-center gap-3 mb-4">
+          <input
+            type="checkbox"
+            id="navPremiumDistEnabled"
+            checked={navPremiumDistEnabled}
+            onChange={(e) => setNavPremiumDistEnabled(e.target.checked)}
+            className="rounded border-gray-300 text-orange-500 focus:ring-orange-500 h-5 w-5"
+          />
+          <label htmlFor="navPremiumDistEnabled" className="text-sm font-medium text-gray-700">
+            Tarif berdasarkan jarak rute (tier + snap) — aktifkan hanya jika Anda sudah mengatur tier di Firestore / dokumen harga
+          </label>
+        </div>
+        <p className="text-xs text-gray-500 mb-4">
+          Jika tidak dicentang, hanya dipakai kolom tarif per jenis rute di bawah (cocok untuk harga tetap seperti sebelumnya).
+        </p>
+        <div className="grid gap-4 sm:grid-cols-3 mb-6">
+          <InputField
+            label="Dalam provinsi (Rp)"
+            type="number"
+            min={3000}
+            value={navPremiumFeeDalam}
+            onChange={(e) => setNavPremiumFeeDalam(Number(e.target.value))}
+          />
+          <InputField
+            label="Antar provinsi (Rp)"
+            type="number"
+            min={3000}
+            value={navPremiumFeeAntar}
+            onChange={(e) => setNavPremiumFeeAntar(Number(e.target.value))}
+          />
+          <InputField
+            label="Nasional / lintas pulau (Rp)"
+            type="number"
+            min={3000}
+            value={navPremiumFeeNasional}
+            onChange={(e) => setNavPremiumFeeNasional(Number(e.target.value))}
+          />
+        </div>
+        <p className="text-sm font-medium text-gray-800 mb-2">Pembebasan bayar (nomor HP driver)</p>
+        <p className="text-sm text-gray-600 mb-3">
+          Dicocokkan dengan <code className="text-xs bg-gray-100 px-1 rounded">phoneNumber</code> di profil user (format 62…).
+          Bukan daftar UID &quot;bebas kontribusi&quot; — itu terpisah.
+        </p>
+        <div className="flex gap-2 mb-4">
+          <input
+            type="text"
+            value={newNavPremiumExemptPhone}
+            onChange={(e) => setNewNavPremiumExemptPhone(e.target.value)}
+            placeholder="No. HP driver, contoh 6282218115551"
+            className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500"
+            onKeyDown={(e) => e.key === 'Enter' && addNavPremiumExemptPhone()}
+          />
+          <button
+            type="button"
+            onClick={addNavPremiumExemptPhone}
+            className="px-4 py-2.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-medium transition"
+          >
+            Tambah
+          </button>
+        </div>
+        {navPremiumExemptPhones.length > 0 ? (
+          <ul className="space-y-2">
+            {navPremiumExemptPhones.map((p) => (
+              <li
+                key={p}
+                className="flex items-center justify-between gap-3 px-4 py-2.5 bg-gray-50 rounded-lg text-sm font-mono"
+              >
+                <span className="text-gray-700">{p}</span>
+                <button
+                  type="button"
+                  onClick={() => removeNavPremiumExemptPhone(p)}
+                  className="shrink-0 px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg font-medium transition text-xs"
+                >
+                  Hapus
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-gray-500 py-2">Belum ada nomor pembebasan navigasi premium.</p>
         )}
       </SettingsCard>
 

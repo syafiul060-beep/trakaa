@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+
+import 'traka_bottom_sheet.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/order_model.dart';
@@ -46,7 +48,7 @@ class _KirimBarangPilihJenisSheetState extends State<KirimBarangPilihJenisSheet>
   }
 
   Future<void> _pickImage() async {
-    final source = await showModalBottomSheet<ImageSource>(
+    final source = await showTrakaModalBottomSheet<ImageSource>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(

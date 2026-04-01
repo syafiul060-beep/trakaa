@@ -13,21 +13,18 @@ class DriverNavPremiumPaymentService {
   }) async {
     final functions = FirebaseFunctions.instance;
     final callable = functions.httpsCallable('verifyDriverNavPremiumPayment');
-    final result = await callable.call<Map<String, dynamic>>({
+    final payload = <String, dynamic>{
       'purchaseToken': purchaseToken,
       'packageName': AppConstants.packageName,
-      'productId':? productId,
-      'routeJourneyNumber':? (routeJourneyNumber != null &&
-              routeJourneyNumber.isNotEmpty
-          ? routeJourneyNumber
-          : null),
-      'navPremiumScope':? (navPremiumScope != null && navPremiumScope.isNotEmpty
-          ? navPremiumScope
-          : null),
-      'routeDistanceMeters':? (routeDistanceMeters != null && routeDistanceMeters > 0
-          ? routeDistanceMeters
-          : null),
-    });
+      if (productId != null && productId.isNotEmpty) 'productId': productId,
+      if (routeJourneyNumber != null && routeJourneyNumber.isNotEmpty)
+        'routeJourneyNumber': routeJourneyNumber,
+      if (navPremiumScope != null && navPremiumScope.isNotEmpty)
+        'navPremiumScope': navPremiumScope,
+      if (routeDistanceMeters != null && routeDistanceMeters > 0)
+        'routeDistanceMeters': routeDistanceMeters,
+    };
+    final result = await callable.call<Map<String, dynamic>>(payload);
     return result.data;
   }
 }

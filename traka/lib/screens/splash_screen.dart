@@ -70,7 +70,8 @@ class _SplashScreenState extends State<SplashScreen>
     if (_animationStarted) return;
     _animationStarted = true;
 
-    unawaited(precacheImage(const AssetImage('assets/images/logo_traka.png'), context));
+    unawaited(
+        precacheImage(const AssetImage('assets/images/traka_brand_logo.png'), context));
 
     if (MediaQuery.of(context).disableAnimations) {
       _controller.value = 1.0;
@@ -101,9 +102,25 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     final topPad = MediaQuery.paddingOf(context).top;
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppTheme.brandSplashBackground,
       body: Stack(
         children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(0, -0.25),
+                  radius: 1.15,
+                  colors: [
+                    AppTheme.primary.withValues(alpha: 0.45),
+                    AppTheme.brandSplashMid,
+                    AppTheme.brandSplashBackground,
+                  ],
+                  stops: const [0.0, 0.45, 1.0],
+                ),
+              ),
+            ),
+          ),
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -113,11 +130,12 @@ class _SplashScreenState extends State<SplashScreen>
                   child: ScaleTransition(
                     scale: _logoScale,
                     child: Image.asset(
-                      'assets/images/logo_traka.png',
-                      width: 200,
-                      height: 200,
+                      'assets/images/traka_brand_logo.png',
+                      width: 300,
+                      height: 300,
                       fit: BoxFit.contain,
-                      filterQuality: FilterQuality.medium,
+                      filterQuality: FilterQuality.high,
+                      gaplessPlayback: true,
                     ),
                   ),
                 ),
@@ -128,11 +146,18 @@ class _SplashScreenState extends State<SplashScreen>
                     position: _trakaSlide,
                     child: Text(
                       'TRAKA',
-                      style: GoogleFonts.poppins(
+                      style: GoogleFonts.plusJakartaSans(
                         color: Colors.white,
                         fontSize: 44,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 10,
+                        height: 1.05,
+                        shadows: [
+                          Shadow(
+                            color: AppTheme.primary.withValues(alpha: 0.55),
+                            blurRadius: 24,
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -160,10 +185,10 @@ class _SplashScreenState extends State<SplashScreen>
                   opacity: _taglineFade,
                   child: Text(
                     'One Touch Solution',
-                    style: GoogleFonts.poppins(
-                      color: Colors.white.withValues(alpha: 0.75),
+                    style: GoogleFonts.plusJakartaSans(
+                      color: Colors.white.withValues(alpha: 0.78),
                       fontSize: 14,
-                      fontWeight: FontWeight.w400,
+                      fontWeight: FontWeight.w500,
                       letterSpacing: 3,
                       fontStyle: FontStyle.italic,
                     ),

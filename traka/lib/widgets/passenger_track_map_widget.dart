@@ -15,11 +15,13 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/order_model.dart';
+import '../theme/app_theme.dart';
 import '../services/directions_service.dart';
 import 'traka_l10n_scope.dart';
 import '../services/ferry_distance_service.dart';
 import '../services/camera_follow_engine.dart';
 import '../services/route_utils.dart';
+import '../services/traka_pin_bitmap_service.dart';
 import '../utils/time_formatter.dart';
 import '../utils/app_logger.dart';
 import 'driver_map_overlays.dart';
@@ -140,6 +142,44 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
   bool _suppressNextCameraMoveStarted = false;
   Timer? _dualPartyFitDebounce;
   DateTime? _lastDualPartyFitAt;
+  LatLng? _viewerLocation;
+  StreamSubscription<Position>? _viewerPosSub;
+
+  bool _routeCoordUsable(double lat, double lng) {
+    if (!lat.isFinite || !lng.isFinite) return false;
+    return lat != 0 || lng != 0;
+  }
+
+  Future<void> _startViewerLocationStream() async {
+    if (!mounted) return;
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        return;
+      }
+      final current = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      setState(() {
+        _viewerLocation = LatLng(current.latitude, current.longitude);
+      });
+      await _viewerPosSub?.cancel();
+      _viewerPosSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          distanceFilter: 12,
+          accuracy: LocationAccuracy.medium,
+        ),
+      ).listen((p) {
+        if (!mounted) return;
+        setState(() {
+          _viewerLocation = LatLng(p.latitude, p.longitude);
+        });
+      });
+    } catch (_) {}
+  }
 
   void _focusOnCar() {
     _cameraFollowEngine.resetThrottle();
@@ -291,6 +331,14 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
         if (mounted) setState(() => _connectionError = true);
       },
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(() async {
+        await TrakaPinBitmapService.ensureLoaded(context);
+        if (mounted) setState(() {});
+      }());
+      unawaited(_startViewerLocationStream());
+    });
   }
 
   @override
@@ -300,6 +348,7 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
     _interpolationTimer?.cancel();
     _carIconZoomDebounce?.cancel();
     _dualPartyFitDebounce?.cancel();
+    _viewerPosSub?.cancel();
     _mapController?.dispose();
     super.dispose();
   }
@@ -773,7 +822,7 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
       Polyline(
         polylineId: const PolylineId('route_to_destination'),
         points: pointsToDraw,
-        color: const Color(0xFF2196F3), // Biru
+        color: AppTheme.primary,
         width: 5,
       ),
     );
@@ -968,8 +1017,40 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
       premiumAssetFrontUp:
           !onFerry && (_premiumCarIcons?.assetFrontFacesNorth ?? false),
     );
-    // Overlay mode: icon mobil di bawah tengah (head unit style). Kapal tetap pakai marker.
+    final pinAwal = TrakaPinBitmapService.mapAwal;
+    final pinAhir = TrakaPinBitmapService.mapAhir;
+    // Pin awal/akhir rute + lokasi penonton (bukan layer myLocation Google).
     final markers = <Marker>{
+      if (_routeCoordUsable(widget.originLat, widget.originLng))
+        Marker(
+          markerId: const MarkerId('route_origin'),
+          position: LatLng(widget.originLat, widget.originLng),
+          icon: pinAwal ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          anchor: const Offset(0.5, 1.0),
+          zIndexInt: 2,
+          infoWindow: const InfoWindow(title: 'Titik awal'),
+        ),
+      if (_routeCoordUsable(widget.destLat, widget.destLng))
+        Marker(
+          markerId: const MarkerId('route_destination'),
+          position: LatLng(widget.destLat, widget.destLng),
+          icon: pinAhir ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          anchor: const Offset(0.5, 1.0),
+          zIndexInt: 2,
+          infoWindow: const InfoWindow(title: 'Tujuan akhir'),
+        ),
+      if (_viewerLocation != null)
+        Marker(
+          markerId: const MarkerId('viewer_location'),
+          position: _viewerLocation!,
+          icon: pinAwal ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          anchor: Offset(0.5, pinAwal != null ? 1.0 : 0.5),
+          zIndexInt: 3,
+          infoWindow: const InfoWindow(title: 'Lokasi Anda'),
+        ),
       if (onFerry)
         Marker(
           markerId: const MarkerId('driver'),
@@ -1020,9 +1101,9 @@ class _PassengerTrackMapWidgetState extends State<PassengerTrackMapWidget>
             mapType: MapType.normal,
             style: style,
             markers: markers,
-              polylines: _buildPolylines(),
-              myLocationEnabled: true,
-          myLocationButtonEnabled: true,
+            polylines: _buildPolylines(),
+            myLocationEnabled: false,
+            myLocationButtonEnabled: false,
           zoomControlsEnabled: false,
           ),
         ),

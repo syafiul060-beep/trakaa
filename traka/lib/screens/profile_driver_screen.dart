@@ -22,6 +22,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../config/indonesia_config.dart';
 import '../services/account_deletion_service.dart';
+import '../services/biometric_login_service.dart';
 import '../services/app_analytics_service.dart';
 import '../services/auth_redirect_state.dart';
 import '../services/image_compression_service.dart';
@@ -31,8 +32,10 @@ import '../services/hybrid_foreground_recovery.dart';
 import '../services/driver_status_service.dart';
 import '../services/voice_call_incoming_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_interaction_styles.dart';
 import '../l10n/app_localizations.dart';
 import '../services/locale_service.dart';
+import '../widgets/traka_bottom_sheet.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../theme/responsive.dart';
 import '../utils/phone_utils.dart';
@@ -524,7 +527,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
 
   void _showLanguageSelector() {
     final l10n = TrakaL10n.of(context);
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(
@@ -665,7 +668,12 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                 );
                 await user.reauthenticateWithCredential(cred);
                 await user.updatePassword(newP);
-                if (mounted) _showSnackBar('Password berhasil diubah.');
+                await BiometricLoginService.clearCredentials();
+                if (mounted) {
+                  _showSnackBar(
+                    TrakaL10n.of(context).passwordChangedProfileWithBiometricClear,
+                  );
+                }
               } on FirebaseAuthException catch (e) {
                 if (e.code == 'wrong-password' ||
                     e.code == 'invalid-credential') {
@@ -716,7 +724,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     final String email = user.email ?? '';
     final String phone = ((_userData['phoneNumber'] as String?) ?? '').trim();
 
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -1260,10 +1268,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
             onPressed: () => safePop(ctx, true),
             icon: const Icon(Icons.camera_alt, size: 20),
             label: const Text('Ambil foto STNK'),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Colors.white,
-            ),
+            style: AppInteractionStyles.filledFromTheme(context),
           ),
         ],
       ),
@@ -1320,7 +1325,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
       ),
     );
 
-    await showModalBottomSheet<void>(
+    await showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
@@ -1347,7 +1352,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
 
   Future<void> _showVehicleLockedSheet() async {
     final noteController = TextEditingController();
-    await showModalBottomSheet<void>(
+    await showTrakaModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
@@ -1632,7 +1637,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: AppInteractionStyles.destructive(Theme.of(ctx).colorScheme),
             child: const Text('Hapus akun'),
           ),
         ],
@@ -1678,7 +1683,7 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
   }
 
   void _showBiometricSheet() {
-    showModalBottomSheet<void>(
+    showTrakaModalBottomSheet<void>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Padding(
@@ -2057,232 +2062,263 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
                           }),
                         ),
                       ],
-                      const SizedBox(height: 32), // Jarak antara garis dan menu
-                      _buildSectionHeader(TrakaL10n.of(context).verification),
-                      if (!_isAllProfileVerified)
-                        Padding(
-                          padding: EdgeInsets.only(
-                            bottom: context.responsive.spacing(10),
-                          ),
-                          child: Text(
-                            TrakaL10n.of(context).driverVerificationSubtitle,
-                            style: TextStyle(
-                              fontSize: 12,
-                              height: 1.35,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: 3,
-                        mainAxisSpacing: context.responsive.spacing(12),
-                        crossAxisSpacing: context.responsive.spacing(12),
-                        childAspectRatio:
-                            _profileGridAspectRatio(context, 0.92),
+                      const SizedBox(height: 24),
+                      _buildSectionCard(
+                        icon: Icons.verified_user_outlined,
+                        title: TrakaL10n.of(context).verification,
                         children: [
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).vehicleData,
-                            icon: Icons.directions_car,
-                            verified: _isDataKendaraanFilled,
-                            verifiedIconColor: _vehicleVerificationIconColor,
-                            onTap: _showDataKendaraanDialog,
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).driverVerification,
-                            icon: Icons.person_add_alt_1,
-                            verified: _isDriverVerified,
-                            verifiedIconColor: _verificationCheckColor,
-                            onTap: _isDriverVerified
-                                ? _showVerifikasiSudahBerhasilDialog
-                                : _showVerifikasiDriverDialog,
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).emailAndPhone,
-                            icon: Icons.contact_phone,
-                            verified: _hasVerifiedPhone,
-                            verifiedIconColor: _verificationCheckColor,
-                            onTap: _showEmailDanTelpSheet,
+                          if (!_isAllProfileVerified)
+                            Padding(
+                              padding: EdgeInsets.only(
+                                bottom: context.responsive.spacing(10),
+                              ),
+                              child: Text(
+                                TrakaL10n.of(context).driverVerificationSubtitle,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 1.35,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          GridView.count(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            crossAxisCount: 3,
+                            mainAxisSpacing: context.responsive.spacing(12),
+                            crossAxisSpacing: context.responsive.spacing(12),
+                            childAspectRatio:
+                                _profileGridAspectRatio(context, 0.92),
+                            children: [
+                              _buildMenuCard(
+                                title: TrakaL10n.of(context).vehicleData,
+                                icon: Icons.directions_car,
+                                verified: _isDataKendaraanFilled,
+                                verifiedIconColor: _vehicleVerificationIconColor,
+                                onTap: _showDataKendaraanDialog,
+                              ),
+                              _buildMenuCard(
+                                title: TrakaL10n.of(context).driverVerification,
+                                icon: Icons.person_add_alt_1,
+                                verified: _isDriverVerified,
+                                verifiedIconColor: _verificationCheckColor,
+                                onTap: _isDriverVerified
+                                    ? _showVerifikasiSudahBerhasilDialog
+                                    : _showVerifikasiDriverDialog,
+                              ),
+                              _buildMenuCard(
+                                title: TrakaL10n.of(context).emailAndPhone,
+                                icon: Icons.contact_phone,
+                                verified: _hasVerifiedPhone,
+                                verifiedIconColor: _verificationCheckColor,
+                                onTap: _showEmailDanTelpSheet,
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                      SizedBox(height: context.responsive.spacing(16)),
-                      _buildSectionHeader(TrakaL10n.of(context).settings),
-                      const SizedBox(height: 8),
-                      GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: 2,
-                        mainAxisSpacing: context.responsive.spacing(12),
-                        crossAxisSpacing: context.responsive.spacing(12),
-                        childAspectRatio:
-                            _profileGridAspectRatio(context, 0.92),
+                      _buildSectionCard(
+                        icon: Icons.tune_rounded,
+                        title: TrakaL10n.of(context).settings,
+                        children: [
+                          GridView.count(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            crossAxisCount: 2,
+                            mainAxisSpacing: context.responsive.spacing(12),
+                            crossAxisSpacing: context.responsive.spacing(12),
+                            childAspectRatio:
+                                _profileGridAspectRatio(context, 0.92),
+                            children: [
+                              _buildMenuCard(
+                                title: TrakaL10n.of(context).locale ==
+                                        AppLocale.id
+                                    ? 'Sinkronkan data'
+                                    : 'Sync data',
+                                icon: Icons.sync,
+                                onTap: () {
+                                  HybridForegroundRecovery
+                                      .requestManualDriverSyncAll();
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        TrakaL10n.of(context).locale ==
+                                                AppLocale.id
+                                            ? 'Memperbarui jadwal, chat, dan data order…'
+                                            : 'Refreshing schedule, chat, and orders…',
+                                      ),
+                                      behavior: SnackBarBehavior.floating,
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuCard(
+                                title: TrakaL10n.of(context).changePassword,
+                                icon: Icons.lock_outline,
+                                onTap: _showChangePasswordDialog,
+                              ),
+                              _buildMenuCard(
+                                title: TrakaL10n.of(context).paymentHistory,
+                                icon: Icons.receipt_long,
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const PaymentHistoryScreen(
+                                              isDriver: true),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuCard(
+                                title: 'Rekening & QRIS',
+                                icon: Icons.account_balance,
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const DriverPaymentMethodsScreen(),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuCard(
+                                title:
+                                    TrakaL10n.of(context).driverEarningsTitle,
+                                icon: Icons.account_balance_wallet,
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const DriverEarningsScreen(),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuCard(
+                                title: TrakaL10n.of(context)
+                                    .contributionTariffTitle,
+                                icon: Icons.info_outline,
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const ContributionDriverScreen(),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuCard(
+                                title: TrakaL10n.of(context).language,
+                                icon: Icons.language,
+                                onTap: _showLanguageSelector,
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: context.responsive.spacing(12)),
+                          _buildMenuCard(
+                            title: TrakaL10n.of(context)
+                                .notificationSettingsTitle,
+                            icon: Icons.notifications_outlined,
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) =>
+                                      const NotificationSettingsScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                          SizedBox(height: context.responsive.spacing(8)),
+                          _buildLiteModeTile(),
+                        ],
+                      ),
+                      _buildSectionCard(
+                        icon: Icons.help_outline_rounded,
+                        title: TrakaL10n.of(context).help,
+                        children: [
+                          GridView.count(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            crossAxisCount: 3,
+                            mainAxisSpacing: context.responsive.spacing(12),
+                            crossAxisSpacing: context.responsive.spacing(12),
+                            childAspectRatio:
+                                _profileGridAspectRatio(context, 0.92),
+                            children: [
+                              _buildMenuCard(
+                                title: TrakaL10n.of(context).infoAndPromo,
+                                icon: Icons.campaign_outlined,
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => const PromoListScreen(
+                                          role: 'driver'),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuCard(
+                                title: TrakaL10n.of(context).guide,
+                                icon: Icons.menu_book_outlined,
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const PanduanAplikasiScreen(),
+                                    ),
+                                  );
+                                },
+                              ),
+                              _buildMenuCard(
+                                title: TrakaL10n.of(context).suggestionToAdmin,
+                                icon: Icons.feedback_outlined,
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const SaranKeAdminScreen(),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      _buildSectionCard(
+                        icon: Icons.more_horiz_rounded,
+                        title: TrakaL10n.of(context).other,
                         children: [
                           _buildMenuCard(
                             title: TrakaL10n.of(context).locale == AppLocale.id
-                                ? 'Sinkronkan data'
-                                : 'Sync data',
-                            icon: Icons.sync,
-                            onTap: () {
-                              HybridForegroundRecovery.requestManualDriverSyncAll();
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    TrakaL10n.of(context).locale == AppLocale.id
-                                        ? 'Memperbarui jadwal, chat, dan data order…'
-                                        : 'Refreshing schedule, chat, and orders…',
-                                  ),
-                                  behavior: SnackBarBehavior.floating,
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
+                                ? 'Kunci dengan sidik jari/wajah'
+                                : 'Lock with fingerprint/face',
+                            icon: Icons.fingerprint,
+                            onTap: _showBiometricSheet,
+                          ),
+                          _buildMenuCard(
+                            title: TrakaL10n.of(context).showLowRamWarning,
+                            icon: Icons.memory_outlined,
+                            onTap: () async {
+                              await LowRamWarningService.resetWarningFlag();
+                              if (context.mounted) {
+                                await LowRamWarningService.showWarningIfLowRam(
+                                    context);
+                              }
                             },
                           ),
                           _buildMenuCard(
-                            title: TrakaL10n.of(context).changePassword,
-                            icon: Icons.lock_outline,
-                            onTap: _showChangePasswordDialog,
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).paymentHistory,
-                            icon: Icons.receipt_long,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      const PaymentHistoryScreen(isDriver: true),
-                                ),
-                              );
-                            },
-                          ),
-                          _buildMenuCard(
-                            title: 'Rekening & QRIS',
-                            icon: Icons.account_balance,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      const DriverPaymentMethodsScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).driverEarningsTitle,
-                            icon: Icons.account_balance_wallet,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => const DriverEarningsScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).contributionTariffTitle,
-                            icon: Icons.info_outline,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => const ContributionDriverScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).language,
-                            icon: Icons.language,
-                            onTap: _showLanguageSelector,
+                            title: TrakaL10n.of(context).deleteAccount,
+                            icon: Icons.delete_outline,
+                            onTap: _showHapusAkunDialog,
+                            isDanger: true,
                           ),
                         ],
-                      ),
-                      SizedBox(height: context.responsive.spacing(16)),
-                      _buildSectionHeader(TrakaL10n.of(context).help),
-                      const SizedBox(height: 8),
-                      GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: 3,
-                        mainAxisSpacing: context.responsive.spacing(12),
-                        crossAxisSpacing: context.responsive.spacing(12),
-                        childAspectRatio:
-                            _profileGridAspectRatio(context, 0.92),
-                        children: [
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).infoAndPromo,
-                            icon: Icons.campaign_outlined,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => const PromoListScreen(role: 'driver'),
-                                ),
-                              );
-                            },
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).guide,
-                            icon: Icons.help_outline,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => const PanduanAplikasiScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                          _buildMenuCard(
-                            title: TrakaL10n.of(context).suggestionToAdmin,
-                            icon: Icons.feedback_outlined,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => const SaranKeAdminScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: context.responsive.spacing(12)),
-                      _buildMenuCard(
-                        title: TrakaL10n.of(context).notificationSettingsTitle,
-                        icon: Icons.notifications_outlined,
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const NotificationSettingsScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      SizedBox(height: context.responsive.spacing(16)),
-                      _buildSectionHeader(TrakaL10n.of(context).other),
-                      const SizedBox(height: 8),
-                      _buildMenuCard(
-                        title: TrakaL10n.of(context).locale == AppLocale.id
-                            ? 'Kunci dengan sidik jari/wajah'
-                            : 'Lock with fingerprint/face',
-                        icon: Icons.fingerprint,
-                        onTap: _showBiometricSheet,
-                      ),
-                      _buildLiteModeTile(),
-                      _buildMenuCard(
-                        title: TrakaL10n.of(context).showLowRamWarning,
-                        icon: Icons.memory_outlined,
-                        onTap: () async {
-                          await LowRamWarningService.resetWarningFlag();
-                          if (context.mounted) {
-                            await LowRamWarningService.showWarningIfLowRam(context);
-                          }
-                        },
-                      ),
-                      _buildMenuCard(
-                        title: TrakaL10n.of(context).deleteAccount,
-                        icon: Icons.delete_outline,
-                        onTap: _showHapusAkunDialog,
-                        isDanger: true,
                       ),
                     ],
                   ),
@@ -2363,15 +2399,52 @@ class _ProfileDriverScreenState extends State<ProfileDriverScreen> {
     return (base / ratio).clamp(0.68, base);
   }
 
-  Widget _buildSectionHeader(String label) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: context.responsive.fontSize(14),
-          fontWeight: FontWeight.w600,
-          color: Theme.of(context).colorScheme.primary,
+  /// Kartu kategori profil (rapi, terpisah seperti pengaturan sistem).
+  Widget _buildSectionCard({
+    required IconData icon,
+    required String title,
+    required List<Widget> children,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Card(
+        elevation: 0,
+        color: cs.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: cs.outlineVariant.withValues(alpha: 0.45),
+          ),
+        ),
+        margin: EdgeInsets.zero,
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 22, color: cs.primary),
+                  SizedBox(width: context.responsive.spacing(10)),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: context.responsive.fontSize(15),
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.2,
+                        color: cs.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              ...children,
+            ],
+          ),
         ),
       ),
     );

@@ -4,6 +4,8 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 
 import '../services/registered_contacts_service.dart';
 import '../theme/app_theme.dart';
+import 'traka_bottom_sheet.dart';
+import 'traka_empty_state.dart';
 
 /// Item: kontak + nomor HP (satu kontak bisa punya banyak nomor).
 class _ContactPhoneItem {
@@ -24,7 +26,7 @@ void showReceiverContactPicker({
   required void Function(String phone, Map<String, dynamic>? receiverData)
       onSelect,
 }) {
-  showModalBottomSheet<void>(
+  showTrakaModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
@@ -191,56 +193,25 @@ class _ReceiverContactPickerSheetState extends State<_ReceiverContactPickerSheet
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                    ? Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _error!,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            TextButton(
-                              onPressed: _load,
-                              child: const Text('Coba lagi'),
-                            ),
-                          ],
+                    ? TrakaEmptyState(
+                        icon: Icons.error_outline,
+                        title: _error!,
+                        action: TextButton(
+                          onPressed: _load,
+                          child: const Text('Coba lagi'),
                         ),
                       )
                     : _filteredItems.isEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  _registeredItems.isEmpty
-                                      ? 'Belum ada kontak yang terdaftar di Traka.'
-                                      : 'Tidak ada kontak yang cocok dengan pencarian.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                if (_registeredItems.isEmpty) ...[
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Minta penerima mendaftar di Traka terlebih dahulu.',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
+                        ? TrakaEmptyState(
+                            icon: _registeredItems.isEmpty
+                                ? Icons.person_search_outlined
+                                : Icons.search_off,
+                            title: _registeredItems.isEmpty
+                                ? 'Belum ada kontak yang terdaftar di Traka.'
+                                : 'Tidak ada kontak yang cocok dengan pencarian.',
+                            subtitle: _registeredItems.isEmpty
+                                ? 'Minta penerima mendaftar di Traka terlebih dahulu.'
+                                : null,
                           )
                         : ListView.builder(
                             shrinkWrap: true,

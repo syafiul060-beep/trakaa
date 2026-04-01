@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/traka_empty_state.dart';
+import '../theme/app_interaction_styles.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../models/order_model.dart';
 import '../services/chat_service.dart';
@@ -176,7 +178,7 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: AppInteractionStyles.destructive(Theme.of(ctx).colorScheme),
             child: Text(TrakaL10n.of(context).delete),
           ),
         ],
@@ -367,32 +369,11 @@ class _ChatPenumpangScreenState extends State<ChatPenumpangScreen> {
 
             if (orders.isEmpty) {
               return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.chat_bubble_outline,
-                      size: 64,
-                      color: AppTheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      TrakaL10n.of(context).noChatsYet,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: AppTheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Pesan travel dari map,\nlalu obrolan akan muncul di sini.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppTheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+                child: TrakaEmptyState(
+                  icon: Icons.chat_bubble_outline,
+                  title: TrakaL10n.of(context).noChatsYet,
+                  subtitle:
+                      'Pesan travel dari map, lalu obrolan akan muncul di sini.',
                 ),
               );
             }

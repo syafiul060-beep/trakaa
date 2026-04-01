@@ -1,6 +1,10 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/biometric_lock_service.dart';
+import '../services/locale_service.dart';
 
 /// Mendengarkan lifecycle app: catat waktu saat [paused]; saat [resumed] kunci
 /// hanya jika sudah lama di background (lihat [BiometricLockService.requireLockAfterBackground]).
@@ -39,7 +43,20 @@ class _BiometricLifecycleHandlerState extends State<BiometricLifecycleHandler>
       BiometricLockService.lockIfEnabled();
     } else if (state == AppLifecycleState.resumed) {
       BiometricLockService.onAppResumed();
+      unawaited(_disableLockIfNoEnrollment(context));
     }
+  }
+
+  Future<void> _disableLockIfNoEnrollment(BuildContext context) async {
+    final off = await BiometricLockService.disableLockIfBiometricsUnavailable();
+    if (!off || !context.mounted) return;
+    final l10n = AppLocalizations(locale: LocaleService.current);
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text(l10n.biometricLockDisabledNoEnrollment),
+      ),
+    );
   }
 
   @override

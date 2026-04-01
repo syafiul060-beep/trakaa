@@ -4,7 +4,7 @@
   --surface: #ffffff;
   --text: #0f172a;
   --muted: #64748b;
-  --accent: #f97316;
+  --accent: #d97706;
   --accent-soft: #fff7ed;
   --success: #16a34a;
   --danger: #dc2626;
@@ -50,7 +50,7 @@ body {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent), #ea580c);
+  background: linear-gradient(135deg, var(--accent), #b45309);
   color: #fff;
   font-weight: 800;
   font-size: 15px;
@@ -287,7 +287,7 @@ body {
 }
 
 .track-legend__dot--p {
-  background: #2563eb;
+  background: #d97706;
 }
 
 .track-legend__dot--r {
@@ -295,7 +295,7 @@ body {
 }
 
 .track-legend__dot--d {
-  background: linear-gradient(135deg, #f97316, #ea580c);
+  background: linear-gradient(135deg, #f59e0b, #d97706);
 }
 
 /* Marker huruf P / R (Leaflet) */

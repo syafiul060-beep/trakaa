@@ -22,7 +22,7 @@ Dari **Dasbor**, gunakan **sidebar kiri**:
 |-------|-----|
 | **Short description** (max 80 karakter) | Travel & kirim barang. Lacak driver dan barang real-time. |
 | **Full description** | Deskripsi lengkap fitur Traka: pemesanan travel, kirim barang, Lacak Driver, Lacak Barang, verifikasi wajah, dll. |
-| **App icon** | 512 x 512 px, PNG (dari `assets/images/icon_traka.png` resize) |
+| **App icon** | 512 x 512 px, PNG (sumber: `assets/images/traka_brand_logo.png`) |
 | **Feature graphic** | 1024 x 500 px |
 | **Phone screenshots** | Min 2 screenshot HP (ambil dari aplikasi) |
 | **App category** | Travel & Local |

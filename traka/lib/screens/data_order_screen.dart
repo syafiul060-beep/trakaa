@@ -27,10 +27,12 @@ import '../services/sos_service.dart';
 import '../widgets/sos_emergency_confirm_dialog.dart';
 import '../services/track_share_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_interaction_styles.dart';
 import '../theme/responsive.dart';
 import '../widgets/shimmer_loading.dart';
 import '../widgets/traka_l10n_scope.dart';
 import '../widgets/passenger_payment_before_scan_sheet.dart';
+import '../widgets/traka_empty_state.dart';
 import '../utils/app_logger.dart';
 import 'admin_chat_screen.dart';
 import 'cek_lokasi_barang_screen.dart';
@@ -422,30 +424,14 @@ class _DataOrderScreenState extends State<DataOrderScreen>
         }
 
         if (snapshot.hasError) {
+          final cs = Theme.of(context).colorScheme;
           return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.error_outline,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    TrakaL10n.of(context).errorOccurred,
-                    style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    TrakaL10n.of(context).failedToLoadOrderData,
-                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+            child: TrakaEmptyState(
+              icon: Icons.error_outline,
+              iconColor: cs.error,
+              title: TrakaL10n.of(context).errorOccurred,
+              titleColor: cs.error,
+              subtitle: TrakaL10n.of(context).failedToLoadOrderData,
             ),
           );
         }
@@ -459,25 +445,10 @@ class _DataOrderScreenState extends State<DataOrderScreen>
 
         if (agreedOrders.isEmpty) {
           return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.inbox, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  const SizedBox(height: 16),
-                  Text(
-                    TrakaL10n.of(context).noOrders,
-                    style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    TrakaL10n.of(context).noOrdersHint,
-                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+            child: TrakaEmptyState(
+              icon: Icons.inbox,
+              title: TrakaL10n.of(context).noOrders,
+              subtitle: TrakaL10n.of(context).noOrdersHint,
             ),
           );
         }
@@ -548,29 +519,10 @@ class _DataOrderScreenState extends State<DataOrderScreen>
             });
             if (pickedUpOrders.isEmpty) {
               return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.directions_car,
-                        size: 64,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        TrakaL10n.of(context).noActiveTrips,
-                        style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        TrakaL10n.of(context).noActiveTripsHint,
-                        style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
+                child: TrakaEmptyState(
+                  icon: Icons.directions_car,
+                  title: TrakaL10n.of(context).noActiveTrips,
+                  subtitle: TrakaL10n.of(context).noActiveTripsHint,
                 ),
               );
             }
@@ -807,10 +759,14 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                     onPressed: () => _onSOS(context, order),
                     icon: const Icon(Icons.emergency, size: 18),
                     label: const Text('SOS'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red,
-                      side: const BorderSide(color: Colors.red),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    style: AppInteractionStyles.outlinedFromTheme(
+                      context,
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 12),
+                      sideColor: Colors.red,
+                    ).copyWith(
+                      foregroundColor:
+                          WidgetStateProperty.all(Colors.red),
                     ),
                   ),
                 ),
@@ -820,16 +776,19 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                     onPressed: () => _onBagikanKeKeluarga(context, order, isReceiver: isReceiver),
                     icon: const Icon(Icons.share_location, size: 18),
                     label: const Text('Bagikan'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _canShareLink(order, isReceiver)
+                    style: AppInteractionStyles.outlinedFromTheme(
+                      context,
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 12),
+                      sideColor: _canShareLink(order, isReceiver)
                           ? Colors.green.shade700
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                      side: BorderSide(
-                        color: _canShareLink(order, isReceiver)
+                          : Theme.of(context).colorScheme.outline,
+                    ).copyWith(
+                      foregroundColor: WidgetStateProperty.all(
+                        _canShareLink(order, isReceiver)
                             ? Colors.green.shade700
-                            : Theme.of(context).colorScheme.outline,
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
                 ),
@@ -859,17 +818,22 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                   onPressed: () async {
                     await _runScanFlow(context, order, isReceiver: isReceiver);
                   },
-                icon: const Icon(Icons.qr_code_scanner, size: 22),
-                label: Text(
-                  isReceiver
-                      ? 'Scan barcode driver (untuk terima barang)'
-                      : 'Scan barcode driver (saat sampai tujuan)',
+                  icon: const Icon(Icons.qr_code_scanner, size: 22),
+                  label: Text(
+                    isReceiver
+                        ? 'Scan barcode driver (untuk terima barang)'
+                        : 'Scan barcode driver (saat sampai tujuan)',
+                  ),
+                  style: AppInteractionStyles.elevatedPrimary(
+                    backgroundColor: Colors.deepPurple,
+                    foregroundColor: Colors.white,
+                    shadowTint: Colors.deepPurple,
+                  ).copyWith(
+                    padding: WidgetStateProperty.all(
+                      const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
                 ),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  backgroundColor: Colors.deepPurple,
-                ),
-              ),
             ),
             ),
           ],
@@ -916,38 +880,22 @@ class _DataOrderScreenState extends State<DataOrderScreen>
             });
             if (completedOrders.isEmpty) {
               return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.history, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                      const SizedBox(height: 16),
-                      Text(
-                        TrakaL10n.of(context).noOrderHistory,
-                        style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        TrakaL10n.of(context).noOrderHistoryHint,
-                        style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      TextButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const PaymentHistoryScreen(isDriver: false),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.receipt_long, size: 18),
-                        label: Text(TrakaL10n.of(context).paymentHistory),
-                      ),
-                    ],
+                child: TrakaEmptyState(
+                  icon: Icons.history,
+                  title: TrakaL10n.of(context).noOrderHistory,
+                  subtitle: TrakaL10n.of(context).noOrderHistoryHint,
+                  action: TextButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              const PaymentHistoryScreen(isDriver: false),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.receipt_long, size: 18),
+                    label: Text(TrakaL10n.of(context).paymentHistory),
                   ),
                 ),
               );
@@ -1177,10 +1125,15 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                             onPressed: () => _showRatingDialog(context, order.id),
                             icon: const Icon(Icons.star_border, size: 18),
                             label: Text(TrakaL10n.of(context).rateDriver),
-                            style: TextButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            style: AppInteractionStyles.textFromTheme(
+                              context,
+                            ).copyWith(
+                              padding:
+                                  WidgetStateProperty.all(EdgeInsets.zero),
+                              minimumSize:
+                                  WidgetStateProperty.all(Size.zero),
+                              tapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
                             ),
                           ),
                       ],
@@ -1196,10 +1149,15 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                               color: Colors.orange.shade700,
                             ),
                           ),
-                          style: TextButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          style: AppInteractionStyles.textFromTheme(
+                            context,
+                          ).copyWith(
+                            padding:
+                                WidgetStateProperty.all(EdgeInsets.zero),
+                            minimumSize:
+                                WidgetStateProperty.all(Size.zero),
+                            tapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
                           ),
                         ),
                       ],
@@ -1549,10 +1507,14 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                   onPressed: () => _onSOS(context, order),
                   icon: const Icon(Icons.emergency, size: 20),
                   label: const Text('SOS Darurat'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  style: AppInteractionStyles.outlinedFromTheme(
+                    context,
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 12),
+                    sideColor: Colors.red,
+                  ).copyWith(
+                    foregroundColor:
+                        WidgetStateProperty.all(Colors.red),
                   ),
                 ),
               ),
@@ -1653,9 +1615,10 @@ class _DataOrderScreenState extends State<DataOrderScreen>
                 onPressed: () => _onMintaKonfirmasiDijemput(order),
                 icon: const Icon(Icons.check_circle_outline, size: 18),
                 label: const Text('Minta konfirmasi dijemput'),
-                style: FilledButton.styleFrom(
+                style: AppInteractionStyles.elevatedPrimary(
                   backgroundColor: Colors.amber.shade700,
                   foregroundColor: Colors.white,
+                  shadowTint: Colors.amber.shade700,
                 ),
               ),
             ),
@@ -1737,9 +1700,10 @@ class _DataOrderScreenState extends State<DataOrderScreen>
               onPressed: () => _onMintaKonfirmasiDijemput(order),
               icon: const Icon(Icons.check_circle_outline, size: 18),
               label: const Text('Minta konfirmasi dijemput'),
-              style: FilledButton.styleFrom(
+              style: AppInteractionStyles.elevatedPrimary(
                 backgroundColor: Colors.amber.shade700,
                 foregroundColor: Colors.white,
+                shadowTint: Colors.amber.shade700,
               ),
             ),
           ),
@@ -2064,7 +2028,7 @@ class _DataOrderScreenState extends State<DataOrderScreen>
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: AppInteractionStyles.destructive(Theme.of(ctx).colorScheme),
             child: Text(isConfirming ? 'Konfirmasi' : 'Iya'),
           ),
         ],

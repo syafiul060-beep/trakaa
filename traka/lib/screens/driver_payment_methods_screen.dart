@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../config/traka_api_config.dart';
 import '../services/traka_api_service.dart';
+import '../widgets/traka_empty_state.dart';
 
 /// Kelola rekening / e-wallet / QRIS untuk instruksi bayar penumpang (via API hybrid).
 class DriverPaymentMethodsScreen extends StatefulWidget {
@@ -250,9 +251,11 @@ class _DriverPaymentMethodsScreenState extends State<DriverPaymentMethodsScreen>
                   ),
                   const SizedBox(height: 16),
                   if (_items.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('Belum ada metode. Tambah rekening/e-wallet/QRIS.'),
+                    const TrakaEmptyState(
+                      icon: Icons.account_balance_wallet_outlined,
+                      title: 'Belum ada metode',
+                      subtitle:
+                          'Tambah rekening, e-wallet, atau QRIS dengan tombol Tambah.',
                     )
                   else
                     ..._items.map((m) {

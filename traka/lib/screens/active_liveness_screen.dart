@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
 import '../config/indonesia_config.dart';
+import '../theme/app_theme.dart';
 import '../services/auth_redirect_state.dart';
 import '../services/camera_image_converter.dart';
 
@@ -357,7 +358,8 @@ class _ActiveLivenessScreenState extends State<ActiveLivenessScreen> {
                                 : 0.0),
                             minHeight: 6,
                             backgroundColor: Colors.white24,
-                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF64B5F6)),
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(AppTheme.primaryLight),
                           ),
                         ),
                       ),
@@ -368,14 +370,14 @@ class _ActiveLivenessScreenState extends State<ActiveLivenessScreen> {
                           children: [
                             Icon(
                               Icons.face,
-                              color: const Color(0xFF64B5F6),
+                              color: AppTheme.primaryLight,
                               size: 18,
                             ),
                             const SizedBox(width: 6),
                             Text(
                               _readyForBlink ? 'Berkedip atau tahan 2 detik' : 'Wajah terdeteksi',
-                              style: const TextStyle(
-                                color: Color(0xFF90CAF9),
+                              style: TextStyle(
+                                color: AppTheme.primaryLight.withValues(alpha: 0.95),
                                 fontSize: 14,
                               ),
                             ),
@@ -430,7 +432,7 @@ class _FaceGuidePainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = (size.width < size.height ? size.width : size.height) * 0.35;
     final paint = Paint()
-      ..color = hasFace ? const Color(0xFF2196F3) : const Color(0xFF64B5F6)
+      ..color = hasFace ? AppTheme.primary : AppTheme.primaryLight
       ..style = PaintingStyle.stroke
       ..strokeWidth = hasFace ? 4 : 3;
     canvas.drawCircle(center, radius, paint);

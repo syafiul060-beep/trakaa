@@ -6,7 +6,7 @@ import '../services/geocoding_service.dart' show GeocodingService, Location, Pla
 import '../theme/responsive.dart';
 import '../services/driver_route_map_pick_validation.dart';
 import '../utils/placemark_formatter.dart';
-import 'lollipop_pin_widgets.dart';
+import 'traka_pin_widgets.dart';
 import 'map_destination_picker_screen.dart';
 import 'traka_l10n_scope.dart';
 
@@ -24,8 +24,6 @@ class DriverRouteFormSheet extends StatefulWidget {
   final String? initialOrigin;
   final GoogleMapController? mapController;
   final ValueNotifier<LatLng?> formDestPreviewNotifier;
-  /// Pratinjau titik awal dari peta di [GoogleMap] utama (opsional).
-  final ValueNotifier<LatLng?>? formOriginPreviewNotifier;
   final void Function(
     double originLat,
     double originLng,
@@ -40,10 +38,7 @@ class DriverRouteFormSheet extends StatefulWidget {
   final String? routeScopeSubtitle;
 
   /// Buka [MapDestinationPickerScreen]; hasil mengisi field tujuan (setelah lolos filter kategori).
-  final Future<MapPickerResult?> Function()? onPickDestinationOnMap;
-
-  /// Buka pemilih peta untuk titik awal rute (opsional).
-  final Future<MapPickerResult?> Function()? onPickOriginOnMap;
+  final PickDestinationOnMapCallback? onPickDestinationOnMap;
 
   const DriverRouteFormSheet({
     super.key,
@@ -58,11 +53,9 @@ class DriverRouteFormSheet extends StatefulWidget {
     this.initialOrigin,
     this.mapController,
     required this.formDestPreviewNotifier,
-    this.formOriginPreviewNotifier,
     required this.onRouteRequest,
     this.routeScopeSubtitle,
     this.onPickDestinationOnMap,
-    this.onPickOriginOnMap,
   });
 
   @override
@@ -80,16 +73,10 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
   bool _loadingRoute = false;
   double? _selectedDestLat;
   double? _selectedDestLng;
-  /// Titik awal dari peta (null = pakai lokasi GPS driver).
-  double? _pickedOriginLat;
-  double? _pickedOriginLng;
-  String? _pickedOriginLabel;
-  String? _pickedOriginAdminArea;
 
   @override
   void dispose() {
     widget.formDestPreviewNotifier.value = null;
-    widget.formOriginPreviewNotifier?.value = null;
     _destController.dispose();
     super.dispose();
   }
@@ -221,14 +208,12 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
       return;
     }
     if (widget.sameIslandOnly) {
-      final refProv =
-          _pickedOriginAdminArea ?? widget.currentProvinsi;
       final err2 =
           await DriverRouteMapPickValidation.validateDestinationDifferentProvinceThan(
         l10n: l10n,
         destLat: r.lat,
         destLng: r.lng,
-        referenceProvince: refProv,
+        referenceProvince: widget.currentProvinsi,
       );
       if (!mounted) return;
       if (err2 != null) {
@@ -247,43 +232,6 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
       _selectedDestLng = r.lng;
     });
     widget.formDestPreviewNotifier.value = LatLng(r.lat, r.lng);
-    widget.mapController?.animateCamera(
-      CameraUpdate.newLatLngZoom(LatLng(r.lat, r.lng), 15),
-    );
-  }
-
-  Future<void> _applyOriginFromMap(MapPickerResult r) async {
-    final l10n = TrakaL10n.of(context);
-    final err = await DriverRouteMapPickValidation.validatePoint(
-      l10n: l10n,
-      lat: r.lat,
-      lng: r.lng,
-      isOrigin: true,
-      sameProvinceOnly: widget.sameProvinceOnly,
-      sameIslandOnly: widget.sameIslandOnly,
-      currentProvinsi: widget.currentProvinsi,
-      provincesInIsland: widget.provincesInIsland,
-    );
-    if (!mounted) return;
-    if (err != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(err), behavior: SnackBarBehavior.floating),
-      );
-      return;
-    }
-    final admin =
-        await DriverRouteMapPickValidation.administrativeAreaFromCoordinates(
-      r.lat,
-      r.lng,
-    );
-    if (!mounted) return;
-    setState(() {
-      _pickedOriginLat = r.lat;
-      _pickedOriginLng = r.lng;
-      _pickedOriginLabel = r.label;
-      _pickedOriginAdminArea = admin;
-    });
-    widget.formOriginPreviewNotifier?.value = LatLng(r.lat, r.lng);
     widget.mapController?.animateCamera(
       CameraUpdate.newLatLngZoom(LatLng(r.lat, r.lng), 15),
     );
@@ -365,7 +313,7 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
       return;
     }
     if (widget.sameIslandOnly) {
-      final refProv = _pickedOriginAdminArea ?? widget.currentProvinsi;
+      final refProv = widget.currentProvinsi;
       final diffErr =
           await DriverRouteMapPickValidation.validateDestinationDifferentProvinceThan(
         l10n: l10nReq,
@@ -385,9 +333,9 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
         return;
       }
     }
-    final lat = _pickedOriginLat ?? widget.driverLat!;
-    final lng = _pickedOriginLng ?? widget.driverLng!;
-    final originText = _pickedOriginLabel ?? widget.originText;
+    final lat = widget.driverLat!;
+    final lng = widget.driverLng!;
+    final originText = widget.originText;
     setState(() => _loadingRoute = true);
     widget.onRouteRequest(
       lat,
@@ -445,43 +393,39 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
                   ),
                 ),
                 SizedBox(height: context.responsive.spacing(16)),
-                // Form 1: Asal (auto)
+                // Form 1: Asal = lokasi GPS (tidak dipilih di peta).
                 Row(
                   children: [
-                    const LollipopPinFormIcon(
-                      variant: LollipopPinVariant.origin,
+                    const TrakaPinFormIcon(
+                      variant: TrakaRoutePinVariant.origin,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        _pickedOriginLat != null
-                            ? 'Dari (titik di peta)'
-                            : 'Dari (lokasi driver)',
+                        'Dari (lokasi driver)',
                         style: TextStyle(
                           fontSize: 12,
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
-                    if (_pickedOriginLat != null)
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 20),
-                        tooltip: 'Pakai lokasi GPS lagi',
-                        onPressed: _loadingRoute
-                            ? null
-                            : () {
-                                setState(() {
-                                  _pickedOriginLat = null;
-                                  _pickedOriginLng = null;
-                                  _pickedOriginLabel = null;
-                                  _pickedOriginAdminArea = null;
-                                });
-                                widget.formOriginPreviewNotifier?.value = null;
-                              },
-                      ),
                   ],
                 ),
-                const SizedBox(height: 4),
+                Padding(
+                  padding: const EdgeInsets.only(left: 30, top: 2),
+                  child: Text(
+                    'Otomatis dari lokasi perangkat. Tidak perlu pilih di peta.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.3,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withValues(alpha: 0.88),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -494,38 +438,19 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    _pickedOriginLabel ?? widget.originText,
+                    widget.originText,
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
-                if (widget.onPickOriginOnMap != null) ...[
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: _loadingRoute
-                          ? null
-                          : () async {
-                              final r =
-                                  await widget.onPickOriginOnMap!.call();
-                              if (!mounted || r == null) return;
-                              await _applyOriginFromMap(r);
-                            },
-                      icon: const Icon(Icons.map_outlined, size: 20),
-                      label: Text(
-                        TrakaL10n.of(context).pickOriginOnMapActionLabel,
-                      ),
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 16),
                 // Form 2: Tujuan (ketik + autocomplete)
                 Row(
                   children: [
-                    const LollipopPinFormIcon(
-                      variant: LollipopPinVariant.destination,
+                    const TrakaPinFormIcon(
+                      variant: TrakaRoutePinVariant.destination,
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -579,17 +504,30 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
                 if (widget.onPickDestinationOnMap != null) ...[
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: _loadingRoute
-                          ? null
-                          : () async {
-                              final r =
-                                  await widget.onPickDestinationOnMap!.call();
-                              if (!mounted || r == null) return;
-                              await _applyDestinationFromMap(r);
-                            },
-                      icon: const Icon(Icons.map_outlined, size: 20),
-                      label: Text(TrakaL10n.of(context).pickOnMapActionLabel),
+                    child: Semantics(
+                      hint: TrakaL10n.of(context).pickOnMapTooltip,
+                      child: Tooltip(
+                        message: TrakaL10n.of(context).pickOnMapTooltip,
+                        excludeFromSemantics: true,
+                        child: TextButton.icon(
+                          onPressed: _loadingRoute
+                              ? null
+                              : () async {
+                                  final r =
+                                      await widget.onPickDestinationOnMap!(
+                                    destText: _destController.text,
+                                    destLat: _selectedDestLat,
+                                    destLng: _selectedDestLng,
+                                  );
+                                  if (!mounted || r == null) return;
+                                  await _applyDestinationFromMap(r);
+                                },
+                          icon: const Icon(Icons.map_outlined, size: 20),
+                          label: Text(
+                            TrakaL10n.of(context).pickOnMapActionLabel,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -630,10 +568,8 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
                           final p = _autocompleteResults[index];
                           return ListTile(
                             dense: true,
-                            leading: Icon(
-                              Icons.place_outlined,
-                              size: 20,
-                              color: Theme.of(context).colorScheme.primary,
+                            leading: const TrakaPinFormIcon(
+                              variant: TrakaRoutePinVariant.destination,
                             ),
                             title: Text(
                               PlacemarkFormatter.formatDetail(p),
@@ -656,14 +592,6 @@ class _DriverRouteFormSheetState extends State<DriverRouteFormSheet> {
                   onPressed: _loadingRoute ? null : _requestRoute,
                   icon: const Icon(Icons.directions_car, size: 20),
                   label: const Text('Rute Perjalanan'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
                 ),
                 if (_loadingRoute)
                   const Padding(

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../services/app_update_service.dart';
 import '../services/performance_trace_service.dart';
 import '../widgets/traka_l10n_scope.dart';
+import '../theme/app_interaction_styles.dart';
 
 /// Layar update wajib ketika versi app < minVersion dari Firestore.
 class ForceUpdateScreen extends StatefulWidget {
@@ -54,7 +55,8 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
                 onPressed: () => AppUpdateService.openPlayStore(),
                 icon: const Icon(Icons.open_in_new),
                 label: Text(TrakaL10n.of(context).openPlayStore),
-                style: FilledButton.styleFrom(
+                style: AppInteractionStyles.filledFromTheme(
+                  context,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24,
                     vertical: 16,

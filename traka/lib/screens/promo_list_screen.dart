@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/promotion_model.dart';
 import '../services/promotion_service.dart';
+import '../widgets/traka_empty_state.dart';
 
 /// Halaman daftar promosi/iklan untuk dibaca pengguna.
 class PromoListScreen extends StatelessWidget {
@@ -35,28 +36,10 @@ class PromoListScreen extends StatelessWidget {
           }
           final list = snap.data ?? [];
           if (list.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.campaign_outlined,
-                      size: 64,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Belum ada info atau promo',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
+            return const Center(
+              child: TrakaEmptyState(
+                icon: Icons.campaign_outlined,
+                title: 'Belum ada info atau promo',
               ),
             );
           }

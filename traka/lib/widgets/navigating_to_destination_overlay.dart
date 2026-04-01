@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../screens/chat_driver_screen.dart';
+import '../theme/app_interaction_styles.dart';
+import '../theme/app_theme.dart';
 
-/// Warna oranye untuk pengantaran (beda dengan hijau penjemputan).
-const Color _menujuTujuanColor = Color(0xFFE65100); // Orange 900
+/// Warna oranye untuk pengantaran (token Traka).
+const Color _menujuTujuanColor = AppTheme.mapDropoffAccent;
 
 /// Overlay compact "Menuju tujuan" di kanan atas peta driver.
 /// Mirip NavigatingToPassengerOverlay tapi untuk fase pengantaran (oranye).
@@ -79,9 +81,13 @@ class NavigatingToDestinationOverlay extends StatelessWidget {
                       ),
                       TextButton(
                         onPressed: onExitNavigating,
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          minimumSize: Size.zero,
+                        style: AppInteractionStyles.textFromTheme(
+                          context,
+                        ).copyWith(
+                          padding: WidgetStateProperty.all(
+                            const EdgeInsets.symmetric(horizontal: 8),
+                          ),
+                          minimumSize: WidgetStateProperty.all(Size.zero),
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: const Text('Kembali ke rute'),

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_interaction_styles.dart';
+import '../theme/app_theme.dart';
+import '../theme/traka_layout.dart';
 import '../services/directions_service.dart';
 import '../utils/instruction_formatter.dart';
 
@@ -15,7 +18,7 @@ class TurnByTurnBanner extends StatelessWidget {
     this.etaArrival,
     this.tollInfoText,
     this.routeWarnings = const [],
-    this.accentColor = const Color(0xFF1A73E8),
+    this.accentColor = AppTheme.primary,
     this.voiceMuted = false,
     this.onVoiceMuteToggle,
     this.distanceToNextStepMeters,
@@ -69,8 +72,9 @@ class TurnByTurnBanner extends StatelessWidget {
         workPillTopInset + workPillBlockHeight + gapBelowWorkPill;
     const double rightReserveForMapControls = 88;
     const double bannerFillAlpha = 0.74;
-    final Color cueColor = Colors.white;
-    final Color cueMuted = Colors.white.withValues(alpha: 0.88);
+    final Color cueColor = trakaOnAccentForeground(accentColor);
+    final Color cueMuted = cueColor.withValues(alpha: 0.88);
+    final Color cueChipFill = cueColor.withValues(alpha: 0.14);
     return Positioned(
       top: safeTop + topBelowWorkPill,
       left: 10,
@@ -79,16 +83,19 @@ class TurnByTurnBanner extends StatelessWidget {
         elevation: 0,
         color: Colors.transparent,
         shadowColor: Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: TrakaLayout.brSm,
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: TrakaLayout.brSm,
             color: accentColor.withValues(alpha: bannerFillAlpha),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.28),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+                color: Theme.of(context)
+                    .colorScheme
+                    .shadow
+                    .withValues(alpha: 0.22),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
               ),
             ],
           ),
@@ -108,8 +115,9 @@ class TurnByTurnBanner extends StatelessWidget {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFE8F5E9),
-                        borderRadius: BorderRadius.circular(8),
+                        color:
+                            AppTheme.mapDeliveryAccent.withValues(alpha: 0.13),
+                        borderRadius: TrakaLayout.brXs,
                       ),
                       child: Row(
                         children: [
@@ -122,7 +130,7 @@ class TurnByTurnBanner extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.green.shade900,
+                                color: AppTheme.mapDeliveryAccent,
                               ),
                             ),
                           ),
@@ -136,8 +144,11 @@ class TurnByTurnBanner extends StatelessWidget {
                           onPressed: onResumeCameraTracking,
                           icon: const Icon(Icons.navigation_rounded, size: 18),
                           label: Text(resumeCameraTrackingLabel),
-                          style: TextButton.styleFrom(
-                            foregroundColor: accentColor,
+                          style: AppInteractionStyles.textFromTheme(
+                            context,
+                          ).copyWith(
+                            foregroundColor:
+                                WidgetStateProperty.all(accentColor),
                             visualDensity: VisualDensity.compact,
                           ),
                         ),
@@ -153,8 +164,8 @@ class TurnByTurnBanner extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.22),
-                      borderRadius: BorderRadius.circular(12),
+                      color: cueChipFill,
+                      borderRadius: TrakaLayout.brSm,
                     ),
                     child: Icon(
                       InstructionFormatter.getIconForStep(current),
@@ -229,13 +240,14 @@ class TurnByTurnBanner extends StatelessWidget {
                             : Icons.volume_up_rounded,
                         size: 22,
                         color: voiceMuted
-                            ? Colors.white.withValues(alpha: 0.55)
+                            ? cueColor.withValues(alpha: 0.55)
                             : cueColor,
                       ),
                       tooltip: voiceMuted
                           ? 'Nyalakan suara arahan'
                           : 'Matikan suara arahan',
-                      style: IconButton.styleFrom(
+                      style: AppInteractionStyles.iconButtonFromTheme(
+                        context,
                         padding: const EdgeInsets.all(6),
                         minimumSize: const Size(40, 40),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -252,7 +264,7 @@ class TurnByTurnBanner extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.amber.shade50,
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: TrakaLayout.brMicro,
                   ),
                   child: Row(
                     children: [
@@ -287,7 +299,7 @@ class TurnByTurnBanner extends StatelessWidget {
                         ),
                         decoration: BoxDecoration(
                           color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: TrakaLayout.brMicro,
                         ),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -322,8 +334,8 @@ class TurnByTurnBanner extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
+                    color: cueChipFill,
+                    borderRadius: TrakaLayout.brXs,
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,

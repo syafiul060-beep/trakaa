@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../models/chat_message_model.dart';
 import '../services/chat_service.dart';
+import '../theme/app_theme.dart';
 
 /// Konten pesan chat (teks, audio, gambar, video, barcode).
 /// Dipakai di chat_room_penumpang_screen dan chat_driver_screen.
@@ -229,17 +230,25 @@ class ChatMessageContent extends StatelessWidget {
     final blueBold = TextStyle(
       fontSize: 15,
       color: isMe
-          ? const Color(0xFFBBDEFB)
+          ? AppTheme.primaryLight
           : Theme.of(context).colorScheme.primary,
       fontWeight: FontWeight.bold,
     );
     final greenBold = TextStyle(
       fontSize: 15,
       color: isMe
-          ? const Color(0xFFA5D6A7)
+          ? Color.lerp(
+                Colors.white,
+                AppTheme.mapDeliveryAccent,
+                0.55,
+              )!
           : (Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFFA5D6A7)
-              : const Color(0xFF2E7D32)),
+              ? Color.lerp(
+                    Colors.white,
+                    AppTheme.mapDeliveryAccent,
+                    0.55,
+                  )!
+              : AppTheme.mapDeliveryAccent),
       fontWeight: FontWeight.bold,
     );
     final baseStyle = TextStyle(fontSize: 15, color: baseColor);
@@ -342,7 +351,7 @@ class ChatMessageContent extends StatelessWidget {
     final isRead = status == ChatService.statusRead;
     final isDelivered = status == ChatService.statusDelivered;
     final color = isRead
-        ? const Color(0xFFBBDEFB)
+        ? AppTheme.primaryLight
         : Theme.of(context).colorScheme.surface;
     final icon = (isDelivered || isRead) ? Icons.done_all : Icons.done;
     return Icon(icon, size: 16, color: color);

@@ -68,8 +68,10 @@
 		<!-- Izin kontak (untuk pilih penerima Kirim Barang dari kontak) -->
 		<key>NSContactsUsageDescription</key>
 		<string>Traka membutuhkan akses kontak untuk memilih penerima Kirim Barang dari daftar kontak Anda.</string>
+		<key>NSFaceIDUsageDescription</key>
+		<string>Traka memakai Face ID untuk membuka kunci aplikasi dan login cepat dengan aman di perangkat Anda.</string>
 		<key>UIStatusBarHidden</key>
-		<false/>
+		<true/>
 		<!-- Jailbreak detection (jailbreak_root_detection) -->
 		<key>LSApplicationQueriesSchemes</key>
 		<array>
@@ -80,5 +82,7 @@
 			<string>activator</string>
 			<string>cydia</string>
 		</array>
+		<key>UIViewControllerBasedStatusBarAppearance</key>
+		<false/>
 	</dict>
 </plist>

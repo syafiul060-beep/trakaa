@@ -8,6 +8,7 @@ import '../services/auth_redirect_state.dart';
 import '../services/biometric_lock_service.dart';
 import '../services/locale_service.dart';
 import '../widgets/app_update_wrapper.dart';
+import '../theme/app_interaction_styles.dart';
 
 /// Overlay kunci biometric — tampil saat app resume dari background dan user punya kunci aktif.
 class BiometricLockOverlay extends StatefulWidget {
@@ -140,13 +141,12 @@ class _BiometricLockOverlayState extends State<BiometricLockOverlay> {
                     const SizedBox(height: 40),
                     FilledButton.icon(
                       onPressed: _isAuthenticating ? null : _unlock,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                      style: AppInteractionStyles.filledFromTheme(
+                        context,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 28,
+                          vertical: 16,
                         ),
-                        elevation: 2,
-                        shadowColor: primary.withValues(alpha: 0.3),
                       ),
                       icon: _isAuthenticating
                           ? SizedBox(

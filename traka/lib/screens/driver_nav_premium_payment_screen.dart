@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 import '../services/app_config_service.dart';
+import '../theme/app_interaction_styles.dart';
 import '../services/driver_nav_premium_payment_service.dart';
 import '../services/driver_nav_premium_service.dart';
 import '../services/payment_context_service.dart';
@@ -431,10 +432,14 @@ class _DriverNavPremiumPaymentScreenState
                               ? 'Bayar ${_products.first.price}'
                               : 'Bayar via Google Play',
                     ),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    style: AppInteractionStyles.elevatedPrimary(
                       backgroundColor: Colors.amber.shade800,
                       foregroundColor: Colors.white,
+                      shadowTint: Colors.amber.shade800,
+                    ).copyWith(
+                      padding: WidgetStateProperty.all(
+                        const EdgeInsets.symmetric(vertical: 16),
+                      ),
                     ),
                   ),
                 ],

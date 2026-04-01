@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../services/active_drivers_service.dart';
 import '../services/route_category_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_interaction_styles.dart';
 import '../theme/responsive.dart';
 import 'driver_eta_row.dart';
 import 'traka_l10n_scope.dart';
@@ -372,8 +373,11 @@ class PenumpangDriverDetailSheet extends StatelessWidget {
                           label: Text(
                             driver.hasPassengerCapacity ? 'Pesan Travel' : 'Penuh',
                           ),
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          style: AppInteractionStyles.filledFromTheme(
+                            context,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 14,
+                            ),
                           ),
                         ),
                       ),
@@ -383,8 +387,11 @@ class PenumpangDriverDetailSheet extends StatelessWidget {
                           onPressed: onKirimBarang,
                           icon: const Icon(Icons.inventory_2, size: 20),
                           label: const Text('Kirim Barang'),
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          style: AppInteractionStyles.filledFromTheme(
+                            context,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 14,
+                            ),
                           ),
                         ),
                       ),
