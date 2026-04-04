@@ -343,6 +343,20 @@ async function updateMethod(id, driverUid, body) {
   const qrisImageUrl =
     body.qrisImageUrl != null ? String(body.qrisImageUrl).trim() : row.qris_image_url;
 
+  if (type === 'qris' && body.qrisImageUrl != null) {
+    const q = String(body.qrisImageUrl).trim();
+    if (!q) {
+      const err = new Error('qrisImageUrl required');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!q.startsWith('https://')) {
+      const err = new Error('qrisImageUrl must be https');
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
   const bankOrProvider = type === 'bank' ? bankName : type === 'ewallet' ? ewalletProvider : '';
   const normalizedKey = buildNormalizedKey(
     type,
